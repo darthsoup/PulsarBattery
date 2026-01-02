@@ -114,7 +114,4 @@
     </None>
     <None Include="F:\Dev\PulsarBattery\PulsarBattery\.editorconfig" />
   </ItemGroup>
-  <ItemGroup>
-    <Folder Include="Device\" />
-  </ItemGroup>
 </Project>
