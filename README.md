@@ -31,7 +31,5 @@ From Visual Studio:
 From CLI:
 ```
 dotnet publish .\PulsarBattery\PulsarBattery.csproj -c Release -p:Platform=x64 -p:PublishProfile=win-x64
-dotnet publish .\PulsarBattery\PulsarBattery.csproj -c Release -p:Platform=x86 -p:PublishProfile=win-x86
-dotnet publish .\PulsarBattery\PulsarBattery.csproj -c Release -p:Platform=ARM64 -p:PublishProfile=win-arm64
 ```
-Output is in e.g. `PulsarBattery\bin\Publish\win-x64\` with `PulsarBattery.exe`.
+Output is in `PulsarBattery\bin\Publish\win-x64\` with `PulsarBattery.exe`.
