@@ -11,6 +11,10 @@ namespace PulsarBattery.Services;
 
 internal sealed class HistoryStore
 {
+    private const string HistoryFileName = "history.json";
+    private const string ApplicationFolderName = "PulsarBattery";
+    private const string TemporaryFileExtension = ".tmp";
+
     private static readonly JsonSerializerOptions JsonOptions = new()
     {
         WriteIndented = false,
@@ -18,16 +22,18 @@ internal sealed class HistoryStore
     };
 
     private readonly string _filePath;
-    private readonly SemaphoreSlim _gate = new(1, 1);
+    private readonly SemaphoreSlim _fileAccessLock;
 
     public HistoryStore(string? filePath = null)
     {
-        _filePath = filePath ?? Path.Combine(GetAppDataDir(), "history.json");
+        _filePath = filePath ?? GetDefaultHistoryFilePath();
+        _fileAccessLock = new SemaphoreSlim(1, 1);
     }
 
     public async Task<IReadOnlyList<BatteryReading>> LoadAsync(CancellationToken cancellationToken = default)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _fileAccessLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        
         try
         {
             if (!File.Exists(_filePath))
@@ -35,11 +41,7 @@ internal sealed class HistoryStore
                 return Array.Empty<BatteryReading>();
             }
 
-            await using var stream = File.OpenRead(_filePath);
-            var data = await JsonSerializer.DeserializeAsync<List<BatteryReading>>(stream, JsonOptions, cancellationToken)
-                .ConfigureAwait(false);
-
-            return data ?? new List<BatteryReading>();
+            return await DeserializeHistoryFileAsync(cancellationToken);
         }
         catch
         {
@@ -47,42 +49,83 @@ internal sealed class HistoryStore
         }
         finally
         {
-            _gate.Release();
+            _fileAccessLock.Release();
         }
     }
 
     public async Task SaveAsync(IReadOnlyCollection<BatteryReading> readings, CancellationToken cancellationToken = default)
     {
-        await _gate.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await _fileAccessLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        
         try
         {
-            Directory.CreateDirectory(Path.GetDirectoryName(_filePath)!);
-
-            var tmp = _filePath + ".tmp";
-            await using (var stream = File.Create(tmp))
-            {
-                await JsonSerializer.SerializeAsync(stream, readings, JsonOptions, cancellationToken).ConfigureAwait(false);
-            }
-
-            File.Copy(tmp, _filePath, overwrite: true);
-            File.Delete(tmp);
+            EnsureDirectoryExists();
+            await WriteHistoryFileAtomicallyAsync(readings, cancellationToken);
         }
         catch
         {
-            // best-effort persistence
         }
         finally
         {
-            _gate.Release();
+            _fileAccessLock.Release();
         }
     }
 
-    private static string GetAppDataDir()
+    private async Task<IReadOnlyList<BatteryReading>> DeserializeHistoryFileAsync(CancellationToken cancellationToken)
     {
-        var dir = Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            "PulsarBattery");
+        await using var stream = File.OpenRead(_filePath);
+        var readings = await JsonSerializer.DeserializeAsync<List<BatteryReading>>(
+            stream, 
+            JsonOptions, 
+            cancellationToken).ConfigureAwait(false);
 
-        return dir;
+        return readings ?? new List<BatteryReading>();
+    }
+
+    private async Task WriteHistoryFileAtomicallyAsync(IReadOnlyCollection<BatteryReading> readings, CancellationToken cancellationToken)
+    {
+        var temporaryFilePath = GetTemporaryFilePath();
+        
+        await WriteToTemporaryFileAsync(readings, temporaryFilePath, cancellationToken);
+        ReplaceFileWithTemporary(temporaryFilePath);
+    }
+
+    private async Task WriteToTemporaryFileAsync(IReadOnlyCollection<BatteryReading> readings, string temporaryFilePath, CancellationToken cancellationToken)
+    {
+        await using var stream = File.Create(temporaryFilePath);
+        await JsonSerializer.SerializeAsync(stream, readings, JsonOptions, cancellationToken).ConfigureAwait(false);
+    }
+
+    private void ReplaceFileWithTemporary(string temporaryFilePath)
+    {
+        File.Copy(temporaryFilePath, _filePath, overwrite: true);
+        File.Delete(temporaryFilePath);
+    }
+
+    private void EnsureDirectoryExists()
+    {
+        var directory = Path.GetDirectoryName(_filePath);
+        if (!string.IsNullOrEmpty(directory))
+        {
+            Directory.CreateDirectory(directory);
+        }
+    }
+
+    private string GetTemporaryFilePath()
+    {
+        return _filePath + TemporaryFileExtension;
+    }
+
+    private static string GetDefaultHistoryFilePath()
+    {
+        var appDataDirectory = GetApplicationDataDirectory();
+        return Path.Combine(appDataDirectory, HistoryFileName);
+    }
+
+    private static string GetApplicationDataDirectory()
+    {
+        return Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            ApplicationFolderName);
     }
 }

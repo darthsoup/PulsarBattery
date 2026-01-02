@@ -3,17 +3,10 @@
     x:Class="PulsarBattery.Pages.HistoryPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:converters="using:PulsarBattery.Converters"
     xmlns:models="using:PulsarBattery.Models"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
-
-    <Page.Resources>
-        <converters:BooleanToYesNoConverter x:Key="BooleanToYesNoConverter" />
-        <converters:DateTimeFormatConverter x:Key="DateTimeFormatConverter" />
-        <converters:EmptyCountToVisibilityConverter x:Key="EmptyCountToVisibilityConverter" />
-    </Page.Resources>
 
     <ScrollViewer>
         <Grid Padding="32">
@@ -53,13 +46,13 @@
                                                 <ColumnDefinition Width="*" />
                                                 <ColumnDefinition Width="2*" />
                                             </Grid.ColumnDefinitions>
-                                            <TextBlock Grid.Column="0" Text="{Binding Timestamp, Converter={StaticResource DateTimeFormatConverter}}" />
+                                            <TextBlock Grid.Column="0" Text="{x:Bind FormattedTimestamp}" />
                                             <TextBlock Grid.Column="1">
-                                                <Run Text="{Binding Percentage}" />
+                                                <Run Text="{x:Bind Percentage}" />
                                                 <Run Text="%" />
                                             </TextBlock>
-                                            <TextBlock Grid.Column="2" Text="{Binding IsCharging, Converter={StaticResource BooleanToYesNoConverter}}" />
-                                            <TextBlock Grid.Column="3" Text="{Binding Model}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Grid.Column="2" Text="{x:Bind ChargingStatus}" />
+                                            <TextBlock Grid.Column="3" Text="{x:Bind Model}" TextTrimming="CharacterEllipsis" />
                                         </Grid>
                                     </DataTemplate>
                                 </ListView.ItemTemplate>
@@ -68,7 +61,7 @@
                             <StackPanel HorizontalAlignment="Center"
                                         VerticalAlignment="Center"
                                         Spacing="8"
-                                        Visibility="{Binding History.Count, Converter={StaticResource EmptyCountToVisibilityConverter}}">
+                                        Visibility="{Binding HistoryEmptyVisibility}">
                                 <FontIcon Glyph="&#xE81C;" Opacity="0.7" FontSize="32" />
                                 <TextBlock Text="No history yet" Style="{ThemeResource SubtitleTextBlockStyle}" HorizontalAlignment="Center" />
                                 <TextBlock Text="Battery readings will appear here over time." Opacity="0.7" TextAlignment="Center" TextWrapping="Wrap" MaxWidth="360" />

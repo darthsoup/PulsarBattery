@@ -1,8 +1,9 @@
+using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
-using Microsoft.UI.Xaml.Controls;
 using PulsarBattery.Models;
 using PulsarBattery.Services;
 using System;
+using System.Collections.Generic;
 using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
@@ -14,24 +15,33 @@ namespace PulsarBattery.ViewModels;
 
 public sealed class MainViewModel : INotifyPropertyChanged
 {
-    private readonly PulsarBatteryReader _reader = new();
-    private readonly DispatcherTimer _timer;
-    private readonly HistoryStore _historyStore = new();
+    private const int MaxHistoryEntries = 500;
+    private const double MinimumPollIntervalMinutes = 0.1;
+    private const double HistorySaveIntervalSeconds = 15.0;
+    private const double DefaultPollIntervalMinutes = 1.0;
+    private const double DefaultLogIntervalMinutes = 5.0;
+    private const string DefaultModelName = "-";
+    private const string InitialStatusText = "Ready";
+
+    private readonly PulsarBatteryReader _batteryReader;
+    private readonly HistoryStore _historyStore;
+    private readonly DispatcherTimer _pollTimer;
     private readonly DispatcherTimer _historySaveTimer;
-    private readonly SemaphoreSlim _historyIoGate = new(1, 1);
-    private DateTimeOffset _lastLogged = DateTimeOffset.MinValue;
-    private bool _historyLoaded;
+    private readonly SemaphoreSlim _historySaveLock;
+
+    private DateTimeOffset _lastLoggedTime;
+    private bool _isHistoryLoaded;
     private int _batteryPercentage;
     private bool _isCharging;
-    private string _modelName = "-";
+    private string _modelName;
     private DateTimeOffset? _lastUpdated;
-    private double _pollIntervalMinutes = 1.0;
-    private double _logIntervalMinutes = 5.0;
-    private string _statusText = "Ready";
+    private double _pollIntervalMinutes;
+    private double _logIntervalMinutes;
+    private string _statusText;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
-    public ObservableCollection<BatteryReading> History { get; } = new();
+    public ObservableCollection<BatteryReading> History { get; }
 
     public int BatteryPercentage
     {
@@ -53,11 +63,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public string ChargingStateText => IsCharging ? "Charging" : "Not charging";
 
-    public string LastUpdatedText => _lastUpdated is null
-        ? "No data yet"
-        : $"Last updated: {_lastUpdated.Value.ToString("T", CultureInfo.CurrentCulture)}";
+    public string LastUpdatedText => _lastUpdated.HasValue
+        ? $"Last updated: {_lastUpdated.Value.ToString("T", CultureInfo.CurrentCulture)}"
+        : "No data yet";
 
-    public static double GlobalPollIntervalMinutes { get; private set; } = 5.0;
+    public static double GlobalPollIntervalMinutes { get; private set; } = DefaultPollIntervalMinutes;
 
     public double PollIntervalMinutes
     {
@@ -67,7 +77,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (SetProperty(ref _pollIntervalMinutes, value))
             {
                 GlobalPollIntervalMinutes = value;
-                UpdateTimerInterval();
+                UpdatePollTimerInterval();
             }
         }
     }
@@ -84,145 +94,220 @@ public sealed class MainViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _statusText, value);
     }
 
+    public Visibility HistoryEmptyVisibility => History.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
+
     public MainViewModel()
     {
-        GlobalPollIntervalMinutes = _pollIntervalMinutes;
-        _timer = new DispatcherTimer();
-        UpdateTimerInterval();
-        _timer.Tick += async (_, _) => await PollAsync();
+        _batteryReader = new PulsarBatteryReader();
+        _historyStore = new HistoryStore();
+        _historySaveLock = new SemaphoreSlim(1, 1);
+        _lastLoggedTime = DateTimeOffset.MinValue;
+        _modelName = DefaultModelName;
+        _pollIntervalMinutes = DefaultPollIntervalMinutes;
+        _logIntervalMinutes = DefaultLogIntervalMinutes;
+        _statusText = InitialStatusText;
+        History = new ObservableCollection<BatteryReading>();
 
-        _historySaveTimer = new DispatcherTimer
-        {
-            Interval = TimeSpan.FromSeconds(15),
-        };
-        _historySaveTimer.Tick += async (_, _) => await SaveHistoryAsync();
+        GlobalPollIntervalMinutes = _pollIntervalMinutes;
+
+        _pollTimer = CreatePollTimer();
+        _historySaveTimer = CreateHistorySaveTimer();
+
+        History.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HistoryEmptyVisibility));
     }
 
     public void Start()
     {
-        _ = LoadHistoryOnceAsync();
-        _ = PollAsync();
-        _timer.Start();
+        _ = LoadHistoryAsync();
+        _ = UpdateBatteryStatusAsync();
+        _pollTimer.Start();
         _historySaveTimer.Start();
     }
 
     public void Stop()
     {
-        _timer.Stop();
+        _pollTimer.Stop();
         _historySaveTimer.Stop();
         _ = SaveHistoryAsync();
     }
 
-    private async Task LoadHistoryOnceAsync()
+    private DispatcherTimer CreatePollTimer()
     {
-        if (_historyLoaded)
+        var timer = new DispatcherTimer();
+        UpdatePollTimerInterval(timer);
+        timer.Tick += async (_, _) => await UpdateBatteryStatusAsync();
+        return timer;
+    }
+
+    private DispatcherTimer CreateHistorySaveTimer()
+    {
+        var timer = new DispatcherTimer
+        {
+            Interval = TimeSpan.FromSeconds(HistorySaveIntervalSeconds)
+        };
+        timer.Tick += async (_, _) => await SaveHistoryAsync();
+        return timer;
+    }
+
+    private async Task LoadHistoryAsync()
+    {
+        if (_isHistoryLoaded)
         {
             return;
         }
 
-        _historyLoaded = true;
+        _isHistoryLoaded = true;
 
         try
         {
-            var items = await _historyStore.LoadAsync().ConfigureAwait(false);
-            if (items.Count == 0)
+            var historicalReadings = await _historyStore.LoadAsync().ConfigureAwait(false);
+            
+            if (historicalReadings.Count > 0)
             {
-                return;
+                await PopulateHistoryCollectionAsync(historicalReadings);
             }
-
-            _ = Microsoft.UI.Dispatching.DispatcherQueue.GetForCurrentThread().TryEnqueue(() =>
-            {
-                foreach (var item in items)
-                {
-                    History.Add(item);
-                }
-            });
         }
         catch
         {
-            // best-effort
         }
+    }
+
+    private async Task PopulateHistoryCollectionAsync(IReadOnlyList<BatteryReading> readings)
+    {
+        var dispatcherQueue = DispatcherQueue.GetForCurrentThread();
+        await Task.Run(() =>
+        {
+            dispatcherQueue.TryEnqueue(() =>
+            {
+                foreach (var reading in readings)
+                {
+                    History.Add(reading);
+                }
+            });
+        });
     }
 
     private async Task SaveHistoryAsync()
     {
-        if (!_historyLoaded)
-        {
-            return;
-        }
-
-        if (!await _historyIoGate.WaitAsync(0).ConfigureAwait(false))
+        if (!_isHistoryLoaded || !await TryAcquireSaveLockAsync())
         {
             return;
         }
 
         try
         {
-            // Snapshot to avoid collection changes while writing.
-            BatteryReading[] snapshot;
-            snapshot = new BatteryReading[History.Count];
-            for (var i = 0; i < History.Count; i++)
-            {
-                snapshot[i] = History[i];
-            }
-
+            var snapshot = CreateHistorySnapshot();
             await _historyStore.SaveAsync(snapshot).ConfigureAwait(false);
         }
         catch
         {
-            // best-effort
         }
         finally
         {
-            _historyIoGate.Release();
+            _historySaveLock.Release();
         }
     }
 
-    private async Task PollAsync()
+    private async Task<bool> TryAcquireSaveLockAsync()
+    {
+        return await _historySaveLock.WaitAsync(0).ConfigureAwait(false);
+    }
+
+    private BatteryReading[] CreateHistorySnapshot()
+    {
+        var snapshot = new BatteryReading[History.Count];
+        for (var i = 0; i < History.Count; i++)
+        {
+            snapshot[i] = History[i];
+        }
+        return snapshot;
+    }
+
+    private async Task UpdateBatteryStatusAsync()
     {
         StatusText = "Reading battery status...";
-        var status = await Task.Run(() => _reader.ReadBatteryStatus());
-        if (status is null)
+        
+        var batteryStatus = await ReadBatteryStatusAsync();
+        
+        if (batteryStatus is null)
         {
             StatusText = "No device found";
             return;
         }
 
+        UpdateBatteryProperties(batteryStatus);
+        StatusText = "Updated";
+
+        if (ShouldLogCurrentReading())
+        {
+            LogBatteryReading(batteryStatus);
+        }
+    }
+
+    private Task<PulsarBatteryReader.BatteryStatus?> ReadBatteryStatusAsync()
+    {
+        return Task.Run(() => _batteryReader.ReadBatteryStatus());
+    }
+
+    private void UpdateBatteryProperties(PulsarBatteryReader.BatteryStatus status)
+    {
         BatteryPercentage = status.Percentage;
         IsCharging = status.IsCharging;
         ModelName = status.Model;
         _lastUpdated = DateTimeOffset.Now;
+        
         OnPropertyChanged(nameof(ChargingStateText));
         OnPropertyChanged(nameof(LastUpdatedText));
-        StatusText = "Updated";
-
-        if (ShouldLog())
-        {
-            _lastLogged = DateTimeOffset.Now;
-            History.Insert(0, new BatteryReading(_lastLogged, status.Percentage, status.IsCharging, status.Model));
-            const int maxEntries = 500;
-            while (History.Count > maxEntries)
-            {
-                History.RemoveAt(History.Count - 1);
-            }
-        }
     }
 
-    private bool ShouldLog()
+    private bool ShouldLogCurrentReading()
     {
-        if (_lastLogged == DateTimeOffset.MinValue)
+        if (IsFirstLog())
         {
             return true;
         }
 
-        var diff = DateTimeOffset.Now - _lastLogged;
-        return diff >= TimeSpan.FromMinutes(LogIntervalMinutes);
+        return HasLogIntervalElapsed();
     }
 
-    private void UpdateTimerInterval()
+    private bool IsFirstLog()
     {
-        var minutes = Math.Max(0.1, PollIntervalMinutes);
-        _timer.Interval = TimeSpan.FromMinutes(minutes);
+        return _lastLoggedTime == DateTimeOffset.MinValue;
+    }
+
+    private bool HasLogIntervalElapsed()
+    {
+        var timeSinceLastLog = DateTimeOffset.Now - _lastLoggedTime;
+        return timeSinceLastLog >= TimeSpan.FromMinutes(LogIntervalMinutes);
+    }
+
+    private void LogBatteryReading(PulsarBatteryReader.BatteryStatus status)
+    {
+        _lastLoggedTime = DateTimeOffset.Now;
+        
+        var reading = new BatteryReading(_lastLoggedTime, status.Percentage, status.IsCharging, status.Model);
+        History.Insert(0, reading);
+        
+        TrimHistoryToMaxEntries();
+    }
+
+    private void TrimHistoryToMaxEntries()
+    {
+        while (History.Count > MaxHistoryEntries)
+        {
+            History.RemoveAt(History.Count - 1);
+        }
+    }
+
+    private void UpdatePollTimerInterval()
+    {
+        UpdatePollTimerInterval(_pollTimer);
+    }
+
+    private void UpdatePollTimerInterval(DispatcherTimer timer)
+    {
+        var clampedMinutes = Math.Max(MinimumPollIntervalMinutes, PollIntervalMinutes);
+        timer.Interval = TimeSpan.FromMinutes(clampedMinutes);
     }
 
     private bool SetProperty<T>(ref T storage, T value, [CallerMemberName] string? propertyName = null)
