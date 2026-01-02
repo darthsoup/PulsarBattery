@@ -31,6 +31,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private DateTimeOffset _lastLoggedTime;
     private bool _isHistoryLoaded;
+    private bool _isLoading;
+    private bool _hasInitialData;
     private int _batteryPercentage;
     private bool _isCharging;
     private string _modelName;
@@ -42,6 +44,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public ObservableCollection<BatteryReading> History { get; }
+
+    public bool IsLoading
+    {
+        get => _isLoading;
+        private set => SetProperty(ref _isLoading, value);
+    }
+
+    public bool HasInitialData
+    {
+        get => _hasInitialData;
+        private set => SetProperty(ref _hasInitialData, value);
+    }
+
+    public Visibility LoadingVisibility => IsLoading && !HasInitialData ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility ContentVisibility => HasInitialData ? Visibility.Visible : Visibility.Collapsed;
 
     public int BatteryPercentage
     {
@@ -165,6 +183,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (historicalReadings.Count > 0)
             {
                 await PopulateHistoryCollectionAsync(historicalReadings);
+                
+                // Load cached data from most recent history entry
+                var dispatcherQueue = DispatcherQueue.GetForCurrentThread();
+                dispatcherQueue.TryEnqueue(() =>
+                {
+                    var mostRecent = historicalReadings[0];
+                    BatteryPercentage = mostRecent.Percentage;
+                    IsCharging = mostRecent.IsCharging;
+                    ModelName = mostRecent.Model;
+                    _lastUpdated = mostRecent.Timestamp;
+                    HasInitialData = true;
+                    OnPropertyChanged(nameof(ChargingStateText));
+                    OnPropertyChanged(nameof(LastUpdatedText));
+                });
             }
         }
         catch
@@ -225,6 +257,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private async Task UpdateBatteryStatusAsync()
     {
+        IsLoading = true;
         StatusText = "Reading battery status...";
         
         var batteryStatus = await ReadBatteryStatusAsync();
@@ -232,11 +265,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (batteryStatus is null)
         {
             StatusText = "No device found";
+            IsLoading = false;
             return;
         }
 
         UpdateBatteryProperties(batteryStatus);
         StatusText = "Updated";
+        HasInitialData = true;
+        IsLoading = false;
 
         if (ShouldLogCurrentReading())
         {
@@ -319,6 +355,14 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         storage = value;
         OnPropertyChanged(propertyName);
+        
+        // Update visibility properties when loading state changes
+        if (propertyName == nameof(IsLoading) || propertyName == nameof(HasInitialData))
+        {
+            OnPropertyChanged(nameof(LoadingVisibility));
+            OnPropertyChanged(nameof(ContentVisibility));
+        }
+        
         return true;
     }
 

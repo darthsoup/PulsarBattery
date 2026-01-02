@@ -83,6 +83,12 @@ namespace PulsarBattery
 
         private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
         {
+            if (args.IsSettingsSelected)
+            {
+                NavigateTo("settings");
+                return;
+            }
+
             var tag = (args.SelectedItemContainer?.Tag as string) ?? "dashboard";
             NavigateTo(tag);
         }
