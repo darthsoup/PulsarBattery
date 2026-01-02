@@ -1,14 +1,10 @@
 <Solution>
   <Configurations>
-    <Platform Name="ARM64" />
     <Platform Name="x64" />
-    <Platform Name="x86" />
   </Configurations>
   <Project Path="PulsarBattery.Device/PulsarBattery.Device.csproj" Id="1f1366ff-c87d-4802-8e12-25856558e617" />
   <Project Path="PulsarBattery/PulsarBattery.csproj">
-    <Platform Solution="*|ARM64" Project="ARM64" />
-    <Platform Solution="*|x64" Project="x64" />
-    <Platform Solution="*|x86" Project="x86" />
+    <Platform Project="x64" />
     <Deploy />
   </Project>
 </Solution>
