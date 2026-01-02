@@ -36,8 +36,7 @@
 
                         <StackPanel Grid.Column="1" HorizontalAlignment="Right" Spacing="2">
                             <TextBlock Style="{ThemeResource DisplayTextBlockStyle}" HorizontalAlignment="Right">
-                                <Run Text="{Binding BatteryPercentage}" />
-                                <Run Text="%" />
+                                <Run Text="{Binding BatteryPercentage}" /><Run Text="%" />
                             </TextBlock>
                             <TextBlock Text="{Binding ChargingStateText}" Opacity="0.8" HorizontalAlignment="Right" />
                         </StackPanel>
@@ -76,8 +75,7 @@
                                     <FontIcon Glyph="&#xE823;" Opacity="0.8" />
                                     <TextBlock Grid.Column="1" Text="Battery" VerticalAlignment="Center" />
                                     <TextBlock Grid.Column="2" Opacity="0.8">
-                                        <Run Text="{Binding BatteryPercentage}" />
-                                        <Run Text="%" />
+                                        <Run Text="{Binding BatteryPercentage}" /><Run Text="%" />
                                     </TextBlock>
                                 </Grid>
 

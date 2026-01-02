@@ -47,10 +47,7 @@
                                                 <ColumnDefinition Width="2*" />
                                             </Grid.ColumnDefinitions>
                                             <TextBlock Grid.Column="0" Text="{x:Bind FormattedTimestamp}" />
-                                            <TextBlock Grid.Column="1">
-                                                <Run Text="{x:Bind Percentage}" />
-                                                <Run Text="%" />
-                                            </TextBlock>
+                                            <TextBlock Grid.Column="1"><Run Text="{x:Bind Percentage}" /><Run Text="%" /></TextBlock>
                                             <TextBlock Grid.Column="2" Text="{x:Bind ChargingStatus}" />
                                             <TextBlock Grid.Column="3" Text="{x:Bind Model}" TextTrimming="CharacterEllipsis" />
                                         </Grid>

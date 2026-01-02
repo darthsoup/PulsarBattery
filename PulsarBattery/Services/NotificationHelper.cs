@@ -76,7 +76,7 @@ internal static class NotificationHelper
         try
         {
             var title = "Battery level changed";
-            var line1 = string.IsNullOrWhiteSpace(model) ? $"{previousPercentage}% ? {currentPercentage}%" : $"{model}: {previousPercentage}% ? {currentPercentage}%";
+            var line1 = string.IsNullOrWhiteSpace(model) ? $"From {previousPercentage}% to {currentPercentage}%" : $"{model}: From {previousPercentage}% to {currentPercentage}%";
             var line2 = isCharging ? "Charging" : "Not charging";
 
             var notification = new AppNotificationBuilder()

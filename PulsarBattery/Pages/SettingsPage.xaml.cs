@@ -15,7 +15,7 @@ public sealed partial class SettingsPage : Page
     private void SendTestNotification_Click(object sender, RoutedEventArgs e)
     {
         NotificationHelper.Init();
-        NotificationHelper.NotifyBatteryLevelChanged(50, 49, isCharging: false, model: "Test");
+        NotificationHelper.NotifyBatteryLevelChanged(50, 45, isCharging: false, model: "Device Test");
         RefreshNotificationStatus();
     }
 
