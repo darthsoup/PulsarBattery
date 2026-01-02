@@ -105,13 +105,9 @@
     <Page Include="Pages\SettingsPage.xaml" />
   </ItemGroup>
   <ItemGroup>
-    <EditorConfigFiles Remove="F:\Dev\PulsarBattery\PulsarBattery\.editorconfig" />
-  </ItemGroup>
-  <ItemGroup>
     <None Include="..\README.md">
       <Pack>True</Pack>
       <PackagePath>\</PackagePath>
     </None>
-    <None Include="F:\Dev\PulsarBattery\PulsarBattery\.editorconfig" />
   </ItemGroup>
 </Project>
