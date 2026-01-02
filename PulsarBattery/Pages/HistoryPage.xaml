@@ -139,7 +139,7 @@
                         <TextBlock Text="No history yet" 
                                    Style="{ThemeResource SubtitleTextBlockStyle}" 
                                    HorizontalAlignment="Center" />
-                        <TextBlock Text="Battery readings will appear here as your device is monitored over time." 
+                        <TextBlock Text="Battery readings will appear here as your Pulsar mouse is monitored over time." 
                                    Style="{ThemeResource CaptionTextBlockStyle}"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                    TextAlignment="Center" 

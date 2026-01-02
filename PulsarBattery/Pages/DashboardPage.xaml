@@ -35,6 +35,52 @@
                     </StackPanel>
                 </Border>
 
+                <!-- No Device Found indicator -->
+                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                        BorderThickness="1"
+                        CornerRadius="4"
+                        Padding="40"
+                        MinHeight="300"
+                        Visibility="{Binding NoDeviceVisibility}">
+                    <StackPanel HorizontalAlignment="Center" 
+                                VerticalAlignment="Center" 
+                                Spacing="20">
+                        <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                CornerRadius="32"
+                                Width="64"
+                                Height="64"
+                                HorizontalAlignment="Center">
+                            <FontIcon Glyph="&#xE7EF;" 
+                                      FontSize="32"
+                                      Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </Border>
+                        <TextBlock Text="No Pulsar mouse detected" 
+                                   Style="{ThemeResource TitleTextBlockStyle}"
+                                   HorizontalAlignment="Center" />
+                        <StackPanel Spacing="8" MaxWidth="450">
+                            <TextBlock Style="{ThemeResource BodyTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       TextAlignment="Center"
+                                       TextWrapping="Wrap">
+                                Make sure your Pulsar mouse is connected and powered on.
+                            </TextBlock>
+                            <TextBlock Style="{ThemeResource CaptionTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                       TextAlignment="Center"
+                                       TextWrapping="Wrap"
+                                       Margin="0,8,0,0">
+                                Supported devices: X2 CrazyLight, X2 V1
+                            </TextBlock>
+                        </StackPanel>
+                        <Button Content="Retry" 
+                                Style="{ThemeResource AccentButtonStyle}"
+                                HorizontalAlignment="Center"
+                                Margin="0,8,0,0"
+                                Click="RetryConnection_Click" />
+                    </StackPanel>
+                </Border>
+
                 <!-- Main content (shown when data is available) -->
                 <StackPanel Spacing="24" Visibility="{Binding ContentVisibility}">
 
