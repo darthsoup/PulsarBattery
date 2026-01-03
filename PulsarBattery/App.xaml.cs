@@ -11,6 +11,8 @@ namespace PulsarBattery
 {
     public partial class App : Application
     {
+        internal static bool IsExitRequested { get; private set; }
+
         private Window? _window;
         private readonly BatteryMonitor _monitor = new();
         private TrayIconService? _trayIcon;
@@ -21,8 +23,22 @@ namespace PulsarBattery
             AppDomain.CurrentDomain.ProcessExit += (_, _) => NotificationHelper.Unregister();
         }
 
-        protected override void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
+        internal static void RequestExit()
         {
+            IsExitRequested = true;
+        }
+
+        protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
+        {
+            try
+            {
+                await AppSettingsService.InitializeAsync();
+            }
+            catch
+            {
+                // ignore
+            }
+
             NotificationHelper.Init();
 
             _monitor.Start();

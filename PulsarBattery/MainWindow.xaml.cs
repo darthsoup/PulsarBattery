@@ -33,11 +33,21 @@ namespace PulsarBattery
             RootGrid.DataContext = _viewModel;
             _viewModel.Start();
 
+            Activated += MainWindow_Activated;
+
             NavView.SelectedItem = DashboardItem;
             NavigateTo("dashboard");
         }
 
         internal void Stop() => _viewModel.Stop();
+
+        private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
+        {
+            if (args.WindowActivationState != WindowActivationState.Deactivated)
+            {
+                _viewModel.RefreshNow();
+            }
+        }
 
         private void SetDefaultWindowSize()
         {
@@ -48,14 +58,34 @@ namespace PulsarBattery
                 _appWindow = AppWindow.GetFromWindowId(windowId);
 
                 // A small utility window: good default.
-                _appWindow.Resize(new Windows.Graphics.SizeInt32(900, 650));
+                _appWindow.Resize(new Windows.Graphics.SizeInt32(900, 820));
 
                 // Prevent excessive width. There's no MaxWidth API on AppWindow, so we clamp.
                 _appWindow.Changed += AppWindow_Changed;
+                _appWindow.Closing += AppWindow_Closing;
             }
             catch
             {
                 // best-effort sizing
+            }
+        }
+
+        private void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
+        {
+            if (App.IsExitRequested)
+            {
+                return;
+            }
+
+            args.Cancel = true;
+
+            try
+            {
+                sender.Hide();
+            }
+            catch
+            {
+                // ignore
             }
         }
 

@@ -7,6 +7,8 @@ public sealed class PulsarBatteryReader
 {
     public record BatteryStatus(int Percentage, bool IsCharging, string Model);
 
+    private static readonly object GlobalReadLock = new();
+
     private readonly IHidBackend[] _backends;
 
     public PulsarBatteryReader()
@@ -20,15 +22,18 @@ public sealed class PulsarBatteryReader
 
     public BatteryStatus? ReadBatteryStatus(bool debug = false)
     {
-        foreach (var backend in _backends)
+        lock (GlobalReadLock)
         {
-            var status = backend.ReadBatteryStatus(debug);
-            if (status is not null)
+            foreach (var backend in _backends)
             {
-                return new BatteryStatus(status.Percentage, status.IsCharging, status.Model);
+                var status = backend.ReadBatteryStatus(debug);
+                if (status is not null)
+                {
+                    return new BatteryStatus(status.Percentage, status.IsCharging, status.Model);
+                }
             }
-        }
 
-        return null;
+            return null;
+        }
     }
 }

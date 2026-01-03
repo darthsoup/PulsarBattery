@@ -26,11 +26,11 @@ internal sealed class TrayIconService : IDisposable
             ContextMenuMode = ContextMenuMode.PopupMenu,
         };
 
-        _taskbarIcon.Tapped += (_, _) => ShowWindow();
+        _taskbarIcon.NoLeftClickDelay = true;
+        _taskbarIcon.LeftClickCommand = new RelayCommand(ShowWindow);
 
         var menu = new MenuFlyout();
         menu.Items.Add(CreateCommandMenuItem("Open", ShowWindow));
-        menu.Items.Add(CreateCommandMenuItem("Hide", HideWindow));
         menu.Items.Add(new MenuFlyoutSeparator());
         menu.Items.Add(CreateCommandMenuItem("Exit", ExitApp));
         _taskbarIcon.ContextFlyout = menu;
@@ -136,6 +136,18 @@ internal sealed class TrayIconService : IDisposable
         {
             _window.DispatcherQueue.TryEnqueue(() =>
             {
+                try
+                {
+                    var hwnd = WindowNative.GetWindowHandle(_window);
+                    var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
+                    var appWindow = AppWindow.GetFromWindowId(windowId);
+                    appWindow?.Show();
+                }
+                catch
+                {
+                    // ignore
+                }
+
                 _window.Activate();
             });
         }
@@ -145,28 +157,17 @@ internal sealed class TrayIconService : IDisposable
         }
     }
 
-    private void HideWindow()
+    private void ExitApp()
     {
-        if (_window is null)
-        {
-            return;
-        }
-
         try
         {
-            var hwnd = WindowNative.GetWindowHandle(_window);
-            var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
-            var appWindow = AppWindow.GetFromWindowId(windowId);
-            appWindow?.Hide();
+            global::PulsarBattery.App.RequestExit();
         }
         catch
         {
             // ignore
         }
-    }
 
-    private void ExitApp()
-    {
         try
         {
             _window?.Close();

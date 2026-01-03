@@ -20,14 +20,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private const double HistorySaveIntervalSeconds = 15.0;
     private const double DefaultPollIntervalMinutes = 1.0;
     private const double DefaultLogIntervalMinutes = 5.0;
+    private const int DefaultUnlockedAlertThresholdPercent = 5;
+    private const int DefaultLockedAlertThresholdPercent = 30;
+    private const double DefaultAlertCooldownMinutes = 20.0;
     private const string DefaultModelName = "-";
     private const string InitialStatusText = "Ready";
 
     private readonly PulsarBatteryReader _batteryReader;
     private readonly HistoryStore _historyStore;
+    private readonly DispatcherQueue _dispatcherQueue;
     private readonly DispatcherTimer _pollTimer;
     private readonly DispatcherTimer _historySaveTimer;
     private readonly SemaphoreSlim _historySaveLock;
+    private readonly SemaphoreSlim _batteryUpdateLock;
 
     private DateTimeOffset _lastLoggedTime;
     private bool _isHistoryLoaded;
@@ -39,6 +44,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private DateTimeOffset? _lastUpdated;
     private double _pollIntervalMinutes;
     private double _logIntervalMinutes;
+    private int _alertThresholdUnlockedPercent;
+    private int _alertThresholdLockedPercent;
+    private bool _enableBeeps;
+    private double _alertCooldownMinutes;
     private string _statusText;
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -60,6 +69,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public Visibility LoadingVisibility => IsLoading && !HasInitialData ? Visibility.Visible : Visibility.Collapsed;
 
     public Visibility ContentVisibility => HasInitialData ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility RefreshingVisibility => IsLoading && HasInitialData ? Visibility.Visible : Visibility.Collapsed;
 
     public int BatteryPercentage
     {
@@ -92,10 +103,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
         get => _pollIntervalMinutes;
         set
         {
-            if (SetProperty(ref _pollIntervalMinutes, value))
+            var clampedMinutes = Math.Clamp(value, MinimumPollIntervalMinutes, 120);
+            if (SetProperty(ref _pollIntervalMinutes, clampedMinutes))
             {
-                GlobalPollIntervalMinutes = value;
+                GlobalPollIntervalMinutes = clampedMinutes;
                 UpdatePollTimerInterval();
+                AppSettingsService.Update(settings => settings with { PollIntervalMinutes = clampedMinutes });
             }
         }
     }
@@ -103,7 +116,65 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public double LogIntervalMinutes
     {
         get => _logIntervalMinutes;
-        set => SetProperty(ref _logIntervalMinutes, value);
+        set
+        {
+            var clampedMinutes = Math.Clamp(value, 0.1, 240);
+            if (SetProperty(ref _logIntervalMinutes, clampedMinutes))
+            {
+                AppSettingsService.Update(settings => settings with { LogIntervalMinutes = clampedMinutes });
+            }
+        }
+    }
+
+    public int AlertThresholdUnlockedPercent
+    {
+        get => _alertThresholdUnlockedPercent;
+        set
+        {
+            var clamped = Math.Clamp(value, 1, 100);
+            if (SetProperty(ref _alertThresholdUnlockedPercent, clamped))
+            {
+                AppSettingsService.Update(settings => settings with { AlertThresholdUnlockedPercent = clamped });
+            }
+        }
+    }
+
+    public int AlertThresholdLockedPercent
+    {
+        get => _alertThresholdLockedPercent;
+        set
+        {
+            var clamped = Math.Clamp(value, 1, 100);
+            if (SetProperty(ref _alertThresholdLockedPercent, clamped))
+            {
+                AppSettingsService.Update(settings => settings with { AlertThresholdLockedPercent = clamped });
+            }
+        }
+    }
+
+    public bool EnableBeeps
+    {
+        get => _enableBeeps;
+        set
+        {
+            if (SetProperty(ref _enableBeeps, value))
+            {
+                AppSettingsService.Update(settings => settings with { EnableBeeps = value });
+            }
+        }
+    }
+
+    public double AlertCooldownMinutes
+    {
+        get => _alertCooldownMinutes;
+        set
+        {
+            var clampedMinutes = Math.Clamp(value, 0, 24 * 60);
+            if (SetProperty(ref _alertCooldownMinutes, clampedMinutes))
+            {
+                AppSettingsService.Update(settings => settings with { AlertCooldownMinutes = clampedMinutes });
+            }
+        }
     }
 
     public string StatusText
@@ -118,11 +189,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         _batteryReader = new PulsarBatteryReader();
         _historyStore = new HistoryStore();
+        _dispatcherQueue = DispatcherQueue.GetForCurrentThread()
+            ?? throw new InvalidOperationException($"{nameof(MainViewModel)} must be constructed on the UI thread.");
         _historySaveLock = new SemaphoreSlim(1, 1);
+        _batteryUpdateLock = new SemaphoreSlim(1, 1);
         _lastLoggedTime = DateTimeOffset.MinValue;
         _modelName = DefaultModelName;
-        _pollIntervalMinutes = DefaultPollIntervalMinutes;
-        _logIntervalMinutes = DefaultLogIntervalMinutes;
+
+        var settings = AppSettingsService.Current;
+        _pollIntervalMinutes = settings.PollIntervalMinutes <= 0 ? DefaultPollIntervalMinutes : settings.PollIntervalMinutes;
+        _logIntervalMinutes = settings.LogIntervalMinutes <= 0 ? DefaultLogIntervalMinutes : settings.LogIntervalMinutes;
+        _alertThresholdUnlockedPercent = settings.AlertThresholdUnlockedPercent <= 0 ? DefaultUnlockedAlertThresholdPercent : settings.AlertThresholdUnlockedPercent;
+        _alertThresholdLockedPercent = settings.AlertThresholdLockedPercent <= 0 ? DefaultLockedAlertThresholdPercent : settings.AlertThresholdLockedPercent;
+        _enableBeeps = settings.EnableBeeps;
+        _alertCooldownMinutes = settings.AlertCooldownMinutes < 0 ? DefaultAlertCooldownMinutes : settings.AlertCooldownMinutes;
+
         _statusText = InitialStatusText;
         History = new ObservableCollection<BatteryReading>();
 
@@ -149,6 +230,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _ = SaveHistoryAsync();
     }
 
+    public void RefreshNow()
+    {
+        _ = UpdateBatteryStatusAsync();
+    }
+
     private DispatcherTimer CreatePollTimer()
     {
         var timer = new DispatcherTimer();
@@ -165,6 +251,29 @@ public sealed class MainViewModel : INotifyPropertyChanged
         };
         timer.Tick += async (_, _) => await SaveHistoryAsync();
         return timer;
+    }
+
+    private Task EnqueueAsync(Action action)
+    {
+        var tcs = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        if (!_dispatcherQueue.TryEnqueue(() =>
+        {
+            try
+            {
+                action();
+                tcs.TrySetResult(null);
+            }
+            catch (Exception ex)
+            {
+                tcs.TrySetException(ex);
+            }
+        }))
+        {
+            tcs.TrySetCanceled();
+        }
+
+        return tcs.Task;
     }
 
     private async Task LoadHistoryAsync()
@@ -185,8 +294,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 await PopulateHistoryCollectionAsync(historicalReadings);
                 
                 // Load cached data from most recent history entry
-                var dispatcherQueue = DispatcherQueue.GetForCurrentThread();
-                dispatcherQueue.TryEnqueue(() =>
+                await EnqueueAsync(() =>
                 {
                     var mostRecent = historicalReadings[0];
                     BatteryPercentage = mostRecent.Percentage;
@@ -206,16 +314,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private async Task PopulateHistoryCollectionAsync(IReadOnlyList<BatteryReading> readings)
     {
-        var dispatcherQueue = DispatcherQueue.GetForCurrentThread();
-        await Task.Run(() =>
+        await EnqueueAsync(() =>
         {
-            dispatcherQueue.TryEnqueue(() =>
+            foreach (var reading in readings)
             {
-                foreach (var reading in readings)
-                {
-                    History.Add(reading);
-                }
-            });
+                History.Add(reading);
+            }
         });
     }
 
@@ -257,6 +361,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private async Task UpdateBatteryStatusAsync()
     {
+        if (!await _batteryUpdateLock.WaitAsync(0))
+        {
+            return;
+        }
+
+        try
+        {
         IsLoading = true;
         StatusText = "Reading battery status...";
         
@@ -277,6 +388,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (ShouldLogCurrentReading())
         {
             LogBatteryReading(batteryStatus);
+        }
+        }
+        finally
+        {
+            _batteryUpdateLock.Release();
         }
     }
 
@@ -361,6 +477,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             OnPropertyChanged(nameof(LoadingVisibility));
             OnPropertyChanged(nameof(ContentVisibility));
+            OnPropertyChanged(nameof(RefreshingVisibility));
         }
         
         return true;
