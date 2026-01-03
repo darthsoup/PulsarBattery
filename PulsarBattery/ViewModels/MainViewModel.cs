@@ -38,6 +38,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool _isHistoryLoaded;
     private bool _isLoading;
     private bool _hasInitialData;
+    private bool _noDeviceFound;
     private int _batteryPercentage;
     private bool _isCharging;
     private string _modelName;
@@ -66,9 +67,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _hasInitialData, value);
     }
 
-    public Visibility LoadingVisibility => IsLoading && !HasInitialData ? Visibility.Visible : Visibility.Collapsed;
+    public bool NoDeviceFound
+    {
+        get => _noDeviceFound;
+        private set => SetProperty(ref _noDeviceFound, value);
+    }
 
-    public Visibility ContentVisibility => HasInitialData ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility LoadingVisibility => IsLoading && !HasInitialData && !NoDeviceFound ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility ContentVisibility => HasInitialData && !NoDeviceFound ? Visibility.Visible : Visibility.Collapsed;
+
+    public Visibility NoDeviceVisibility => NoDeviceFound && !IsLoading ? Visibility.Visible : Visibility.Collapsed;
 
     public Visibility RefreshingVisibility => IsLoading && HasInitialData ? Visibility.Visible : Visibility.Collapsed;
 
@@ -230,6 +239,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _ = SaveHistoryAsync();
     }
 
+    public async Task RetryConnectionAsync()
+    {
+        await UpdateBatteryStatusAsync();
+    }
+
     public void RefreshNow()
     {
         _ = UpdateBatteryStatusAsync();
@@ -369,13 +383,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
         try
         {
         IsLoading = true;
+        NoDeviceFound = false;
         StatusText = "Reading battery status...";
         
         var batteryStatus = await ReadBatteryStatusAsync();
         
         if (batteryStatus is null)
         {
-            StatusText = "No device found";
+            StatusText = "No Pulsar mouse detected";
+            NoDeviceFound = true;
             IsLoading = false;
             return;
         }
@@ -383,6 +399,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         UpdateBatteryProperties(batteryStatus);
         StatusText = "Updated";
         HasInitialData = true;
+        NoDeviceFound = false;
         IsLoading = false;
 
         if (ShouldLogCurrentReading())
@@ -473,10 +490,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(propertyName);
         
         // Update visibility properties when loading state changes
-        if (propertyName == nameof(IsLoading) || propertyName == nameof(HasInitialData))
+        if (propertyName == nameof(IsLoading) || propertyName == nameof(HasInitialData) || propertyName == nameof(NoDeviceFound))
         {
             OnPropertyChanged(nameof(LoadingVisibility));
             OnPropertyChanged(nameof(ContentVisibility));
+            OnPropertyChanged(nameof(NoDeviceVisibility));
             OnPropertyChanged(nameof(RefreshingVisibility));
         }
         
