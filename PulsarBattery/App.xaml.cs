@@ -62,9 +62,13 @@ namespace PulsarBattery
                 _trayIcon?.Dispose();
             };
 
-            _window.Activate();
+            var startInTray = ShouldStartInTray(args);
+            if (!startInTray)
+            {
+                _window.Activate();
+            }
 
-            // Create tray icon only after WinUI window is activated.
+            // Create tray icon once the window exists (it can remain hidden on startup).
             _trayIcon = new TrayIconService();
             _trayIcon.Initialize(_window);
 
@@ -76,6 +80,34 @@ namespace PulsarBattery
             catch
             {
                 // ignore
+            }
+        }
+
+        private static bool ShouldStartInTray(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
+        {
+            try
+            {
+                var raw = args.Arguments ?? string.Empty;
+                if (raw.IndexOf("--background", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                    raw.IndexOf("--tray", StringComparison.OrdinalIgnoreCase) >= 0)
+                {
+                    return true;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            try
+            {
+                return Environment.GetCommandLineArgs().Any(static arg =>
+                    string.Equals(arg, "--background", StringComparison.OrdinalIgnoreCase) ||
+                    string.Equals(arg, "--tray", StringComparison.OrdinalIgnoreCase));
+            }
+            catch
+            {
+                return false;
             }
         }
     }
