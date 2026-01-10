@@ -7,7 +7,7 @@
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d"
-    Title="PulsarBattery">
+    Title="Pulsar Battery">
 
     <Window.SystemBackdrop>
         <MicaBackdrop Kind="Base" />
@@ -19,13 +19,23 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TitleBar x:Name="AppTitleBar" Title="Pulsar Battery">
+        <TitleBar 
+            x:Name="AppTitleBar" 
+            Title="Pulsar Battery"
+            Grid.Row="0"
+            Height="48"
+            MinHeight="48"
+            MaxHeight="48"
+            Background="Transparent"
+            BackgroundSizing="OuterBorderEdge">
             <TitleBar.IconSource>
-                <FontIconSource Glyph="&#xF4AA;" />
+                <ImageIconSource ImageSource="/Assets/StoreLogo.png" />
             </TitleBar.IconSource>
         </TitleBar>
 
-        <Grid Grid.Row="1">
+        <Grid 
+            Grid.Row="1" 
+            Background="Transparent">
             <NavigationView x:Name="NavView"
                             Grid.Row="1"
                             IsSettingsVisible="True"
@@ -42,7 +52,11 @@
                 </NavigationView.Resources>
 
                 <NavigationView.MenuItems>
-                    <NavigationViewItem x:Name="DashboardItem" Content="Dashboard" Icon="Home" Tag="dashboard" />
+                    <NavigationViewItem 
+                        x:Name="DashboardItem"
+                        Content="Dashboard" 
+                        Icon="Home" 
+                        Tag="dashboard" />
                     <NavigationViewItem Content="History">
                         <NavigationViewItem.Icon>
                             <FontIcon Glyph="&#xE81C;" />

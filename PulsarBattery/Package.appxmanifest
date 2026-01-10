@@ -17,7 +17,7 @@
   <mp:PhoneIdentity PhoneProductId="3c38726b-df57-4d27-b995-54cdca576d0a" PhonePublisherId="00000000-0000-0000-0000-000000000000"/>
 
   <Properties>
-    <DisplayName>PulsarBattery</DisplayName>
+    <DisplayName>Pulsar Battery</DisplayName>
     <PublisherDisplayName>darthsoup</PublisherDisplayName>
     <Logo>Assets\StoreLogo.png</Logo>
   </Properties>
