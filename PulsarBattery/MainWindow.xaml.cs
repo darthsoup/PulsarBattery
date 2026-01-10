@@ -22,7 +22,7 @@ namespace PulsarBattery
             ExtendsContentIntoTitleBar = true;
             SetTitleBar(AppTitleBar);
 
-            SetDefaultWindowSize();
+            EnsureAppWindowInitialized();
 
             var iconSource = TrayIconService.CreateTitleBarIconSource();
             if (iconSource is not null)
@@ -45,12 +45,18 @@ namespace PulsarBattery
         {
             if (args.WindowActivationState != WindowActivationState.Deactivated)
             {
+                EnsureAppWindowInitialized();
                 _viewModel.RefreshNow();
             }
         }
 
-        private void SetDefaultWindowSize()
+        private void EnsureAppWindowInitialized()
         {
+            if (_appWindow is not null)
+            {
+                return;
+            }
+
             try
             {
                 var hwnd = WindowNative.GetWindowHandle(this);

@@ -33,3 +33,18 @@ From CLI:
 dotnet publish .\PulsarBattery\PulsarBattery.csproj -c Release -p:Platform=x64 -p:PublishProfile=win-x64
 ```
 Output is in `PulsarBattery\bin\Publish\win-x64\` with `PulsarBattery.exe`.
+
+## Startup (tray only)
+
+To start the app in the background (tray only) without opening the window:
+
+```
+PulsarBattery.exe --background
+```
+
+If you want it to run on login, create a shortcut in the Windows Startup folder and add `--background` (or `--tray`) to the shortcut target.
+
+Startup folder:
+```
+%APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup
+```
