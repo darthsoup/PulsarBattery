@@ -205,6 +205,10 @@ internal sealed class TrayIconService : IDisposable
 
         public void Execute(object? parameter) => execute();
 
-        public event EventHandler? CanExecuteChanged;
+        event EventHandler? ICommand.CanExecuteChanged
+        {
+            add { }
+            remove { }
+        }
     }
 }
