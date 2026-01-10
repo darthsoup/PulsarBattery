@@ -102,7 +102,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string ChargingStateText => IsCharging ? "Charging" : "Not charging";
 
     public string LastUpdatedText => _lastUpdated.HasValue
-        ? $"Last updated: {_lastUpdated.Value.ToString("T", CultureInfo.CurrentCulture)}"
+        ? _lastUpdated.Value.ToString("T", CultureInfo.CurrentCulture)
         : "No data yet";
 
     public static double GlobalPollIntervalMinutes { get; private set; } = DefaultPollIntervalMinutes;
