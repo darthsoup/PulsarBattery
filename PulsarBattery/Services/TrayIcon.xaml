@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="PulsarBattery.Services.TrayIcon"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:tb="using:H.NotifyIcon"
+    xmlns:converters="using:PulsarBattery.Converters">
+
+    <UserControl.Resources>
+        <!-- Converters -->
+        <converters:BatteryPercentageConverter x:Key="BatteryPercentageConverter"/>
+        <converters:ChargingStatusConverter x:Key="ChargingStatusConverter"/>
+        <converters:BatteryTooltipConverter x:Key="BatteryTooltipConverter"/>
+    </UserControl.Resources>
+
+    <!-- TaskbarIcon -->
+    <tb:TaskbarIcon 
+        x:Name="TaskbarIcon"
+        ToolTipText="{Binding BatteryPercentage, Converter={StaticResource BatteryTooltipConverter}}"
+        IconSource="ms-appx:///Assets/icon.ico"
+        ContextMenuMode="SecondWindow"
+        NoLeftClickDelay="True">
+        
+        <tb:TaskbarIcon.ContextFlyout>
+            <MenuFlyout AreOpenCloseAnimationsEnabled="False">
+                <!-- Battery Status -->
+                <MenuFlyoutItem 
+                    Text="{Binding BatteryPercentage, Converter={StaticResource BatteryPercentageConverter}}"
+                    IsEnabled="False">
+                    <MenuFlyoutItem.Icon>
+                        <FontIcon Glyph="&#xEBAA;" FontFamily="Segoe Fluent Icons"/>
+                    </MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                
+                <!-- Charging Status -->
+                <MenuFlyoutItem 
+                    Text="{Binding IsCharging, Converter={StaticResource ChargingStatusConverter}}"
+                    IsEnabled="False">
+                    <MenuFlyoutItem.Icon>
+                        <FontIcon Glyph="&#xEBAB;" FontFamily="Segoe Fluent Icons"/>
+                    </MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+                
+                <MenuFlyoutSeparator/>
+                
+                <!-- Open Command -->
+                <MenuFlyoutItem 
+                    Text="Open"
+                    x:Name="OpenMenuItem">
+                    <MenuFlyoutItem.Icon>
+                        <FontIcon Glyph="&#xE8A7;" FontFamily="Segoe Fluent Icons"/>
+                    </MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+
+                <!-- Exit Command -->
+                <MenuFlyoutItem 
+                    Text="Exit"
+                    x:Name="ExitMenuItem">
+                    <MenuFlyoutItem.Icon>
+                        <FontIcon Glyph="&#xE8BB;" FontFamily="Segoe Fluent Icons"/>
+                    </MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+            </MenuFlyout>
+        </tb:TaskbarIcon.ContextFlyout>
+    </tb:TaskbarIcon>
+
+</UserControl>

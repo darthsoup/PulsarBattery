@@ -1,10 +1,9 @@
+using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using PulsarBattery.Pages;
-using PulsarBattery.Services;
 using PulsarBattery.ViewModels;
-using System;
 using WinRT.Interop;
 
 namespace PulsarBattery
@@ -15,20 +14,23 @@ namespace PulsarBattery
         private AppWindow? _appWindow;
         private bool _isResizing;
 
+        internal MainViewModel ViewModel => _viewModel;
+
         public MainWindow()
         {
             InitializeComponent();
-
             ExtendsContentIntoTitleBar = true;
             SetTitleBar(AppTitleBar);
 
-            EnsureAppWindowInitialized();
+            AppWindow.TitleBar.PreferredTheme = Microsoft.UI.Windowing.TitleBarTheme.UseDefaultAppMode;
+            AppWindow.TitleBar.PreferredHeightOption = Microsoft.UI.Windowing.TitleBarHeightOption.Tall;
+            AppWindow.TitleBar.BackgroundColor = Colors.Transparent;
+            AppWindow.TitleBar.ButtonBackgroundColor = Colors.Transparent;
+            AppWindow.TitleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
+            AppWindow.TitleBar.InactiveBackgroundColor = Colors.Transparent;
+            AppWindow.SetIcon("Assets/icon.ico");
 
-            var iconSource = TrayIconService.CreateTitleBarIconSource();
-            if (iconSource is not null)
-            {
-                AppTitleBar.IconSource = iconSource;
-            }
+            EnsureAppWindowInitialized();
 
             RootGrid.DataContext = _viewModel;
             _viewModel.Start();

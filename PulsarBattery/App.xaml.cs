@@ -15,7 +15,7 @@ namespace PulsarBattery
 
         private Window? _window;
         private readonly BatteryMonitor _monitor = new();
-        private TrayIconService? _trayIcon;
+        private TrayIcon? _trayIcon;
 
         public App()
         {
@@ -69,8 +69,15 @@ namespace PulsarBattery
             }
 
             // Create tray icon once the window exists (it can remain hidden on startup).
-            _trayIcon = new TrayIconService();
-            _trayIcon.Initialize(_window);
+            _trayIcon = new TrayIcon();
+            if (_window is MainWindow mainWindow)
+            {
+                _trayIcon.Initialize(_window, mainWindow.ViewModel);
+            }
+            else
+            {
+                _trayIcon.Initialize(_window);
+            }
 
             // Some WinUI scenarios require an explicit creation call.
             try
