@@ -98,8 +98,9 @@ internal sealed class HistoryStore
 
     private void ReplaceFileWithTemporary(string temporaryFilePath)
     {
-        File.Copy(temporaryFilePath, _filePath, overwrite: true);
-        File.Delete(temporaryFilePath);
+        // Use File.Move instead of Copy + Delete for better performance
+        // Move is atomic and more efficient
+        File.Move(temporaryFilePath, _filePath, overwrite: true);
     }
 
     private void EnsureDirectoryExists()
