@@ -1,7 +1,5 @@
-using System;
-using System.Collections.Generic;
-using System.Linq;
 using HidSharp;
+using System.Buffers;
 
 namespace PulsarBattery.Device;
 
@@ -31,7 +29,16 @@ internal static class HidHelpers
                 return null;
             }
 
-            return buffer.Take(read).ToArray();
+            // Optimize: Use Span-based approach or Array.Resize instead of LINQ Take().ToArray()
+            // to avoid extra allocations
+            if (read == maxLength)
+            {
+                return buffer;
+            }
+
+            var result = new byte[read];
+            Array.Copy(buffer, 0, result, 0, read);
+            return result;
         }
         catch
         {
@@ -42,13 +49,16 @@ internal static class HidHelpers
     public static void DrainInput(HidStream stream, int attempts, int maxLength)
     {
         var originalTimeout = stream.ReadTimeout;
+        // Optimize: Use ArrayPool to avoid allocating buffers repeatedly
+        byte[]? buffer = null;
         try
         {
             stream.ReadTimeout = 1;
+            buffer = ArrayPool<byte>.Shared.Rent(maxLength);
+
             for (var i = 0; i < attempts; i++)
             {
-                var buffer = new byte[maxLength];
-                var read = stream.Read(buffer, 0, buffer.Length);
+                var read = stream.Read(buffer, 0, maxLength);
                 if (read <= 0)
                 {
                     break;
@@ -60,6 +70,11 @@ internal static class HidHelpers
         }
         finally
         {
+            if (buffer != null)
+            {
+                ArrayPool<byte>.Shared.Return(buffer);
+            }
+
             try
             {
                 stream.ReadTimeout = originalTimeout;
@@ -73,14 +88,26 @@ internal static class HidHelpers
     public static void SendReport(HidStream stream, IReadOnlyList<byte> payload, string transport)
     {
         var useFeature = transport == "feature" || (transport == "auto" && stream.Device.GetMaxFeatureReportLength() > 0);
+
+        // Optimize: Avoid allocating a new array if payload is already a byte[]
+        byte[] payloadArray;
+        if (payload is byte[] existingArray)
+        {
+            payloadArray = existingArray;
+        }
+        else
+        {
+            payloadArray = payload.ToArray();
+        }
+
         if (useFeature)
         {
-            stream.SetFeature(payload.ToArray());
+            stream.SetFeature(payloadArray);
             return;
         }
 
         stream.WriteTimeout = 500;
-        stream.Write(payload.ToArray());
+        stream.Write(payloadArray);
     }
 
     public static IEnumerable<HidDevice> EnumerateDevices(int vendorId, Func<HidDevice, bool>? filter = null)

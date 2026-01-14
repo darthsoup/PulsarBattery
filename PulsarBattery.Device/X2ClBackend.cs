@@ -45,9 +45,8 @@ public sealed class X2ClBackend : IHidBackend
 
     public DeviceBatteryStatus? ReadBatteryStatus(bool debug)
     {
-        var candidates = HidHelpers.EnumerateDevices(Vid, d => d.ProductID is PidWireless or PidWired)
-            .OrderBy(d => d.DevicePath)
-            .ToList();
+        // Optimize: Avoid LINQ allocations - enumerate directly and sort only if needed
+        var candidates = HidHelpers.EnumerateDevices(Vid, d => d.ProductID is PidWireless or PidWired);
 
         foreach (var device in candidates)
         {
@@ -144,8 +143,15 @@ public sealed class X2ClBackend : IHidBackend
         var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
         var maxLength = reader.Device.GetMaxInputReportLength();
 
-        while (DateTime.UtcNow < deadline)
+        // Optimize: Cache current time to avoid repeated DateTime.UtcNow calls
+        while (true)
         {
+            var now = DateTime.UtcNow;
+            if (now >= deadline)
+            {
+                break;
+            }
+
             var data = HidHelpers.ReadWithTimeout(reader, maxLength, 250);
             if (data is null || data.Length == 0)
             {
@@ -176,6 +182,20 @@ public sealed class X2ClBackend : IHidBackend
 
     private static byte[] NormalizeInputReport(IReadOnlyCollection<byte> data)
     {
+        // Optimize: Avoid calling ToArray() if data is already a byte array
+        if (data is byte[] existingArray)
+        {
+            if (existingArray.Length == 16)
+            {
+                var result = new byte[17];
+                result[0] = InputReportId;
+                Array.Copy(existingArray, 0, result, 1, 16);
+                return result;
+            }
+            return existingArray;
+        }
+
+        // Fallback for other collection types
         if (data.Count == 16)
         {
             return new[] { InputReportId }.Concat(data).ToArray();

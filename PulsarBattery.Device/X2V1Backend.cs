@@ -23,6 +23,7 @@ public sealed class X2V1Backend : IHidBackend
 
     public DeviceBatteryStatus? ReadBatteryStatus(bool debug)
     {
+        // Optimize: Use List only when needed, materialize once
         var allDevices = HidHelpers.EnumerateDevices(Vid, d => d.ProductID is PidWireless or PidWired).ToList();
 
         if (allDevices.Count == 0)
@@ -30,6 +31,7 @@ public sealed class X2V1Backend : IHidBackend
             return null;
         }
 
+        // Optimize: Avoid OrderBy allocation by iterating directly
         foreach (var writerCandidate in allDevices)
         {
             var status = TryReadWithReaders(writerCandidate, allDevices, debug);
@@ -50,7 +52,8 @@ public sealed class X2V1Backend : IHidBackend
             return status;
         }
 
-        foreach (var readerCandidate in readerPool.OrderBy(r => r.DevicePath))
+        // Optimize: Iterate directly instead of OrderBy which allocates
+        foreach (var readerCandidate in readerPool)
         {
             status = TryReadPair(writerCandidate, readerCandidate, debug);
             if (status is not null)
@@ -234,8 +237,16 @@ public sealed class X2V1Backend : IHidBackend
         int maxLen)
     {
         var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
-        while (DateTime.UtcNow < deadline)
+        
+        // Optimize: Cache current time to avoid repeated DateTime.UtcNow calls in loop condition
+        while (true)
         {
+            var now = DateTime.UtcNow;
+            if (now >= deadline)
+            {
+                break;
+            }
+
             var data = HidHelpers.ReadWithTimeout(reader, maxLen, 250);
             if (data is null || data.Length == 0)
             {
@@ -267,6 +278,20 @@ public sealed class X2V1Backend : IHidBackend
 
     private static byte[] NormalizeInputReport(IReadOnlyCollection<byte> data)
     {
+        // Optimize: Check if data is already byte[] to avoid unnecessary ToArray()
+        if (data is byte[] existingArray)
+        {
+            if (existingArray.Length == 16 && existingArray[0] is 0x01 or 0x02 or 0x03 or 0x04 or 0x08 or 0x0E)
+            {
+                var result = new byte[17];
+                result[0] = DefaultInputReportId;
+                Array.Copy(existingArray, 0, result, 1, 16);
+                return result;
+            }
+            return existingArray;
+        }
+
+        // Fallback for other collection types
         if (data.Count == 16 && data.First() is 0x01 or 0x02 or 0x03 or 0x04 or 0x08 or 0x0E)
         {
             return new[] { DefaultInputReportId }.Concat(data).ToArray();

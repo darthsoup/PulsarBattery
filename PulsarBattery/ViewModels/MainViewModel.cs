@@ -25,6 +25,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private const double DefaultAlertCooldownMinutes = 20.0;
     private const string DefaultModelName = "-";
     private const string InitialStatusText = "Ready";
+    private const string ChargingText = "Charging";
+    private const string NotChargingText = "Not charging";
+    private const string NoDataYetText = "No data yet";
 
     private readonly PulsarBatteryReader _batteryReader;
     private readonly HistoryStore _historyStore;
@@ -43,6 +46,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool _isCharging;
     private string _modelName;
     private DateTimeOffset? _lastUpdated;
+    private string _cachedLastUpdatedText;
     private double _pollIntervalMinutes;
     private double _logIntervalMinutes;
     private int _alertThresholdUnlockedPercent;
@@ -99,11 +103,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _modelName, value);
     }
 
-    public string ChargingStateText => IsCharging ? "Charging" : "Not charging";
+    public string ChargingStateText => IsCharging ? ChargingText : NotChargingText;
 
-    public string LastUpdatedText => _lastUpdated.HasValue
-        ? _lastUpdated.Value.ToString("T", CultureInfo.CurrentCulture)
-        : "No data yet";
+    // Optimize: Cache the string instead of formatting on every property access
+    public string LastUpdatedText => _cachedLastUpdatedText;
 
     public static double GlobalPollIntervalMinutes { get; private set; } = DefaultPollIntervalMinutes;
 
@@ -204,6 +207,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _batteryUpdateLock = new SemaphoreSlim(1, 1);
         _lastLoggedTime = DateTimeOffset.MinValue;
         _modelName = DefaultModelName;
+        _cachedLastUpdatedText = NoDataYetText;
 
         var settings = AppSettingsService.Current;
         _pollIntervalMinutes = settings.PollIntervalMinutes <= 0 ? DefaultPollIntervalMinutes : settings.PollIntervalMinutes;
@@ -315,6 +319,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
                     IsCharging = mostRecent.IsCharging;
                     ModelName = mostRecent.Model;
                     _lastUpdated = mostRecent.Timestamp;
+                    _cachedLastUpdatedText = _lastUpdated.Value.ToString("T", CultureInfo.CurrentCulture);
                     HasInitialData = true;
                     OnPropertyChanged(nameof(ChargingStateText));
                     OnPropertyChanged(nameof(LastUpdatedText));
@@ -424,6 +429,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         IsCharging = status.IsCharging;
         ModelName = status.Model;
         _lastUpdated = DateTimeOffset.Now;
+        
+        // Update cached timestamp text to avoid repeated ToString() calls
+        _cachedLastUpdatedText = _lastUpdated.Value.ToString("T", CultureInfo.CurrentCulture);
         
         OnPropertyChanged(nameof(ChargingStateText));
         OnPropertyChanged(nameof(LastUpdatedText));

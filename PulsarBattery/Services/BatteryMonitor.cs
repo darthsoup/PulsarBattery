@@ -47,16 +47,18 @@ public sealed class BatteryMonitor : IDisposable
 
         while (!cancellationToken.IsCancellationRequested)
         {
+            // Optimize: Cache current time to avoid multiple UtcNow calls
+            var currentTime = DateTimeOffset.UtcNow;
             var isWorkstationLocked = await ConfirmWorkstationIsLockedAsync(cancellationToken);
 
             if (isWorkstationLocked)
             {
-                await HandleLockedWorkstationAsync(lastUnlockedTime, cancellationToken);
+                await HandleLockedWorkstationAsync(lastUnlockedTime, currentTime, cancellationToken);
             }
             else
             {
-                lastUnlockedTime = DateTimeOffset.UtcNow;
-                lastCheckTime = await HandleUnlockedWorkstationAsync(lastCheckTime, cancellationToken);
+                lastUnlockedTime = currentTime;
+                lastCheckTime = await HandleUnlockedWorkstationAsync(lastCheckTime, currentTime, cancellationToken);
             }
 
             await Task.Delay(TimeSpan.FromSeconds(MonitoringLoopDelaySeconds), cancellationToken);
@@ -70,30 +72,30 @@ public sealed class BatteryMonitor : IDisposable
         return isLocked && IsWorkstationLocked();
     }
 
-    private async Task HandleLockedWorkstationAsync(DateTimeOffset lastUnlockedTime, CancellationToken cancellationToken)
+    private async Task HandleLockedWorkstationAsync(DateTimeOffset lastUnlockedTime, DateTimeOffset currentTime, CancellationToken cancellationToken)
     {
-        if (IsWithinPostLockMonitoringWindow(lastUnlockedTime))
+        if (IsWithinPostLockMonitoringWindow(lastUnlockedTime, currentTime))
         {
             var threshold = AppSettingsService.Current.AlertThresholdLockedPercent;
             await CheckBatteryStatusAsync(threshold, cancellationToken);
         }
     }
 
-    private bool IsWithinPostLockMonitoringWindow(DateTimeOffset lastUnlockedTime)
+    private bool IsWithinPostLockMonitoringWindow(DateTimeOffset lastUnlockedTime, DateTimeOffset currentTime)
     {
-        var timeSinceUnlock = DateTimeOffset.UtcNow - lastUnlockedTime;
+        var timeSinceUnlock = currentTime - lastUnlockedTime;
         return timeSinceUnlock < TimeSpan.FromSeconds(PostLockMonitoringWindowSeconds);
     }
 
-    private async Task<DateTimeOffset> HandleUnlockedWorkstationAsync(DateTimeOffset lastCheckTime, CancellationToken cancellationToken)
+    private async Task<DateTimeOffset> HandleUnlockedWorkstationAsync(DateTimeOffset lastCheckTime, DateTimeOffset currentTime, CancellationToken cancellationToken)
     {
         var pollInterval = GetCurrentPollInterval();
 
-        if (ShouldCheckBatteryStatus(lastCheckTime, pollInterval))
+        if (ShouldCheckBatteryStatus(lastCheckTime, currentTime, pollInterval))
         {
             var threshold = AppSettingsService.Current.AlertThresholdUnlockedPercent;
             await CheckBatteryStatusAsync(threshold, cancellationToken);
-            return DateTimeOffset.UtcNow;
+            return currentTime;
         }
 
         return lastCheckTime;
@@ -105,9 +107,9 @@ public sealed class BatteryMonitor : IDisposable
         return TimeSpan.FromMinutes(intervalMinutes);
     }
 
-    private bool ShouldCheckBatteryStatus(DateTimeOffset lastCheckTime, TimeSpan interval)
+    private bool ShouldCheckBatteryStatus(DateTimeOffset lastCheckTime, DateTimeOffset currentTime, TimeSpan interval)
     {
-        var timeSinceLastCheck = DateTimeOffset.UtcNow - lastCheckTime;
+        var timeSinceLastCheck = currentTime - lastCheckTime;
         return timeSinceLastCheck >= interval;
     }
 
@@ -158,19 +160,21 @@ public sealed class BatteryMonitor : IDisposable
 
     private bool IsLowBatteryAlertAllowed()
     {
+        // Optimize: Cache current time to avoid multiple UtcNow calls
+        var now = DateTimeOffset.UtcNow;
         var cooldownMinutes = AppSettingsService.Current.AlertCooldownMinutes;
         var cooldown = TimeSpan.FromMinutes(Math.Max(0, cooldownMinutes));
 
         if (_lastLowBatteryAlertAt is null)
         {
-            _lastLowBatteryAlertAt = DateTimeOffset.UtcNow;
+            _lastLowBatteryAlertAt = now;
             return true;
         }
 
-        var timeSinceLastAlert = DateTimeOffset.UtcNow - _lastLowBatteryAlertAt.Value;
+        var timeSinceLastAlert = now - _lastLowBatteryAlertAt.Value;
         if (timeSinceLastAlert >= cooldown)
         {
-            _lastLowBatteryAlertAt = DateTimeOffset.UtcNow;
+            _lastLowBatteryAlertAt = now;
             return true;
         }
 
