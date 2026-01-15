@@ -251,6 +251,43 @@
                     </Border>
                 </StackPanel>
 
+                <!-- Window Behavior Section -->
+                <StackPanel Spacing="4">
+                    <TextBlock Text="Window Behavior" 
+                               Style="{ThemeResource BodyStrongTextBlockStyle}"
+                               Margin="0,0,0,8" />
+
+                    <!-- Close button behavior card -->
+                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
+                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
+                            BorderThickness="1"
+                            CornerRadius="4"
+                            Padding="16">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" Spacing="2">
+                                <TextBlock Text="Minimize to tray on close" 
+                                           Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                <TextBlock Text="When enabled, clicking the window close button minimizes to system tray. When disabled, the application will exit." 
+                                           Style="{ThemeResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+
+                            <ToggleSwitch Grid.Column="1"
+                                          IsOn="{Binding MinimizeToTrayOnClose, Mode=TwoWay}"
+                                          OnContent="On"
+                                          OffContent="Off"
+                                          VerticalAlignment="Center"
+                                          HorizontalAlignment="Right" />
+                        </Grid>
+                    </Border>
+                </StackPanel>
+
             </StackPanel>
 
             <!-- Focus sink to clear NumberBox focus when clicking on non-focusable areas -->

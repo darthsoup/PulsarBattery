@@ -85,15 +85,21 @@ namespace PulsarBattery
                 return;
             }
 
-            args.Cancel = true;
+            // Check if minimize to tray on close is enabled
+            var shouldMinimizeToTray = Services.AppSettingsService.Current.MinimizeToTrayOnClose;
 
-            try
+            if (shouldMinimizeToTray)
             {
-                sender.Hide();
-            }
-            catch
-            {
-                // ignore
+                args.Cancel = true;
+
+                try
+                {
+                    sender.Hide();
+                }
+                catch
+                {
+                    // ignore
+                }
             }
         }
 

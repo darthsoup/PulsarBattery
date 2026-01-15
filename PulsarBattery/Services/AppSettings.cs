@@ -16,6 +16,8 @@ internal sealed record AppSettings
 
     public double AlertCooldownMinutes { get; init; } = 20.0;
 
+    public bool MinimizeToTrayOnClose { get; init; } = true;
+
     public static AppSettings CreateDefaultsFromEnvironment()
     {
         return new AppSettings

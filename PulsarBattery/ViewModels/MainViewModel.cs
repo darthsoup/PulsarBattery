@@ -49,6 +49,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private int _alertThresholdLockedPercent;
     private bool _enableBeeps;
     private double _alertCooldownMinutes;
+    private bool _minimizeToTrayOnClose;
     private string _statusText;
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -186,6 +187,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool MinimizeToTrayOnClose
+    {
+        get => _minimizeToTrayOnClose;
+        set
+        {
+            if (SetProperty(ref _minimizeToTrayOnClose, value))
+            {
+                AppSettingsService.Update(settings => settings with { MinimizeToTrayOnClose = value });
+            }
+        }
+    }
+
     public string StatusText
     {
         get => _statusText;
@@ -212,6 +225,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _alertThresholdLockedPercent = settings.AlertThresholdLockedPercent <= 0 ? DefaultLockedAlertThresholdPercent : settings.AlertThresholdLockedPercent;
         _enableBeeps = settings.EnableBeeps;
         _alertCooldownMinutes = settings.AlertCooldownMinutes < 0 ? DefaultAlertCooldownMinutes : settings.AlertCooldownMinutes;
+        _minimizeToTrayOnClose = settings.MinimizeToTrayOnClose;
 
         _statusText = InitialStatusText;
         History = new ObservableCollection<BatteryReading>();
