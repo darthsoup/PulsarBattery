@@ -2,6 +2,12 @@
 
 This project is a simple battery level indicator for Pulsar mice using the hidapi library. It provides a visual representation of the battery status and alerts the user when the battery is low.
 
+![alt text](screenshot.jpg)
+
+## Inspiration
+
+This project is inspired by https://github.com/jonkristian/pulsar-x3-python/
+
 ## Supported Devices
 
 - X2 CrazyLight
@@ -48,3 +54,17 @@ Startup folder:
 ```
 %APPDATA%\Microsoft\Windows\Start Menu\Programs\Startup
 ```
+
+## Related Projects
+
+This project is a .NET split-off of https://github.com/Elehiggle/SimplePulsarBatteryNotification.
+
+That project also documents how the mouse was debugged to determine the data format.
+
+## Contributing
+
+Contributions are welcome! If you find any issues or have suggestions for improvements, please open an issue or submit a pull request.
+
+## License
+
+This project is licensed under the MIT License. See LICENSE.md for details.
