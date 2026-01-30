@@ -12,7 +12,7 @@
         <converters:DoubleToIntConverter x:Key="DoubleToIntConverter" />
     </Page.Resources>
 
-    <ScrollViewer x:Name="RootScrollViewer">
+    <ScrollViewer x:Name="RootScrollViewer" HorizontalScrollBarVisibility="Disabled">
         <Grid x:Name="RootGrid"
               Padding="32,24,32,32"
               Background="Transparent"
@@ -26,10 +26,7 @@
                                Margin="0,0,0,8" />
 
                     <!-- Battery check interval card -->
-                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="4"
+                    <Border Style="{StaticResource PulsarCardStyle}"
                             Padding="16"
                             Margin="0,0,0,2">
                         <Grid>
@@ -66,10 +63,7 @@
                     </Border>
 
                     <!-- Log interval card -->
-                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="4"
+                    <Border Style="{StaticResource PulsarCardStyle}"
                             Padding="16"
                             Margin="0,0,0,2">
                         <Grid>
@@ -113,10 +107,7 @@
                                Margin="0,0,0,8" />
 
                     <!-- Low battery alert settings -->
-                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="4"
+                    <Border Style="{StaticResource PulsarCardStyle}"
                             Padding="16"
                             Margin="0,0,0,2">
                         <StackPanel Spacing="12">
@@ -215,10 +206,7 @@
                     </Border>
 
                     <!-- Notification settings card -->
-                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="4"
+                    <Border Style="{StaticResource PulsarCardStyle}"
                             Padding="16">
                         <StackPanel Spacing="12">
                             <StackPanel Spacing="2">
@@ -258,10 +246,7 @@
                                Margin="0,0,0,8" />
 
                     <!-- Close button behavior card -->
-                    <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                            BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                            BorderThickness="1"
-                            CornerRadius="4"
+                    <Border Style="{StaticResource PulsarCardStyle}"
                             Padding="16">
                         <Grid>
                             <Grid.ColumnDefinitions>

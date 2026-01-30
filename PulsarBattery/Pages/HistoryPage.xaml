@@ -8,7 +8,7 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <ScrollViewer>
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
         <Grid Padding="32,24,32,32">
             <StackPanel Spacing="16" MaxWidth="1000">
 
@@ -33,22 +33,18 @@
                           IsItemClickEnabled="False"
                           Background="Transparent"
                           Padding="0">
-                    
                     <ListView.ItemContainerStyle>
                         <Style TargetType="ListViewItem">
                             <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                             <Setter Property="Padding" Value="0" />
-                            <Setter Property="Margin" Value="0,0,0,2" />
+                            <Setter Property="Margin" Value="0,0,0,8" />
                             <Setter Property="MinHeight" Value="0" />
                         </Style>
                     </ListView.ItemContainerStyle>
                     
                     <ListView.ItemTemplate>
                         <DataTemplate x:DataType="models:BatteryReading">
-                            <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                    BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                    BorderThickness="1"
-                                    CornerRadius="4"
+                            <Border Style="{StaticResource PulsarCardStyle}"
                                     Padding="16">
                                 <Grid ColumnSpacing="16">
                                     <Grid.ColumnDefinitions>
@@ -117,10 +113,7 @@
                 </ListView>
 
                 <!-- Empty state -->
-                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                        BorderThickness="1"
-                        CornerRadius="4"
+                <Border Style="{StaticResource PulsarCardStyle}"
                         Padding="60,80"
                         MinHeight="300"
                         Visibility="{Binding HistoryEmptyVisibility}">

@@ -7,15 +7,12 @@
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
-    <ScrollViewer>
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
         <Grid Padding="32,24,32,32">
             <StackPanel Spacing="24" MaxWidth="1000">
 
                 <!-- Loading indicator (shown when no data is available yet) -->
-                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                        BorderThickness="1"
-                        CornerRadius="4"
+                <Border Style="{StaticResource PulsarCardStyle}"
                         Padding="40"
                         MinHeight="200"
                         Visibility="{Binding LoadingVisibility}">
@@ -36,10 +33,7 @@
                 </Border>
 
                 <!-- No Device Found indicator -->
-                <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                        BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                        BorderThickness="1"
-                        CornerRadius="4"
+                <Border Style="{StaticResource PulsarCardStyle}"
                         Padding="40"
                         MinHeight="300"
                         Visibility="{Binding NoDeviceVisibility}">
@@ -103,10 +97,7 @@
                         </StackPanel>
 
                         <!-- Main battery card -->
-                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                BorderThickness="1"
-                                CornerRadius="4"
+                        <Border Style="{StaticResource PulsarCardStyle}"
                                 Padding="16"
                                 MinHeight="120">
                             <Grid>
@@ -160,10 +151,7 @@
                                    Margin="0,0,0,8" />
 
                         <!-- Model -->
-                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                BorderThickness="1"
-                                CornerRadius="4"
+                        <Border Style="{StaticResource PulsarCardStyle}"
                                 Padding="16"
                                 Margin="0,0,0,2">
                             <Grid ColumnSpacing="12">
@@ -174,7 +162,7 @@
                                 </Grid.ColumnDefinitions>
 
                                 <FontIcon Grid.Column="0"
-                                          Glyph="&#xE8D4;" 
+                                          Glyph="&#xE7C1;" 
                                           FontSize="16"
                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                           VerticalAlignment="Center" />
@@ -194,10 +182,7 @@
                         </Border>
 
                         <!-- Battery Level -->
-                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                BorderThickness="1"
-                                CornerRadius="4"
+                        <Border Style="{StaticResource PulsarCardStyle}"
                                 Padding="16"
                                 Margin="0,0,0,2">
                             <Grid ColumnSpacing="12">
@@ -208,7 +193,7 @@
                                 </Grid.ColumnDefinitions>
 
                                 <FontIcon Grid.Column="0"
-                                          Glyph="&#xE83F;" 
+                                          Glyph="&#xE850;" 
                                           FontSize="16"
                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                           VerticalAlignment="Center" />
@@ -228,10 +213,7 @@
                         </Border>
 
                         <!-- Charging Status -->
-                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                BorderThickness="1"
-                                CornerRadius="4"
+                        <Border Style="{StaticResource PulsarCardStyle}"
                                 Padding="16"
                                 Margin="0,0,0,2">
                             <Grid ColumnSpacing="12">
@@ -242,7 +224,7 @@
                                 </Grid.ColumnDefinitions>
 
                                 <FontIcon Grid.Column="0"
-                                          Glyph="&#xEBAA;" 
+                                          Glyph="&#xE7E8;" 
                                           FontSize="16"
                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                           VerticalAlignment="Center" />
@@ -261,10 +243,7 @@
                         </Border>
 
                         <!-- Last Updated -->
-                        <Border Background="{ThemeResource CardBackgroundFillColorDefaultBrush}"
-                                BorderBrush="{ThemeResource CardStrokeColorDefaultBrush}"
-                                BorderThickness="1"
-                                CornerRadius="4"
+                        <Border Style="{StaticResource PulsarCardStyle}"
                                 Padding="16"
                                 Margin="0,0,0,2">
                             <Grid ColumnSpacing="12">
@@ -275,7 +254,7 @@
                                 </Grid.ColumnDefinitions>
 
                                 <FontIcon Grid.Column="0"
-                                          Glyph="&#xE8DF;" 
+                                          Glyph="&#xE917;" 
                                           FontSize="16"
                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                           VerticalAlignment="Center" />
