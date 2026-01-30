@@ -14,21 +14,41 @@
 
                 <!-- History Section Header -->
                 <Grid Margin="0,0,0,8">
-                    <TextBlock Text="Battery history" 
-                               Style="{ThemeResource BodyStrongTextBlockStyle}"
-                               VerticalAlignment="Center" />
-                    
-                    <TextBlock HorizontalAlignment="Right"
-                               VerticalAlignment="Center"
-                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                               Style="{ThemeResource CaptionTextBlockStyle}">
-                        <Run Text="{Binding History.Count}" />
-                        <Run Text=" entries" />
-                    </TextBlock>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel Spacing="4"
+                                VerticalAlignment="Center">
+                        <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                   Style="{ThemeResource CaptionTextBlockStyle}">
+                            <Run Text="{Binding History.Count}" />
+                            <Run Text="entries" />
+                        </TextBlock>
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1"
+                                Orientation="Horizontal"
+                                Spacing="8"
+                                VerticalAlignment="Center">
+                        <Button Content="Previous"
+                                Click="PreviousPage_Click"
+                                IsEnabled="{Binding CanGoToPreviousHistoryPage}" />
+                        <TextBlock Text="{Binding HistoryPageText}"
+                                   Style="{ThemeResource CaptionTextBlockStyle}"
+                                   VerticalAlignment="Center"
+                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        <Button Content="Next"
+                                Click="NextPage_Click"
+                                IsEnabled="{Binding CanGoToNextHistoryPage}" />
+                        <Button Content="Clear"
+                                Click="ClearHistory_Click" />
+                    </StackPanel>
                 </Grid>
 
                 <!-- History List -->
-                <ListView ItemsSource="{Binding History}"
+                <ListView ItemsSource="{Binding PagedHistory}"
                           SelectionMode="None"
                           IsItemClickEnabled="False"
                           Background="Transparent"
@@ -111,6 +131,7 @@
                         </DataTemplate>
                     </ListView.ItemTemplate>
                 </ListView>
+
 
                 <!-- Empty state -->
                 <Border Style="{StaticResource PulsarCardStyle}"

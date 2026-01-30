@@ -8,6 +8,7 @@ using System.Collections.ObjectModel;
 using System.ComponentModel;
 using System.Globalization;
 using System.Runtime.CompilerServices;
+using System.Linq;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -16,6 +17,7 @@ namespace PulsarBattery.ViewModels;
 public sealed class MainViewModel : INotifyPropertyChanged
 {
     private const int MaxHistoryEntries = 500;
+    private const int DefaultHistoryPageSize = 50;
     private const double MinimumPollIntervalMinutes = 0.1;
     private const double HistorySaveIntervalSeconds = 15.0;
     private const double DefaultPollIntervalMinutes = 1.0;
@@ -51,10 +53,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private double _alertCooldownMinutes;
     private bool _minimizeToTrayOnClose;
     private string _statusText;
+    private int _currentHistoryPage;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
     public ObservableCollection<BatteryReading> History { get; }
+
+    public ObservableCollection<BatteryReading> PagedHistory { get; }
 
     public bool IsLoading
     {
@@ -207,6 +212,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public Visibility HistoryEmptyVisibility => History.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
+    public int CurrentHistoryPage => _currentHistoryPage;
+
+    public int HistoryPageCount => Math.Max(1, (int)Math.Ceiling(History.Count / (double)DefaultHistoryPageSize));
+
+    public string HistoryPageText => $"{CurrentHistoryPage} / {HistoryPageCount}";
+
+    public bool CanGoToPreviousHistoryPage => CurrentHistoryPage > 1;
+
+    public bool CanGoToNextHistoryPage => CurrentHistoryPage < HistoryPageCount;
+
     public MainViewModel()
     {
         _batteryReader = new PulsarBatteryReader();
@@ -229,13 +244,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         _statusText = InitialStatusText;
         History = new ObservableCollection<BatteryReading>();
+        PagedHistory = new ObservableCollection<BatteryReading>();
+        _currentHistoryPage = 1;
 
         GlobalPollIntervalMinutes = _pollIntervalMinutes;
 
         _pollTimer = CreatePollTimer();
         _historySaveTimer = CreateHistorySaveTimer();
 
-        History.CollectionChanged += (_, _) => OnPropertyChanged(nameof(HistoryEmptyVisibility));
+        History.CollectionChanged += (_, _) => UpdateHistoryPagination();
+        UpdateHistoryPagination();
     }
 
     public void Start()
@@ -261,6 +279,45 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public void RefreshNow()
     {
         _ = UpdateBatteryStatusAsync();
+    }
+
+    public void NextHistoryPage()
+    {
+        if (!CanGoToNextHistoryPage)
+        {
+            return;
+        }
+
+        SetCurrentHistoryPage(CurrentHistoryPage + 1);
+        UpdatePagedHistory();
+    }
+
+    public void PreviousHistoryPage()
+    {
+        if (!CanGoToPreviousHistoryPage)
+        {
+            return;
+        }
+
+        SetCurrentHistoryPage(CurrentHistoryPage - 1);
+        UpdatePagedHistory();
+    }
+
+    public async Task ClearHistoryAsync()
+    {
+        if (!_isHistoryLoaded)
+        {
+            _isHistoryLoaded = true;
+        }
+
+        await EnqueueAsync(() =>
+        {
+            History.Clear();
+            _lastLoggedTime = DateTimeOffset.MinValue;
+        });
+
+        SetCurrentHistoryPage(1);
+        await SaveHistoryAsync();
     }
 
     private DispatcherTimer CreatePollTimer()
@@ -349,6 +406,51 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 History.Add(reading);
             }
         });
+    }
+
+    private void UpdateHistoryPagination()
+    {
+        var targetPage = Math.Clamp(CurrentHistoryPage, 1, HistoryPageCount);
+        SetCurrentHistoryPage(targetPage);
+
+        OnPropertyChanged(nameof(HistoryPageCount));
+        OnPropertyChanged(nameof(HistoryPageText));
+        OnPropertyChanged(nameof(CanGoToPreviousHistoryPage));
+        OnPropertyChanged(nameof(CanGoToNextHistoryPage));
+        OnPropertyChanged(nameof(HistoryEmptyVisibility));
+
+        UpdatePagedHistory();
+    }
+
+    private void UpdatePagedHistory()
+    {
+        PagedHistory.Clear();
+
+        if (History.Count == 0)
+        {
+            return;
+        }
+
+        var startIndex = (CurrentHistoryPage - 1) * DefaultHistoryPageSize;
+        if (startIndex < 0)
+        {
+            startIndex = 0;
+        }
+
+        foreach (var reading in History.Skip(startIndex).Take(DefaultHistoryPageSize))
+        {
+            PagedHistory.Add(reading);
+        }
+    }
+
+    private void SetCurrentHistoryPage(int page)
+    {
+        if (SetProperty(ref _currentHistoryPage, page, nameof(CurrentHistoryPage)))
+        {
+            OnPropertyChanged(nameof(HistoryPageText));
+            OnPropertyChanged(nameof(CanGoToPreviousHistoryPage));
+            OnPropertyChanged(nameof(CanGoToNextHistoryPage));
+        }
     }
 
     private async Task SaveHistoryAsync()
