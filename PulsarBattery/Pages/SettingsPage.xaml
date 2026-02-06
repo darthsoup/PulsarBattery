@@ -48,8 +48,9 @@
                                         Orientation="Horizontal"
                                         Spacing="8"
                                         VerticalAlignment="Center">
-                                <NumberBox Minimum="0.1"
+                                <NumberBox Minimum="1"
                                            Maximum="120"
+                                           SmallChange="1"
                                            SpinButtonPlacementMode="Compact"
                                            Value="{Binding PollIntervalMinutes, Mode=TwoWay}"
                                            Width="120"
@@ -85,8 +86,9 @@
                                         Orientation="Horizontal"
                                         Spacing="8"
                                         VerticalAlignment="Center">
-                                <NumberBox Minimum="0.1"
+                                <NumberBox Minimum="1"
                                            Maximum="240"
+                                           SmallChange="1"
                                            SpinButtonPlacementMode="Compact"
                                            Value="{Binding LogIntervalMinutes, Mode=TwoWay}"
                                            Width="120"
@@ -126,6 +128,7 @@
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
                                     <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="*" />
@@ -134,11 +137,13 @@
 
                                 <TextBlock Grid.Row="0" Grid.Column="0"
                                            Text="Alert threshold (unlocked)"
-                                           Style="{ThemeResource BodyTextBlockStyle}" />
+                                           Style="{ThemeResource BodyTextBlockStyle}"
+                                           VerticalAlignment="Center" />
                                 <StackPanel Grid.Row="0" Grid.Column="1"
                                             Orientation="Horizontal"
                                             Spacing="8"
-                                            VerticalAlignment="Center">
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Right">
                                     <NumberBox Minimum="1"
                                                Maximum="100"
                                                SmallChange="1"
@@ -154,11 +159,13 @@
 
                                 <TextBlock Grid.Row="1" Grid.Column="0"
                                            Text="Alert threshold (locked)"
-                                           Style="{ThemeResource BodyTextBlockStyle}" />
+                                           Style="{ThemeResource BodyTextBlockStyle}"
+                                           VerticalAlignment="Center" />
                                 <StackPanel Grid.Row="1" Grid.Column="1"
                                             Orientation="Horizontal"
                                             Spacing="8"
-                                            VerticalAlignment="Center">
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Right">
                                     <NumberBox Minimum="1"
                                                Maximum="100"
                                                SmallChange="1"
@@ -174,11 +181,13 @@
 
                                 <TextBlock Grid.Row="2" Grid.Column="0"
                                            Text="Alert cooldown"
-                                           Style="{ThemeResource BodyTextBlockStyle}" />
+                                           Style="{ThemeResource BodyTextBlockStyle}"
+                                           VerticalAlignment="Center" />
                                 <StackPanel Grid.Row="2" Grid.Column="1"
                                             Orientation="Horizontal"
                                             Spacing="8"
-                                            VerticalAlignment="Center">
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Right">
                                     <NumberBox Minimum="0"
                                                Maximum="1440"
                                                SpinButtonPlacementMode="Compact"
@@ -200,7 +209,29 @@
                                               OnContent="On"
                                               OffContent="Off"
                                               VerticalAlignment="Center"
-                                              HorizontalAlignment="Right" />
+                                              HorizontalAlignment="Right"
+                                              MinWidth="0"
+                                              Margin="0" />
+
+                                <TextBlock Grid.Row="4" Grid.Column="0"
+                                           Text="Alert sound"
+                                           Style="{ThemeResource BodyTextBlockStyle}"
+                                           VerticalAlignment="Center" />
+                                <StackPanel Grid.Row="4" Grid.Column="1"
+                                            Orientation="Horizontal"
+                                            Spacing="8"
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Right">
+                                    <TextBox Text="{Binding LowBatterySoundDisplay}"
+                                             IsReadOnly="True"
+                                             TextWrapping="NoWrap"
+                                             Width="200"
+                                             VerticalAlignment="Center" />
+                                    <Button Content="Choose"
+                                            Click="ChooseLowBatterySound_Click" />
+                                    <Button Content="Clear"
+                                            Click="ClearLowBatterySound_Click" />
+                                </StackPanel>
                             </Grid>
                         </StackPanel>
                     </Border>
@@ -220,8 +251,8 @@
 
                             <!-- Actions -->
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button Content="Send test notification" 
-                                        Click="SendTestNotification_Click"
+                                <Button Content="Send low battery test"
+                                        Click="SendLowBatteryTest_Click"
                                         Style="{ThemeResource AccentButtonStyle}" />
                                 <Button Content="Refresh battery status" 
                                         Click="RefreshBatteryStatus_Click" />
@@ -247,7 +278,8 @@
 
                     <!-- Close button behavior card -->
                     <Border Style="{StaticResource PulsarCardStyle}"
-                            Padding="16">
+                            Padding="16"
+                            Margin="0,0,0,2">
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="*" />
@@ -268,11 +300,12 @@
                                           OnContent="On"
                                           OffContent="Off"
                                           VerticalAlignment="Center"
-                                          HorizontalAlignment="Right" />
+                                          HorizontalAlignment="Right"
+                                          MinWidth="0"
+                                          Margin="0" />
                         </Grid>
                     </Border>
                 </StackPanel>
-
             </StackPanel>
 
             <!-- Focus sink to clear NumberBox focus when clicking on non-focusable areas -->

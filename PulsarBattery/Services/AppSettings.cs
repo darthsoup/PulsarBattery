@@ -14,6 +14,8 @@ internal sealed record AppSettings
 
     public bool EnableBeeps { get; init; } = true;
 
+    public string? LowBatterySoundPath { get; init; }
+
     public double AlertCooldownMinutes { get; init; } = 20.0;
 
     public bool MinimizeToTrayOnClose { get; init; } = true;
@@ -35,11 +37,14 @@ internal sealed record AppSettings
     {
         return settings with
         {
-            PollIntervalMinutes = Clamp(settings.PollIntervalMinutes, min: 0.1, max: 120),
-            LogIntervalMinutes = Clamp(settings.LogIntervalMinutes, min: 0.1, max: 240),
-            AlertThresholdUnlockedPercent = Clamp(settings.AlertThresholdUnlockedPercent, min: 1, max: 100),
-            AlertThresholdLockedPercent = Clamp(settings.AlertThresholdLockedPercent, min: 1, max: 100),
-            AlertCooldownMinutes = Clamp(settings.AlertCooldownMinutes, min: 0, max: 24 * 60),
+            PollIntervalMinutes = Math.Clamp(settings.PollIntervalMinutes, 1, 120),
+            LogIntervalMinutes = Math.Clamp(settings.LogIntervalMinutes, 1, 240),
+            AlertThresholdUnlockedPercent = Math.Clamp(settings.AlertThresholdUnlockedPercent, 1, 100),
+            AlertThresholdLockedPercent = Math.Clamp(settings.AlertThresholdLockedPercent, 1, 100),
+            AlertCooldownMinutes = Math.Clamp(settings.AlertCooldownMinutes, 0, 24 * 60),
+            LowBatterySoundPath = string.IsNullOrWhiteSpace(settings.LowBatterySoundPath)
+                ? null
+                : settings.LowBatterySoundPath,
         };
     }
 
@@ -49,34 +54,5 @@ internal sealed record AppSettings
         return int.TryParse(raw, out var parsed) ? parsed : fallback;
     }
 
-    private static double Clamp(double value, double min, double max)
-    {
-        if (value < min)
-        {
-            return min;
-        }
-
-        if (value > max)
-        {
-            return max;
-        }
-
-        return value;
-    }
-
-    private static int Clamp(int value, int min, int max)
-    {
-        if (value < min)
-        {
-            return min;
-        }
-
-        if (value > max)
-        {
-            return max;
-        }
-
-        return value;
-    }
 }
 

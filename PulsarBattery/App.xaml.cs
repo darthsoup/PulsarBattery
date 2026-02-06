@@ -12,6 +12,7 @@ namespace PulsarBattery
     public partial class App : Application
     {
         internal static bool IsExitRequested { get; private set; }
+        internal static Window? MainWindow { get; private set; }
 
         private Window? _window;
         private readonly BatteryMonitor _monitor = new();
@@ -44,6 +45,7 @@ namespace PulsarBattery
             _monitor.Start();
 
             _window = new MainWindow();
+            MainWindow = _window;
             _window.Closed += (_, _) =>
             {
                 try

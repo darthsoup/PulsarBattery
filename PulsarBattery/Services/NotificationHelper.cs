@@ -1,8 +1,10 @@
 using Microsoft.Windows.AppNotifications;
 using Microsoft.Windows.AppNotifications.Builder;
+using System.IO;
+using Windows.Media.Core;
+using Windows.Media.Playback;
 using System;
 using System.Diagnostics;
-using System.IO;
 
 namespace PulsarBattery.Services;
 
@@ -10,6 +12,8 @@ internal static class NotificationHelper
 {
     private static bool _initialized;
     private static bool _registered;
+    private const string DefaultLowBatterySoundUri = "ms-winsoundevent:Notification.Looping.Alarm2";
+    private static MediaPlayer? _alertPlayer;
 
     public static void Init()
     {
@@ -91,12 +95,6 @@ internal static class NotificationHelper
                 .AddText(deviceLine)
                 .AddText(statusLine);
 
-            var appLogoUri = TryGetNotificationLogoUri();
-            if (appLogoUri is not null)
-            {
-                builder.SetAppLogoOverride(appLogoUri);
-            }
-
             var notification = builder.BuildNotification();
 
             AppNotificationManager.Default.Show(notification);
@@ -125,70 +123,6 @@ internal static class NotificationHelper
         }
     }
 
-    private static Uri? TryGetNotificationLogoUri()
-    {
-        var assetDir = Path.Combine(AppContext.BaseDirectory, "Assets");
-        if (!Directory.Exists(assetDir))
-        {
-            return null;
-        }
-
-        var preferred = new[]
-        {
-            "icon.png",
-            "AppIcon.png",
-            "pulsar.png",
-            "Square44x44Logo.scale-200.png",
-            "Square44x44Logo.png",
-        };
-
-        string? assetPath = null;
-        foreach (var name in preferred)
-        {
-            var candidate = Path.Combine(assetDir, name);
-            if (File.Exists(candidate))
-            {
-                assetPath = candidate;
-                break;
-            }
-        }
-
-        if (assetPath is null)
-        {
-            foreach (var file in Directory.EnumerateFiles(assetDir, "*.png", SearchOption.TopDirectoryOnly))
-            {
-                assetPath = file;
-                break;
-            }
-        }
-
-        if (assetPath is null)
-        {
-            return null;
-        }
-
-        if (IsPackaged())
-        {
-            var fileName = Path.GetFileName(assetPath);
-            return new Uri($"ms-appx:///Assets/{fileName}");
-        }
-
-        return new Uri(assetPath);
-    }
-
-    private static bool IsPackaged()
-    {
-        try
-        {
-            _ = Windows.ApplicationModel.Package.Current;
-            return true;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     public static void NotifyLowBattery(int batteryPercentage, int thresholdPercent, string? model)
     {
         Init();
@@ -213,18 +147,52 @@ internal static class NotificationHelper
                 .AddText(deviceLine)
                 .AddText(statusLine);
 
-            var appLogoUri = TryGetNotificationLogoUri();
-            if (appLogoUri is not null)
-            {
-                builder.SetAppLogoOverride(appLogoUri);
-            }
-
             var notification = builder.BuildNotification();
             AppNotificationManager.Default.Show(notification);
+            PlayLowBatterySound();
         }
         catch (Exception ex)
         {
             Debug.WriteLine($"Low-battery notification failed: {ex}");
         }
+    }
+
+    public static void PlayLowBatterySound()
+    {
+        if (!AppSettingsService.Current.EnableBeeps)
+        {
+            return;
+        }
+
+        try
+        {
+            var soundUri = GetLowBatterySoundUri();
+            if (soundUri is null)
+            {
+                return;
+            }
+
+            _alertPlayer ??= new MediaPlayer
+            {
+                AudioCategory = MediaPlayerAudioCategory.Alerts
+            };
+            _alertPlayer.Source = MediaSource.CreateFromUri(soundUri);
+            _alertPlayer.Play();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"Low-battery sound failed: {ex}");
+        }
+    }
+
+    private static Uri? GetLowBatterySoundUri()
+    {
+        var customPath = AppSettingsService.Current.LowBatterySoundPath;
+        if (!string.IsNullOrWhiteSpace(customPath) && File.Exists(customPath))
+        {
+            return new Uri(customPath);
+        }
+
+        return new Uri(DefaultLowBatterySoundUri);
     }
 }

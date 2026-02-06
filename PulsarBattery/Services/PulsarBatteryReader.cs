@@ -9,16 +9,11 @@ public sealed class PulsarBatteryReader
 
     private static readonly object GlobalReadLock = new();
 
-    private readonly IHidBackend[] _backends;
-
-    public PulsarBatteryReader()
-    {
-        _backends = new IHidBackend[]
-        {
-            new X2ClBackend(),
-            new X2V1Backend(),
-        };
-    }
+    private readonly IHidBackend[] _backends =
+    [
+        new X2ClBackend(),
+        new X2V1Backend(),
+    ];
 
     public BatteryStatus? ReadBatteryStatus(bool debug = false)
     {

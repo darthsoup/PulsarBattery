@@ -11,9 +11,6 @@ public sealed class BatteryMonitor : IDisposable
     private const int WorkstationLockConfirmationDelaySeconds = 2;
     private const int PostLockMonitoringWindowSeconds = 10;
     private const int MonitoringLoopDelaySeconds = 5;
-    private const int BeepFrequency = 200;
-    private const int BeepDurationMilliseconds = 200;
-    private const int BeepCount = 3;
     private const double MinimumPollIntervalMinutes = 0.1;
 
     private readonly PulsarBatteryReader _batteryReader;
@@ -51,12 +48,12 @@ public sealed class BatteryMonitor : IDisposable
 
             if (isWorkstationLocked)
             {
-                await HandleLockedWorkstationAsync(lastUnlockedTime, cancellationToken);
+                HandleLockedWorkstation(lastUnlockedTime);
             }
             else
             {
                 lastUnlockedTime = DateTimeOffset.UtcNow;
-                lastCheckTime = await HandleUnlockedWorkstationAsync(lastCheckTime, cancellationToken);
+                lastCheckTime = HandleUnlockedWorkstation(lastCheckTime);
             }
 
             await Task.Delay(TimeSpan.FromSeconds(MonitoringLoopDelaySeconds), cancellationToken);
@@ -70,12 +67,12 @@ public sealed class BatteryMonitor : IDisposable
         return isLocked && IsWorkstationLocked();
     }
 
-    private async Task HandleLockedWorkstationAsync(DateTimeOffset lastUnlockedTime, CancellationToken cancellationToken)
+    private void HandleLockedWorkstation(DateTimeOffset lastUnlockedTime)
     {
         if (IsWithinPostLockMonitoringWindow(lastUnlockedTime))
         {
             var threshold = AppSettingsService.Current.AlertThresholdLockedPercent;
-            await CheckBatteryStatusAsync(threshold, cancellationToken);
+            CheckBatteryStatus(threshold);
         }
     }
 
@@ -85,14 +82,14 @@ public sealed class BatteryMonitor : IDisposable
         return timeSinceUnlock < TimeSpan.FromSeconds(PostLockMonitoringWindowSeconds);
     }
 
-    private async Task<DateTimeOffset> HandleUnlockedWorkstationAsync(DateTimeOffset lastCheckTime, CancellationToken cancellationToken)
+    private DateTimeOffset HandleUnlockedWorkstation(DateTimeOffset lastCheckTime)
     {
         var pollInterval = GetCurrentPollInterval();
 
         if (ShouldCheckBatteryStatus(lastCheckTime, pollInterval))
         {
             var threshold = AppSettingsService.Current.AlertThresholdUnlockedPercent;
-            await CheckBatteryStatusAsync(threshold, cancellationToken);
+            CheckBatteryStatus(threshold);
             return DateTimeOffset.UtcNow;
         }
 
@@ -111,7 +108,7 @@ public sealed class BatteryMonitor : IDisposable
         return timeSinceLastCheck >= interval;
     }
 
-    private async Task CheckBatteryStatusAsync(int batteryThreshold, CancellationToken cancellationToken)
+    private void CheckBatteryStatus(int batteryThreshold)
     {
         var status = ReadBatteryStatusWithCache();
         
@@ -121,10 +118,10 @@ public sealed class BatteryMonitor : IDisposable
             return;
         }
 
-        await HandleLowBatteryWarningAsync(status, batteryThreshold);
+        HandleLowBatteryWarning(status, batteryThreshold);
     }
 
-    private async Task HandleLowBatteryWarningAsync(PulsarBatteryReader.BatteryStatus status, int batteryThreshold)
+    private void HandleLowBatteryWarning(PulsarBatteryReader.BatteryStatus status, int batteryThreshold)
     {
         if (status.IsCharging)
         {
@@ -135,7 +132,7 @@ public sealed class BatteryMonitor : IDisposable
 
         Debug.WriteLine($"Battery: NotCharging {status.Percentage}% threshold {batteryThreshold}");
 
-        if (!IsBatteryBelowThreshold(status.Percentage, batteryThreshold))
+        if (status.Percentage >= batteryThreshold)
         {
             _lastLowBatteryAlertAt = null;
             return;
@@ -145,15 +142,7 @@ public sealed class BatteryMonitor : IDisposable
         {
             Debug.WriteLine("Warning: Battery level is below threshold and not charging!");
             NotificationHelper.NotifyLowBattery(status.Percentage, batteryThreshold, status.Model);
-            EmitLowBatteryAlertIfEnabled();
         }
-
-        await Task.CompletedTask;
-    }
-
-    private bool IsBatteryBelowThreshold(int batteryLevel, int threshold)
-    {
-        return batteryLevel < threshold;
     }
 
     private bool IsLowBatteryAlertAllowed()
@@ -175,25 +164,6 @@ public sealed class BatteryMonitor : IDisposable
         }
 
         return false;
-    }
-
-    private void EmitLowBatteryAlertIfEnabled()
-    {
-        if (!AppSettingsService.Current.EnableBeeps)
-        {
-            return;
-        }
-
-        try
-        {
-            for (int i = 0; i < BeepCount; i++)
-            {
-                Console.Beep(BeepFrequency, BeepDurationMilliseconds);
-            }
-        }
-        catch
-        {
-        }
     }
 
     private PulsarBatteryReader.BatteryStatus? ReadBatteryStatusWithCache()

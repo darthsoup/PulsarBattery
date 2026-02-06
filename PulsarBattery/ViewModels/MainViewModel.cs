@@ -18,7 +18,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 {
     private const int MaxHistoryEntries = 500;
     private const int DefaultHistoryPageSize = 50;
-    private const double MinimumPollIntervalMinutes = 0.1;
+    private const double MinimumPollIntervalMinutes = 1.0;
     private const double HistorySaveIntervalSeconds = 15.0;
     private const double DefaultPollIntervalMinutes = 1.0;
     private const double DefaultLogIntervalMinutes = 5.0;
@@ -53,6 +53,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private double _alertCooldownMinutes;
     private bool _minimizeToTrayOnClose;
     private string _statusText;
+    private string? _lowBatterySoundPath;
     private int _currentHistoryPage;
 
     public event PropertyChangedEventHandler? PropertyChanged;
@@ -133,7 +134,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         get => _logIntervalMinutes;
         set
         {
-            var clampedMinutes = Math.Clamp(value, 0.1, 240);
+            var clampedMinutes = Math.Clamp(value, 1.0, 240);
             if (SetProperty(ref _logIntervalMinutes, clampedMinutes))
             {
                 AppSettingsService.Update(settings => settings with { LogIntervalMinutes = clampedMinutes });
@@ -210,6 +211,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _statusText, value);
     }
 
+    public string? LowBatterySoundPath
+    {
+        get => _lowBatterySoundPath;
+        set
+        {
+            var normalized = string.IsNullOrWhiteSpace(value) ? null : value;
+            if (SetProperty(ref _lowBatterySoundPath, normalized))
+            {
+                AppSettingsService.Update(settings => settings with { LowBatterySoundPath = normalized });
+                OnPropertyChanged(nameof(LowBatterySoundDisplay));
+            }
+        }
+    }
+
+    public string LowBatterySoundDisplay => string.IsNullOrWhiteSpace(LowBatterySoundPath)
+        ? "Default (Windows low battery sound)"
+        : LowBatterySoundPath;
+
     public Visibility HistoryEmptyVisibility => History.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
 
     public int CurrentHistoryPage => _currentHistoryPage;
@@ -241,6 +260,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _enableBeeps = settings.EnableBeeps;
         _alertCooldownMinutes = settings.AlertCooldownMinutes < 0 ? DefaultAlertCooldownMinutes : settings.AlertCooldownMinutes;
         _minimizeToTrayOnClose = settings.MinimizeToTrayOnClose;
+        _lowBatterySoundPath = string.IsNullOrWhiteSpace(settings.LowBatterySoundPath) ? null : settings.LowBatterySoundPath;
 
         _statusText = InitialStatusText;
         History = new ObservableCollection<BatteryReading>();

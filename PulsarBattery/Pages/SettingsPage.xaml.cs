@@ -4,6 +4,9 @@ using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using PulsarBattery.Services;
+using System;
+using Windows.Storage.Pickers;
+using WinRT.Interop;
 
 namespace PulsarBattery.Pages;
 
@@ -55,35 +58,63 @@ public sealed partial class SettingsPage : Page
         return null;
     }
 
-    private void SendTestNotification_Click(object sender, RoutedEventArgs e)
-    {
-        NotificationHelper.Init();
-        
-        // Get actual battery data from the ViewModel
-        if (DataContext is ViewModels.MainViewModel viewModel)
-        {
-            // Simulate a battery level drop of 5%
-            var currentLevel = viewModel.BatteryPercentage;
-            var previousLevel = currentLevel + 5;
-            
-            NotificationHelper.NotifyBatteryLevelChanged(
-                previousLevel, 
-                currentLevel, 
-                viewModel.IsCharging, 
-                viewModel.ModelName);
-        }
-        else
-        {
-            // Fallback to test data if ViewModel is not available
-            NotificationHelper.NotifyBatteryLevelChanged(50, 45, isCharging: false, model: "Test Device");
-        }
-    }
-
     private void RefreshBatteryStatus_Click(object sender, RoutedEventArgs e)
     {
         if (DataContext is ViewModels.MainViewModel viewModel)
         {
             viewModel.RefreshNow();
+        }
+    }
+
+    private async void ChooseLowBatterySound_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is not ViewModels.MainViewModel viewModel)
+        {
+            return;
+        }
+
+        var window = App.MainWindow;
+        if (window is null)
+        {
+            return;
+        }
+
+        var picker = new FileOpenPicker
+        {
+            SuggestedStartLocation = PickerLocationId.MusicLibrary
+        };
+        picker.FileTypeFilter.Add(".mp3");
+        picker.FileTypeFilter.Add(".wav");
+
+        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(window));
+
+        var file = await picker.PickSingleFileAsync();
+        if (file is not null)
+        {
+            viewModel.LowBatterySoundPath = file.Path;
+        }
+    }
+
+    private void ClearLowBatterySound_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is ViewModels.MainViewModel viewModel)
+        {
+            viewModel.LowBatterySoundPath = null;
+        }
+    }
+
+    private void SendLowBatteryTest_Click(object sender, RoutedEventArgs e)
+    {
+        if (DataContext is ViewModels.MainViewModel viewModel)
+        {
+            NotificationHelper.NotifyLowBattery(
+                batteryPercentage: Math.Max(1, viewModel.AlertThresholdUnlockedPercent - 1),
+                thresholdPercent: viewModel.AlertThresholdUnlockedPercent,
+                model: viewModel.ModelName);
+        }
+        else
+        {
+            NotificationHelper.NotifyLowBattery(10, 15, model: "Test Device");
         }
     }
 }
