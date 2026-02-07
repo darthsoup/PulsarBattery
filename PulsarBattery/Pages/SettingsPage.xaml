@@ -305,6 +305,37 @@
                                           Margin="0" />
                         </Grid>
                     </Border>
+
+                    <!-- Startup behavior card -->
+                    <Border Style="{StaticResource PulsarCardStyle}"
+                            Padding="16">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+
+                            <StackPanel Grid.Column="0" Spacing="2">
+                                <TextBlock Text="Start with Windows"
+                                           Style="{ThemeResource BodyStrongTextBlockStyle}" />
+                                <TextBlock Text="Launches Pulsar Battery in the background when you sign in."
+                                           Style="{ThemeResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextWrapping="Wrap" />
+                            </StackPanel>
+
+                            <ToggleSwitch x:Name="StartWithWindowsToggle"
+                                          Grid.Column="1"
+                                          IsOn="{Binding StartWithWindows, Mode=OneWay}"
+                                          Toggled="StartWithWindowsToggle_Toggled"
+                                          OnContent="On"
+                                          OffContent="Off"
+                                          VerticalAlignment="Center"
+                                          HorizontalAlignment="Right"
+                                          MinWidth="0"
+                                          Margin="0" />
+                        </Grid>
+                    </Border>
                 </StackPanel>
             </StackPanel>
 

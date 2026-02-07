@@ -20,6 +20,8 @@ internal sealed record AppSettings
 
     public bool MinimizeToTrayOnClose { get; init; } = true;
 
+    public bool StartWithWindows { get; init; } = false;
+
     public static AppSettings CreateDefaultsFromEnvironment()
     {
         return new AppSettings

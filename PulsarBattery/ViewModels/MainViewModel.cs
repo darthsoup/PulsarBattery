@@ -52,6 +52,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool _enableBeeps;
     private double _alertCooldownMinutes;
     private bool _minimizeToTrayOnClose;
+    private bool _startWithWindows;
     private string _statusText;
     private string? _lowBatterySoundPath;
     private int _currentHistoryPage;
@@ -205,6 +206,28 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
+    public bool StartWithWindows
+    {
+        get => _startWithWindows;
+        set
+        {
+            if (!SetProperty(ref _startWithWindows, value))
+            {
+                return;
+            }
+
+            var result = StartupRegistrationService.SetEnabled(value);
+            if (!result.Success)
+            {
+                SetProperty(ref _startWithWindows, result.IsEnabled, nameof(StartWithWindows));
+                StatusText = "Unable to update startup registration";
+                return;
+            }
+
+            AppSettingsService.Update(settings => settings with { StartWithWindows = result.IsEnabled });
+        }
+    }
+
     public string StatusText
     {
         get => _statusText;
@@ -260,7 +283,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _enableBeeps = settings.EnableBeeps;
         _alertCooldownMinutes = settings.AlertCooldownMinutes < 0 ? DefaultAlertCooldownMinutes : settings.AlertCooldownMinutes;
         _minimizeToTrayOnClose = settings.MinimizeToTrayOnClose;
+        _startWithWindows = StartupRegistrationService.TryGetIsEnabled(out var isEnabledFromSystem)
+            ? isEnabledFromSystem
+            : settings.StartWithWindows;
         _lowBatterySoundPath = string.IsNullOrWhiteSpace(settings.LowBatterySoundPath) ? null : settings.LowBatterySoundPath;
+
+        if (settings.StartWithWindows != _startWithWindows)
+        {
+            AppSettingsService.Update(current => current with { StartWithWindows = _startWithWindows });
+        }
 
         _statusText = InitialStatusText;
         History = new ObservableCollection<BatteryReading>();

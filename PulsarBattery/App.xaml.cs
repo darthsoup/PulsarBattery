@@ -6,6 +6,7 @@ using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices.WindowsRuntime;
+using System.Threading.Tasks;
 
 namespace PulsarBattery
 {
@@ -27,6 +28,22 @@ namespace PulsarBattery
         internal static void RequestExit()
         {
             IsExitRequested = true;
+        }
+
+        internal static void ExitApplication()
+        {
+            RequestExit();
+
+            try
+            {
+                MainWindow?.Close();
+            }
+            catch
+            {
+                // ignore
+            }
+
+            Current?.Exit();
         }
 
         protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
@@ -90,6 +107,12 @@ namespace PulsarBattery
             {
                 // ignore
             }
+
+            var sourceExeToDelete = SelfInstallService.TryGetCleanupSourceExePath(Environment.GetCommandLineArgs());
+            if (!string.IsNullOrWhiteSpace(sourceExeToDelete))
+            {
+                _ = Task.Run(async () => await TryDeleteFileWithRetriesAsync(sourceExeToDelete));
+            }
         }
 
         private static bool ShouldStartInTray(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
@@ -117,6 +140,53 @@ namespace PulsarBattery
             catch
             {
                 return false;
+            }
+        }
+
+        private static async Task TryDeleteFileWithRetriesAsync(string path)
+        {
+            try
+            {
+                var currentProcessPath = Environment.ProcessPath;
+                if (!string.IsNullOrWhiteSpace(currentProcessPath) &&
+                    string.Equals(Path.GetFullPath(currentProcessPath), Path.GetFullPath(path), StringComparison.OrdinalIgnoreCase))
+                {
+                    return;
+                }
+            }
+            catch
+            {
+                // ignore
+            }
+
+            for (var attempt = 0; attempt < 60; attempt++)
+            {
+                try
+                {
+                    if (!File.Exists(path))
+                    {
+                        return;
+                    }
+
+                    File.Delete(path);
+                    if (!File.Exists(path))
+                    {
+                        return;
+                    }
+                }
+                catch
+                {
+                    // retry
+                }
+
+                try
+                {
+                    await Task.Delay(500).ConfigureAwait(false);
+                }
+                catch
+                {
+                    return;
+                }
             }
         }
     }

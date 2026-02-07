@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using PulsarBattery.Services;
 using System;
+using System.Threading.Tasks;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
 
@@ -12,6 +13,8 @@ namespace PulsarBattery.Pages;
 
 public sealed partial class SettingsPage : Page
 {
+    private bool _isUpdatingStartWithWindowsToggle;
+
     public SettingsPage()
     {
         InitializeComponent();
@@ -115,6 +118,117 @@ public sealed partial class SettingsPage : Page
         else
         {
             NotificationHelper.NotifyLowBattery(10, 15, model: "Test Device");
+        }
+    }
+
+    private async void StartWithWindowsToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_isUpdatingStartWithWindowsToggle)
+        {
+            return;
+        }
+
+        if (DataContext is not ViewModels.MainViewModel viewModel)
+        {
+            return;
+        }
+
+        var desiredState = StartWithWindowsToggle.IsOn;
+        if (desiredState == viewModel.StartWithWindows)
+        {
+            return;
+        }
+
+        if (desiredState && !SelfInstallService.IsRunningFromInstallDirectory())
+        {
+            var confirmed = await ShowAutostartInstallDialogAsync();
+            if (!confirmed)
+            {
+                ApplyStartWithWindowsToggleState(viewModel.StartWithWindows);
+                return;
+            }
+
+            StartWithWindowsToggle.IsEnabled = false;
+            var result = SelfInstallService.InstallCurrentBuildAndEnableAutostart();
+            StartWithWindowsToggle.IsEnabled = true;
+
+            if (!result.Success)
+            {
+                await ShowErrorDialogAsync(result.ErrorMessage ?? "Installation failed.");
+                ApplyStartWithWindowsToggleState(viewModel.StartWithWindows);
+                return;
+            }
+
+            if (result.RequiresRestart)
+            {
+                App.ExitApplication();
+                return;
+            }
+
+            viewModel.StartWithWindows = true;
+            ApplyStartWithWindowsToggleState(viewModel.StartWithWindows);
+            return;
+        }
+
+        viewModel.StartWithWindows = desiredState;
+        ApplyStartWithWindowsToggleState(viewModel.StartWithWindows);
+    }
+
+    private async Task<bool> ShowAutostartInstallDialogAsync()
+    {
+        var sourceExe = SelfInstallService.GetCurrentExecutablePath() ?? "Unknown";
+        var installDirectory = SelfInstallService.GetInstallDirectory();
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = "Enable Autostart",
+            PrimaryButtonText = "Install and Enable",
+            CloseButtonText = "Cancel",
+            DefaultButton = ContentDialogButton.Primary,
+            Content = new TextBlock
+            {
+                Text =
+                    "To enable autostart reliably, Pulsar Battery must be installed in a stable location.\n\n" +
+                    "If you continue:\n" +
+                    $"1. Only the executable is copied to:\n{installDirectory}\n\n" +
+                    "2. Windows autostart is registered for that installed executable.\n" +
+                    $"3. The current executable is closed and deleted:\n{sourceExe}",
+                TextWrapping = TextWrapping.Wrap
+            }
+        };
+
+        var result = await dialog.ShowAsync();
+        return result == ContentDialogResult.Primary;
+    }
+
+    private async Task ShowErrorDialogAsync(string message)
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = "Installation failed",
+            CloseButtonText = "OK",
+            DefaultButton = ContentDialogButton.Close,
+            Content = new TextBlock
+            {
+                Text = message,
+                TextWrapping = TextWrapping.Wrap
+            }
+        };
+
+        await dialog.ShowAsync();
+    }
+
+    private void ApplyStartWithWindowsToggleState(bool value)
+    {
+        _isUpdatingStartWithWindowsToggle = true;
+        try
+        {
+            StartWithWindowsToggle.IsOn = value;
+        }
+        finally
+        {
+            _isUpdatingStartWithWindowsToggle = false;
         }
     }
 }
