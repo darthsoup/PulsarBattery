@@ -4,15 +4,21 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using PulsarBattery.Pages;
 using PulsarBattery.ViewModels;
+using System;
+using System.IO;
+using System.Reflection;
 using WinRT.Interop;
 
 namespace PulsarBattery
 {
     public sealed partial class MainWindow : Window
     {
+        private const string EmbeddedIconResourceName = "PulsarBattery.Assets.icon.ico";
+
         private readonly MainViewModel _viewModel = new();
         private AppWindow? _appWindow;
         private bool _isResizing;
+        private static string? _extractedEmbeddedIconPath;
 
         internal MainViewModel ViewModel => _viewModel;
 
@@ -28,7 +34,7 @@ namespace PulsarBattery
             AppWindow.TitleBar.ButtonBackgroundColor = Colors.Transparent;
             AppWindow.TitleBar.ButtonInactiveBackgroundColor = Colors.Transparent;
             AppWindow.TitleBar.InactiveBackgroundColor = Colors.Transparent;
-            AppWindow.SetIcon("Assets/icon.ico");
+            TrySetWindowIcon();
 
             EnsureAppWindowInitialized();
 
@@ -75,6 +81,84 @@ namespace PulsarBattery
             catch
             {
                 // best-effort sizing
+            }
+        }
+
+        private void TrySetWindowIcon()
+        {
+            try
+            {
+                var baseDir = AppContext.BaseDirectory;
+                var assetIconPath = Path.Combine(baseDir, "Assets", "icon.ico");
+                if (File.Exists(assetIconPath))
+                {
+                    AppWindow.SetIcon(assetIconPath);
+                    return;
+                }
+
+                var rootIconPath = Path.Combine(baseDir, "icon.ico");
+                if (File.Exists(rootIconPath))
+                {
+                    AppWindow.SetIcon(rootIconPath);
+                    return;
+                }
+
+                var processPath = Environment.ProcessPath;
+                if (!string.IsNullOrWhiteSpace(processPath) && File.Exists(processPath))
+                {
+                    try
+                    {
+                        AppWindow.SetIcon(processPath);
+                        return;
+                    }
+                    catch
+                    {
+                        // fall back to embedded icon resource
+                    }
+                }
+
+                var embeddedIconPath = EnsureEmbeddedIconOnDisk();
+                if (!string.IsNullOrWhiteSpace(embeddedIconPath) && File.Exists(embeddedIconPath))
+                {
+                    AppWindow.SetIcon(embeddedIconPath);
+                }
+            }
+            catch
+            {
+                // best-effort icon setup
+            }
+        }
+
+        private static string? EnsureEmbeddedIconOnDisk()
+        {
+            try
+            {
+                if (!string.IsNullOrWhiteSpace(_extractedEmbeddedIconPath) && File.Exists(_extractedEmbeddedIconPath))
+                {
+                    return _extractedEmbeddedIconPath;
+                }
+
+                using var stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(EmbeddedIconResourceName);
+                if (stream is null)
+                {
+                    return null;
+                }
+
+                var iconDirectory = Path.Combine(Path.GetTempPath(), "PulsarBattery");
+                Directory.CreateDirectory(iconDirectory);
+
+                var iconPath = Path.Combine(iconDirectory, "icon.ico");
+                using (var output = File.Create(iconPath))
+                {
+                    stream.CopyTo(output);
+                }
+
+                _extractedEmbeddedIconPath = iconPath;
+                return _extractedEmbeddedIconPath;
+            }
+            catch
+            {
+                return null;
             }
         }
 

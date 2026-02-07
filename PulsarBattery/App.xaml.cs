@@ -5,6 +5,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.IO;
 using System.Linq;
+using System.Runtime.InteropServices;
 using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading.Tasks;
 
@@ -12,6 +13,11 @@ namespace PulsarBattery
 {
     public partial class App : Application
     {
+        private const string AppUserModelId = "PulsarBattery.Desktop";
+
+        [DllImport("shell32.dll", CharSet = CharSet.Unicode)]
+        private static extern int SetCurrentProcessExplicitAppUserModelID(string appID);
+
         internal static bool IsExitRequested { get; private set; }
         internal static Window? MainWindow { get; private set; }
 
@@ -21,8 +27,21 @@ namespace PulsarBattery
 
         public App()
         {
+            TrySetAppUserModelId();
             InitializeComponent();
             AppDomain.CurrentDomain.ProcessExit += (_, _) => NotificationHelper.Unregister();
+        }
+
+        private static void TrySetAppUserModelId()
+        {
+            try
+            {
+                _ = SetCurrentProcessExplicitAppUserModelID(AppUserModelId);
+            }
+            catch
+            {
+                // ignore
+            }
         }
 
         internal static void RequestExit()
