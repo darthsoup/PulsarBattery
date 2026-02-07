@@ -1,6 +1,7 @@
 using System;
 using System.Diagnostics;
 using System.IO;
+using System.Reflection;
 
 namespace PulsarBattery.Services;
 
@@ -36,6 +37,43 @@ internal static class SelfInstallService
     {
         return Environment.ProcessPath
             ?? Process.GetCurrentProcess().MainModule?.FileName;
+    }
+
+    public static bool IsCurrentExecutableBundled()
+    {
+        try
+        {
+            var entryAssembly = Assembly.GetEntryAssembly();
+            if (entryAssembly is not null && string.IsNullOrWhiteSpace(entryAssembly.Location))
+            {
+                return true;
+            }
+        }
+        catch
+        {
+            // fall through to file-based heuristic
+        }
+
+        var currentExe = GetCurrentExecutablePath();
+        if (string.IsNullOrWhiteSpace(currentExe))
+        {
+            return false;
+        }
+
+        var directory = Path.GetDirectoryName(currentExe);
+        var baseName = Path.GetFileNameWithoutExtension(currentExe);
+        if (string.IsNullOrWhiteSpace(directory) || string.IsNullOrWhiteSpace(baseName))
+        {
+            return false;
+        }
+
+        var sidecarDll = Path.Combine(directory, $"{baseName}.dll");
+        var sidecarRuntimeConfig = Path.Combine(directory, $"{baseName}.runtimeconfig.json");
+        var sidecarDeps = Path.Combine(directory, $"{baseName}.deps.json");
+
+        return !File.Exists(sidecarDll) &&
+               !File.Exists(sidecarRuntimeConfig) &&
+               !File.Exists(sidecarDeps);
     }
 
     public static SelfInstallResult InstallCurrentBuildAndEnableAutostart()

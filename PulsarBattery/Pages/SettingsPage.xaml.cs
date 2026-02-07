@@ -5,6 +5,7 @@ using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using PulsarBattery.Services;
 using System;
+using System.IO;
 using System.Threading.Tasks;
 using Windows.Storage.Pickers;
 using WinRT.Interop;
@@ -141,6 +142,13 @@ public sealed partial class SettingsPage : Page
 
         if (desiredState && !SelfInstallService.IsRunningFromInstallDirectory())
         {
+            if (!SelfInstallService.IsCurrentExecutableBundled())
+            {
+                await ShowBundledBuildRequiredDialogAsync();
+                ApplyStartWithWindowsToggleState(viewModel.StartWithWindows);
+                return;
+            }
+
             var confirmed = await ShowAutostartInstallDialogAsync();
             if (!confirmed)
             {
@@ -170,6 +178,13 @@ public sealed partial class SettingsPage : Page
             return;
         }
 
+        if (desiredState && !SelfInstallService.IsCurrentExecutableBundled())
+        {
+            await ShowBundledBuildRequiredDialogAsync();
+            ApplyStartWithWindowsToggleState(viewModel.StartWithWindows);
+            return;
+        }
+
         viewModel.StartWithWindows = desiredState;
         ApplyStartWithWindowsToggleState(viewModel.StartWithWindows);
     }
@@ -178,19 +193,51 @@ public sealed partial class SettingsPage : Page
     {
         var sourceExe = SelfInstallService.GetCurrentExecutablePath() ?? "Unknown";
         var installDirectory = SelfInstallService.GetInstallDirectory();
+        var installedExeTargetPath = string.IsNullOrWhiteSpace(sourceExe)
+            ? Path.Combine(installDirectory, "PulsarBattery.exe")
+            : Path.Combine(installDirectory, Path.GetFileName(sourceExe));
+
+        var hasExistingAutostart = StartupRegistrationService.TryGetRegistrationState(out var autostartState)
+            && autostartState.IsEnabled;
+        var existingAutostartPath = hasExistingAutostart
+            ? autostartState.ExecutablePath ?? "(unknown path)"
+            : string.Empty;
+        var isSameAutostartTarget = hasExistingAutostart &&
+            ArePathsEqual(existingAutostartPath, installedExeTargetPath);
+        var primaryButtonText = !hasExistingAutostart
+            ? "Install and Enable"
+            : isSameAutostartTarget
+                ? "Update and Enable"
+                : "Replace and Enable";
+        var titleText = !hasExistingAutostart
+            ? "Enable Autostart"
+            : isSameAutostartTarget
+                ? "Update installed autostart version?"
+                : "Replace existing autostart?";
+        var autostartSection = hasExistingAutostart
+            ? isSameAutostartTarget
+                ? "Windows autostart is already configured for the installed location.\n" +
+                  $"Current autostart target:\n{existingAutostartPath}\n\n" +
+                  "If you continue, the installed executable at this path will be updated.\n\n"
+                : "Windows autostart is already configured.\n" +
+                  $"Current autostart target:\n{existingAutostartPath}\n\n" +
+                  $"If you continue, it will be replaced with:\n{installedExeTargetPath}\n\n"
+            : string.Empty;
+
         var dialog = new ContentDialog
         {
             XamlRoot = XamlRoot,
-            Title = "Enable Autostart",
-            PrimaryButtonText = "Install and Enable",
+            Title = titleText,
+            PrimaryButtonText = primaryButtonText,
             CloseButtonText = "Cancel",
             DefaultButton = ContentDialogButton.Primary,
             Content = new TextBlock
             {
                 Text =
                     "To enable autostart reliably, Pulsar Battery must be installed in a stable location.\n\n" +
+                    autostartSection +
                     "If you continue:\n" +
-                    $"1. Only the executable is copied to:\n{installDirectory}\n\n" +
+                    $"1. Only this executable is copied to:\n{installedExeTargetPath}\n\n" +
                     "2. Windows autostart is registered for that installed executable.\n" +
                     $"3. The current executable is closed and deleted:\n{sourceExe}",
                 TextWrapping = TextWrapping.Wrap
@@ -199,6 +246,25 @@ public sealed partial class SettingsPage : Page
 
         var result = await dialog.ShowAsync();
         return result == ContentDialogResult.Primary;
+    }
+
+    private static bool ArePathsEqual(string? left, string? right)
+    {
+        if (string.IsNullOrWhiteSpace(left) || string.IsNullOrWhiteSpace(right))
+        {
+            return false;
+        }
+
+        try
+        {
+            var fullLeft = Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var fullRight = Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.Equals(fullLeft, fullRight, StringComparison.OrdinalIgnoreCase);
+        }
+        catch
+        {
+            return string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+        }
     }
 
     private async Task ShowErrorDialogAsync(string message)
@@ -212,6 +278,26 @@ public sealed partial class SettingsPage : Page
             Content = new TextBlock
             {
                 Text = message,
+                TextWrapping = TextWrapping.Wrap
+            }
+        };
+
+        await dialog.ShowAsync();
+    }
+
+    private async Task ShowBundledBuildRequiredDialogAsync()
+    {
+        var dialog = new ContentDialog
+        {
+            XamlRoot = XamlRoot,
+            Title = "Autostart unavailable",
+            CloseButtonText = "OK",
+            DefaultButton = ContentDialogButton.Close,
+            Content = new TextBlock
+            {
+                Text =
+                    "Autostart can only be enabled from a bundled single-file PulsarBattery.exe.\n\n" +
+                    "Please launch the published single-file build and try again.",
                 TextWrapping = TextWrapping.Wrap
             }
         };

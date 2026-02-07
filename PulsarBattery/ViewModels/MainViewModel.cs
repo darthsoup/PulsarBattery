@@ -283,12 +283,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _enableBeeps = settings.EnableBeeps;
         _alertCooldownMinutes = settings.AlertCooldownMinutes < 0 ? DefaultAlertCooldownMinutes : settings.AlertCooldownMinutes;
         _minimizeToTrayOnClose = settings.MinimizeToTrayOnClose;
-        _startWithWindows = StartupRegistrationService.TryGetIsEnabled(out var isEnabledFromSystem)
-            ? isEnabledFromSystem
-            : settings.StartWithWindows;
+        var isRunningFromInstallDirectory = SelfInstallService.IsRunningFromInstallDirectory();
+        var isBundledExecutable = SelfInstallService.IsCurrentExecutableBundled();
+        var currentExecutablePath = SelfInstallService.GetCurrentExecutablePath();
+        _startWithWindows = isRunningFromInstallDirectory &&
+            isBundledExecutable &&
+            StartupRegistrationService.IsEnabledForExecutable(currentExecutablePath);
         _lowBatterySoundPath = string.IsNullOrWhiteSpace(settings.LowBatterySoundPath) ? null : settings.LowBatterySoundPath;
 
-        if (settings.StartWithWindows != _startWithWindows)
+        if (isRunningFromInstallDirectory && isBundledExecutable && settings.StartWithWindows != _startWithWindows)
         {
             AppSettingsService.Update(current => current with { StartWithWindows = _startWithWindows });
         }
