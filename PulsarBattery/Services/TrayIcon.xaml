@@ -22,7 +22,7 @@
         NoLeftClickDelay="True">
         
         <tb:TaskbarIcon.ContextFlyout>
-            <MenuFlyout AreOpenCloseAnimationsEnabled="False">
+            <MenuFlyout AreOpenCloseAnimationsEnabled="True">
                 <!-- Battery Status -->
                 <MenuFlyoutItem 
                     Text="{Binding BatteryPercentage, Converter={StaticResource BatteryPercentageConverter}}"
