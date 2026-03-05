@@ -193,7 +193,7 @@
 
                     <controls:SettingsExpander
                         Header="Pulsar Battery"
-                        Description="&#169; 2026 darthsoup">
+                        Description="&#169; 2026 darthsoup, Elehiggle">
                         <controls:SettingsExpander.HeaderIcon>
                             <ImageIcon Source="/Assets/StoreLogo.png" />
                         </controls:SettingsExpander.HeaderIcon>
