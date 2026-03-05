@@ -13,14 +13,14 @@
         <MicaBackdrop Kind="Base" />
     </Window.SystemBackdrop>
 
-    <Grid x:Name="RootGrid" Padding="0">
+    <Grid x:Name="RootGrid">
         <Grid.RowDefinitions>
-            <RowDefinition Height="auto" />
+            <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <TitleBar 
-            x:Name="AppTitleBar" 
+        <TitleBar
+            x:Name="AppTitleBar"
             Title="Pulsar Battery"
             Grid.Row="0"
             Height="48"
@@ -33,53 +33,34 @@
             </TitleBar.IconSource>
         </TitleBar>
 
-        <Grid 
-            Grid.Row="1" 
-            Background="Transparent">
-            <NavigationView x:Name="NavView"
-                            Grid.Row="1"
-                            IsSettingsVisible="True"
-                            PaneDisplayMode="LeftCompact"
-                            IsPaneToggleButtonVisible="False"
-                            IsBackButtonVisible="Collapsed"
-                            AlwaysShowHeader="True"
-                            SelectionChanged="NavView_SelectionChanged"
-                            SelectionFollowsFocus="Enabled">
+        <NavigationView
+            x:Name="NavView"
+            Grid.Row="1"
+            IsSettingsVisible="True"
+            PaneDisplayMode="LeftCompact"
+            IsPaneToggleButtonVisible="False"
+            IsBackButtonVisible="Collapsed"
+            AlwaysShowHeader="False"
+            IsTabStop="False"
+            SelectionChanged="NavView_SelectionChanged"
+            SelectionFollowsFocus="Enabled">
 
-                <NavigationView.Resources>
-                    <!-- Reduce the built-in header padding so content aligns naturally. -->
-                    <Thickness x:Key="NavigationViewHeaderMargin">0</Thickness>
-                </NavigationView.Resources>
+            <Frame x:Name="ContentFrame" />
 
-                <NavigationView.MenuItems>
-                    <NavigationViewItem 
-                        x:Name="DashboardItem"
-                        Content="Dashboard" 
-                        Icon="Home" 
-                        Tag="dashboard" />
-                    <NavigationViewItem Content="History">
-                        <NavigationViewItem.Icon>
-                            <FontIcon Glyph="&#xE81C;" />
-                        </NavigationViewItem.Icon>
-                        <NavigationViewItem.Tag>history</NavigationViewItem.Tag>
-                    </NavigationViewItem>
-                </NavigationView.MenuItems>
+            <NavigationView.MenuItems>
+                <NavigationViewItem
+                    x:Name="DashboardItem"
+                    Content="Dashboard"
+                    Icon="Home"
+                    Tag="dashboard" />
+                <NavigationViewItem Content="History">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE81C;" />
+                    </NavigationViewItem.Icon>
+                    <NavigationViewItem.Tag>history</NavigationViewItem.Tag>
+                </NavigationViewItem>
+            </NavigationView.MenuItems>
 
-                <NavigationView.Header>
-                    <Grid Margin="32,16,32,8">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="Auto" />
-                        </Grid.ColumnDefinitions>
-
-                        <StackPanel Orientation="Vertical" Spacing="2">
-                            <TextBlock x:Name="HeaderTitle" Text="Dashboard" Style="{ThemeResource TitleTextBlockStyle}" />
-                        </StackPanel>
-                    </Grid>
-                </NavigationView.Header>
-
-                <Frame x:Name="ContentFrame" HorizontalAlignment="Stretch" VerticalAlignment="Stretch" />
-            </NavigationView>
-        </Grid>
+        </NavigationView>
     </Grid>
 </Window>

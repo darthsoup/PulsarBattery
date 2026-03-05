@@ -12,6 +12,8 @@
         <Grid Padding="32,24,32,32">
             <StackPanel Spacing="16" MaxWidth="1000">
 
+                <TextBlock Text="History" Style="{ThemeResource TitleTextBlockStyle}" />
+
                 <!-- History Section Header -->
                 <Grid Margin="0,0,0,8">
                     <Grid.ColumnDefinitions>

@@ -11,6 +11,8 @@
         <Grid Padding="32,24,32,32">
             <StackPanel Spacing="24" MaxWidth="1000">
 
+                <TextBlock Text="Dashboard" Style="{ThemeResource TitleTextBlockStyle}" />
+
                 <!-- Loading indicator (shown when no data is available yet) -->
                 <Border Style="{StaticResource PulsarCardStyle}"
                         Padding="40"
@@ -162,7 +164,7 @@
                                 </Grid.ColumnDefinitions>
 
                                 <FontIcon Grid.Column="0"
-                                          Glyph="&#xE7C1;" 
+                                          Glyph="&#xE962;" 
                                           FontSize="16"
                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                           VerticalAlignment="Center" />
@@ -193,7 +195,7 @@
                                 </Grid.ColumnDefinitions>
 
                                 <FontIcon Grid.Column="0"
-                                          Glyph="&#xE850;" 
+                                          Glyph="&#xECBF;" 
                                           FontSize="16"
                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                           VerticalAlignment="Center" />
