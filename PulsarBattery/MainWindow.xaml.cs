@@ -17,7 +17,6 @@ namespace PulsarBattery
 
         private readonly MainViewModel _viewModel = new();
         private AppWindow? _appWindow;
-        private bool _isResizing;
         private static string? _extractedEmbeddedIconPath;
 
         internal MainViewModel ViewModel => _viewModel;
@@ -74,8 +73,6 @@ namespace PulsarBattery
                 // A small utility window: good default.
                 _appWindow.Resize(new Windows.Graphics.SizeInt32(900, 820));
 
-                // Prevent excessive width. There's no MaxWidth API on AppWindow, so we clamp.
-                _appWindow.Changed += AppWindow_Changed;
                 _appWindow.Closing += AppWindow_Closing;
             }
             catch
@@ -187,28 +184,6 @@ namespace PulsarBattery
             }
         }
 
-        private void AppWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args)
-        {
-            if (_isResizing)
-            {
-                return;
-            }
-
-            // Clamp width to 1000px.
-            if (args.DidSizeChange && sender.Size.Width > 1000)
-            {
-                try
-                {
-                    _isResizing = true;
-                    sender.Resize(new Windows.Graphics.SizeInt32(1000, sender.Size.Height));
-                }
-                finally
-                {
-                    _isResizing = false;
-                }
-            }
-        }
-
         private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
         {
             if (args.IsSettingsSelected)
@@ -223,13 +198,6 @@ namespace PulsarBattery
 
         private void NavigateTo(string tag)
         {
-            HeaderTitle.Text = tag switch
-            {
-                "history" => "History",
-                "settings" => "Settings",
-                _ => "Dashboard"
-            };
-
             var pageType = tag switch
             {
                 "history" => typeof(HistoryPage),

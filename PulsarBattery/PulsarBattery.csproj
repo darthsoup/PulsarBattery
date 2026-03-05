@@ -39,6 +39,7 @@
   </ItemGroup>
   <ItemGroup>
     <EmbeddedResource Include="Assets\icon.ico" LogicalName="PulsarBattery.Assets.icon.ico" />
+    <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.251219" />
     <PackageReference Include="H.NotifyIcon.WinUI" Version="2.3.2" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.26100.7705" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="1.8.260209005" />

@@ -7,14 +7,32 @@ using PulsarBattery.Services;
 using System;
 using System.IO;
 using System.Threading.Tasks;
+using Windows.ApplicationModel;
 using Windows.Storage.Pickers;
+using Windows.System;
 using WinRT.Interop;
 
 namespace PulsarBattery.Pages;
 
 public sealed partial class SettingsPage : Page
 {
+    public string AppVersion { get; } = GetAppVersion();
+
     private bool _isUpdatingStartWithWindowsToggle;
+
+    private static string GetAppVersion()
+    {
+        try
+        {
+            var v = Package.Current.Id.Version;
+            return $"{v.Major}.{v.Minor}.{v.Build}.{v.Revision}";
+        }
+        catch
+        {
+            var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            return v is null ? "develop" : $"{v.Major}.{v.Minor}.{v.Build}.{v.Revision}";
+        }
+    }
 
     public SettingsPage()
     {
@@ -316,5 +334,10 @@ public sealed partial class SettingsPage : Page
         {
             _isUpdatingStartWithWindowsToggle = false;
         }
+    }
+
+    private async void GitHubCard_Click(object sender, RoutedEventArgs e)
+    {
+        await Launcher.LaunchUriAsync(new Uri("https://github.com/darthsoup/PulsarBattery"));
     }
 }
