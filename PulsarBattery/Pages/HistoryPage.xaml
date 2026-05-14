@@ -25,7 +25,7 @@
                                 VerticalAlignment="Center">
                         <TextBlock Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                    Style="{ThemeResource CaptionTextBlockStyle}">
-                            <Run Text="{Binding History.Count}" />
+                            <Run Text="{x:Bind ViewModel.History.Count, Mode=OneWay}" />
                             <Run Text="entries" />
                         </TextBlock>
                     </StackPanel>
@@ -36,21 +36,24 @@
                                 VerticalAlignment="Center">
                         <Button Content="Previous"
                                 Click="PreviousPage_Click"
-                                IsEnabled="{Binding CanGoToPreviousHistoryPage}" />
-                        <TextBlock Text="{Binding HistoryPageText}"
+                                AutomationProperties.Name="Previous history page"
+                                IsEnabled="{x:Bind ViewModel.CanGoToPreviousHistoryPage, Mode=OneWay}" />
+                        <TextBlock Text="{x:Bind ViewModel.HistoryPageText, Mode=OneWay}"
                                    Style="{ThemeResource CaptionTextBlockStyle}"
                                    VerticalAlignment="Center"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                         <Button Content="Next"
                                 Click="NextPage_Click"
-                                IsEnabled="{Binding CanGoToNextHistoryPage}" />
+                                AutomationProperties.Name="Next history page"
+                                IsEnabled="{x:Bind ViewModel.CanGoToNextHistoryPage, Mode=OneWay}" />
                         <Button Content="Clear"
+                                AutomationProperties.Name="Clear history"
                                 Click="ClearHistory_Click" />
                     </StackPanel>
                 </Grid>
 
                 <!-- History List -->
-                <ListView ItemsSource="{Binding PagedHistory}"
+                <ListView ItemsSource="{x:Bind ViewModel.PagedHistory, Mode=OneWay}"
                           SelectionMode="None"
                           IsItemClickEnabled="False"
                           Background="Transparent"
@@ -139,7 +142,7 @@
                 <Border Style="{StaticResource PulsarCardStyle}"
                         Padding="60,80"
                         MinHeight="300"
-                        Visibility="{Binding HistoryEmptyVisibility}">
+                        Visibility="{x:Bind ViewModel.HistoryEmptyVisibility, Mode=OneWay}">
                     <StackPanel HorizontalAlignment="Center"
                                 VerticalAlignment="Center"
                                 Spacing="16">

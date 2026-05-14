@@ -18,6 +18,8 @@ public sealed partial class SettingsPage : Page
 {
     public string AppVersion { get; } = GetAppVersion();
 
+    private ViewModels.MainViewModel? ViewModel => DataContext as ViewModels.MainViewModel;
+
     private bool _isUpdatingStartWithWindowsToggle;
 
     private static string GetAppVersion()

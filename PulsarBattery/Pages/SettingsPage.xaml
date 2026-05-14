@@ -36,7 +36,7 @@
                                        Maximum="120"
                                        SmallChange="1"
                                        SpinButtonPlacementMode="Compact"
-                                       Value="{Binding PollIntervalMinutes, Mode=TwoWay}"
+                                       Value="{x:Bind ViewModel.PollIntervalMinutes, Mode=TwoWay}"
                                        Width="120" />
                             <TextBlock Text="min"
                                        Style="{ThemeResource CaptionTextBlockStyle}"
@@ -53,7 +53,7 @@
                                        Maximum="240"
                                        SmallChange="1"
                                        SpinButtonPlacementMode="Compact"
-                                       Value="{Binding LogIntervalMinutes, Mode=TwoWay}"
+                                       Value="{x:Bind ViewModel.LogIntervalMinutes, Mode=TwoWay}"
                                        Width="120" />
                             <TextBlock Text="min"
                                        Style="{ThemeResource CaptionTextBlockStyle}"
@@ -79,7 +79,7 @@
                                                Maximum="100"
                                                SmallChange="1"
                                                SpinButtonPlacementMode="Compact"
-                                               Value="{Binding AlertThresholdUnlockedPercent, Mode=TwoWay, Converter={StaticResource DoubleToIntConverter}}"
+                                               Value="{x:Bind ViewModel.AlertThresholdUnlockedPercent, Mode=TwoWay, Converter={StaticResource DoubleToIntConverter}}"
                                                Width="120" />
                                     <TextBlock Text="%"
                                                Style="{ThemeResource CaptionTextBlockStyle}"
@@ -94,7 +94,7 @@
                                                Maximum="100"
                                                SmallChange="1"
                                                SpinButtonPlacementMode="Compact"
-                                               Value="{Binding AlertThresholdLockedPercent, Mode=TwoWay, Converter={StaticResource DoubleToIntConverter}}"
+                                               Value="{x:Bind ViewModel.AlertThresholdLockedPercent, Mode=TwoWay, Converter={StaticResource DoubleToIntConverter}}"
                                                Width="120" />
                                     <TextBlock Text="%"
                                                Style="{ThemeResource CaptionTextBlockStyle}"
@@ -108,7 +108,7 @@
                                     <NumberBox Minimum="0"
                                                Maximum="1440"
                                                SpinButtonPlacementMode="Compact"
-                                               Value="{Binding AlertCooldownMinutes, Mode=TwoWay}"
+                                               Value="{x:Bind ViewModel.AlertCooldownMinutes, Mode=TwoWay}"
                                                Width="120" />
                                     <TextBlock Text="min"
                                                Style="{ThemeResource CaptionTextBlockStyle}"
@@ -118,19 +118,20 @@
                             </controls:SettingsCard>
 
                             <controls:SettingsCard Header="Enable beeps">
-                                <ToggleSwitch IsOn="{Binding EnableBeeps, Mode=TwoWay}"
+                                <ToggleSwitch IsOn="{x:Bind ViewModel.EnableBeeps, Mode=TwoWay}"
+                                              AutomationProperties.Name="Enable beeps"
                                               OnContent="On"
                                               OffContent="Off" />
                             </controls:SettingsCard>
 
                             <controls:SettingsCard Header="Alert sound">
                                 <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                    <TextBox Text="{Binding LowBatterySoundDisplay}"
+                                    <TextBox Text="{x:Bind ViewModel.LowBatterySoundDisplay, Mode=OneWay}"
                                              IsReadOnly="True"
                                              TextWrapping="NoWrap"
                                              Width="200" />
-                                    <Button Content="Choose" Click="ChooseLowBatterySound_Click" />
-                                    <Button Content="Clear" Click="ClearLowBatterySound_Click" />
+                                    <Button Content="Choose" Click="ChooseLowBatterySound_Click" AutomationProperties.Name="Choose alert sound file" />
+                                    <Button Content="Clear" Click="ClearLowBatterySound_Click" AutomationProperties.Name="Clear alert sound" />
                                 </StackPanel>
                             </controls:SettingsCard>
                         </controls:SettingsExpander.Items>
@@ -144,15 +145,17 @@
                             <StackPanel Orientation="Horizontal" Spacing="8">
                                 <Button Content="Send low battery test"
                                         Click="SendLowBatteryTest_Click"
+                                        AutomationProperties.Name="Send low battery test notification"
                                         Style="{ThemeResource AccentButtonStyle}" />
                                 <Button Content="Refresh battery status"
+                                        AutomationProperties.Name="Refresh battery status"
                                         Click="RefreshBatteryStatus_Click" />
                             </StackPanel>
                             <StackPanel Spacing="2">
-                                <TextBlock Text="{Binding StatusText}"
+                                <TextBlock Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
                                            Style="{ThemeResource CaptionTextBlockStyle}"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                <TextBlock Text="{Binding LastUpdatedText}"
+                                <TextBlock Text="{x:Bind ViewModel.LastUpdatedText, Mode=OneWay}"
                                            Style="{ThemeResource CaptionTextBlockStyle}"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
@@ -169,7 +172,8 @@
                     <controls:SettingsCard
                         Header="Minimize to tray on close"
                         Description="When enabled, clicking the window close button minimizes to system tray. When disabled, the application will exit.">
-                        <ToggleSwitch IsOn="{Binding MinimizeToTrayOnClose, Mode=TwoWay}"
+                        <ToggleSwitch IsOn="{x:Bind ViewModel.MinimizeToTrayOnClose, Mode=TwoWay}"
+                                      AutomationProperties.Name="Minimize to tray on close"
                                       OnContent="On"
                                       OffContent="Off" />
                     </controls:SettingsCard>
@@ -178,7 +182,8 @@
                         Header="Start with Windows"
                         Description="Launches Pulsar Battery in the background when you sign in.">
                         <ToggleSwitch x:Name="StartWithWindowsToggle"
-                                      IsOn="{Binding StartWithWindows, Mode=OneWay}"
+                                      IsOn="{x:Bind ViewModel.StartWithWindows, Mode=OneWay}"
+                                      AutomationProperties.Name="Start with Windows"
                                       Toggled="StartWithWindowsToggle_Toggled"
                                       OnContent="On"
                                       OffContent="Off" />

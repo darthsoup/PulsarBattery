@@ -5,6 +5,8 @@ namespace PulsarBattery.Pages;
 
 public sealed partial class HistoryPage : Page
 {
+    private ViewModels.MainViewModel? ViewModel => DataContext as ViewModels.MainViewModel;
+
     public HistoryPage()
     {
         InitializeComponent();

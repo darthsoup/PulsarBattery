@@ -5,6 +5,8 @@ namespace PulsarBattery.Pages;
 
 public sealed partial class DashboardPage : Page
 {
+    private ViewModels.MainViewModel? ViewModel => DataContext as ViewModels.MainViewModel;
+
     public DashboardPage()
     {
         InitializeComponent();
@@ -12,9 +14,9 @@ public sealed partial class DashboardPage : Page
 
     private async void RetryConnection_Click(object sender, RoutedEventArgs e)
     {
-        if (DataContext is ViewModels.MainViewModel viewModel)
+        if (ViewModel is not null)
         {
-            await viewModel.RetryConnectionAsync();
+            await ViewModel.RetryConnectionAsync();
         }
     }
 }

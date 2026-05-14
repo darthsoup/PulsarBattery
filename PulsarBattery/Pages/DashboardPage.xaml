@@ -17,7 +17,7 @@
                 <Border Style="{StaticResource PulsarCardStyle}"
                         Padding="40"
                         MinHeight="200"
-                        Visibility="{Binding LoadingVisibility}">
+                        Visibility="{x:Bind ViewModel.LoadingVisibility, Mode=OneWay}">
                     <StackPanel HorizontalAlignment="Center" 
                                 VerticalAlignment="Center" 
                                 Spacing="16">
@@ -38,7 +38,7 @@
                 <Border Style="{StaticResource PulsarCardStyle}"
                         Padding="40"
                         MinHeight="300"
-                        Visibility="{Binding NoDeviceVisibility}">
+                        Visibility="{x:Bind ViewModel.NoDeviceVisibility, Mode=OneWay}">
                     <StackPanel HorizontalAlignment="Center" 
                                 VerticalAlignment="Center" 
                                 Spacing="20">
@@ -73,12 +73,13 @@
                                 Style="{ThemeResource AccentButtonStyle}"
                                 HorizontalAlignment="Center"
                                 Margin="0,8,0,0"
+                                AutomationProperties.Name="Retry connection"
                                 Click="RetryConnection_Click" />
                     </StackPanel>
                 </Border>
 
                 <!-- Main content (shown when data is available) -->
-                <StackPanel Spacing="24" Visibility="{Binding ContentVisibility}">
+                <StackPanel Spacing="24" Visibility="{x:Bind ViewModel.ContentVisibility, Mode=OneWay}">
 
                     <!-- Battery Status Card -->
                     <Grid>
@@ -88,7 +89,7 @@
                                     HorizontalAlignment="Right"
                                     VerticalAlignment="Top"
                                     Margin="0,8,16,0"
-                                    Visibility="{Binding RefreshingVisibility}">
+                                    Visibility="{x:Bind ViewModel.RefreshingVisibility, Mode=OneWay}">
                             <ProgressRing IsActive="True" 
                                           Width="16" 
                                           Height="16" />
@@ -114,13 +115,13 @@
 
                                 <!-- Left side - Battery info -->
                                 <StackPanel Grid.Row="0" Grid.Column="0" Spacing="4" VerticalAlignment="Center">
-                                    <TextBlock Text="{Binding ModelName}" 
+                                    <TextBlock Text="{x:Bind ViewModel.ModelName, Mode=OneWay}" 
                                                Style="{ThemeResource TitleTextBlockStyle}"
                                                TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{Binding ChargingStateText}" 
+                                    <TextBlock Text="{x:Bind ViewModel.ChargingStateText, Mode=OneWay}" 
                                                Style="{ThemeResource CaptionTextBlockStyle}"
                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                    <TextBlock Text="{Binding LastUpdatedText}" 
+                                    <TextBlock Text="{x:Bind ViewModel.LastUpdatedText, Mode=OneWay}" 
                                                Style="{ThemeResource CaptionTextBlockStyle}"
                                                Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
                                 </StackPanel>
@@ -132,14 +133,14 @@
                                            FontSize="56"
                                            FontWeight="SemiBold"
                                            Margin="24,0,0,0">
-                                    <Run Text="{Binding BatteryPercentage}" /><Run Text="%" FontSize="40" />
+                                    <Run Text="{x:Bind ViewModel.BatteryPercentage, Mode=OneWay}" /><Run Text="%" FontSize="40" />
                                 </TextBlock>
 
                                 <!-- Progress bar (full width) -->
                                 <ProgressBar Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
                                              Minimum="0" 
                                              Maximum="100"
-                                             Value="{Binding BatteryPercentage}"
+                                             Value="{x:Bind ViewModel.BatteryPercentage, Mode=OneWay}"
                                              Height="6"
                                              Margin="0,16,0,0" />
                             </Grid>
@@ -175,7 +176,7 @@
                                            VerticalAlignment="Center" />
 
                                 <TextBlock Grid.Column="2" 
-                                           Text="{Binding ModelName}" 
+                                           Text="{x:Bind ViewModel.ModelName, Mode=OneWay}" 
                                            Style="{ThemeResource BodyTextBlockStyle}"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            TextTrimming="CharacterEllipsis"
@@ -209,7 +210,7 @@
                                            Style="{ThemeResource BodyTextBlockStyle}"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            VerticalAlignment="Center">
-                                    <Run Text="{Binding BatteryPercentage}" /><Run Text="%" />
+                                    <Run Text="{x:Bind ViewModel.BatteryPercentage, Mode=OneWay}" /><Run Text="%" />
                                 </TextBlock>
                             </Grid>
                         </Border>
@@ -237,7 +238,7 @@
                                            VerticalAlignment="Center" />
 
                                 <TextBlock Grid.Column="2" 
-                                           Text="{Binding ChargingStateText}" 
+                                           Text="{x:Bind ViewModel.ChargingStateText, Mode=OneWay}" 
                                            Style="{ThemeResource BodyTextBlockStyle}"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            VerticalAlignment="Center" />
@@ -267,7 +268,7 @@
                                            VerticalAlignment="Center" />
 
                                 <TextBlock Grid.Column="2" 
-                                           Text="{Binding LastUpdatedText}" 
+                                           Text="{x:Bind ViewModel.LastUpdatedText, Mode=OneWay}" 
                                            Style="{ThemeResource BodyTextBlockStyle}"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            TextTrimming="CharacterEllipsis"
