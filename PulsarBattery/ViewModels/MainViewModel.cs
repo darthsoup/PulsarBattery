@@ -2,6 +2,7 @@ using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
 using PulsarBattery.Models;
 using PulsarBattery.Services;
+using PulsarBattery.Tools;
 using System;
 using System.Collections.Generic;
 using System.Collections.ObjectModel;
@@ -26,7 +27,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private const int DefaultLockedAlertThresholdPercent = 30;
     private const double DefaultAlertCooldownMinutes = 20.0;
     private const string DefaultModelName = "-";
-    private const string InitialStatusText = "Ready";
 
     private readonly PulsarBatteryReader _batteryReader;
     private readonly HistoryStore _historyStore;
@@ -107,11 +107,13 @@ public sealed class MainViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _modelName, value);
     }
 
-    public string ChargingStateText => IsCharging ? "Charging" : "Not charging";
+    public string ChargingStateText => IsCharging ? Loc.T("Charging") : Loc.T("Not charging");
 
     public string LastUpdatedText => _lastUpdated.HasValue
         ? _lastUpdated.Value.ToString("T", CultureInfo.CurrentCulture)
-        : "No data yet";
+        : Loc.T("No data yet");
+
+    public string HistoryCountText => string.Format(Loc.T("{0} entries"), History.Count);
 
     public static double GlobalPollIntervalMinutes { get; private set; } = DefaultPollIntervalMinutes;
 
@@ -220,7 +222,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (!result.Success)
             {
                 SetProperty(ref _startWithWindows, result.IsEnabled, nameof(StartWithWindows));
-                StatusText = "Unable to update startup registration";
+                StatusText = Loc.T("Unable to update startup registration");
                 return;
             }
 
@@ -296,7 +298,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             AppSettingsService.Update(current => current with { StartWithWindows = _startWithWindows });
         }
 
-        _statusText = InitialStatusText;
+        _statusText = Loc.T("Ready");
         History = new ObservableCollection<BatteryReading>();
         PagedHistory = new ObservableCollection<BatteryReading>();
         _currentHistoryPage = 1;
@@ -469,6 +471,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         OnPropertyChanged(nameof(HistoryPageCount));
         OnPropertyChanged(nameof(HistoryPageText));
+        OnPropertyChanged(nameof(HistoryCountText));
         OnPropertyChanged(nameof(CanGoToPreviousHistoryPage));
         OnPropertyChanged(nameof(CanGoToNextHistoryPage));
         OnPropertyChanged(nameof(HistoryEmptyVisibility));
@@ -554,20 +557,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
         IsLoading = true;
         NoDeviceFound = false;
-        StatusText = "Reading battery status...";
+        StatusText = Loc.T("Reading battery status...");
         
         var batteryStatus = await ReadBatteryStatusAsync();
         
         if (batteryStatus is null)
         {
-            StatusText = "No Pulsar mouse detected";
+            StatusText = Loc.T("No Pulsar mouse detected");
             NoDeviceFound = true;
             IsLoading = false;
             return;
         }
 
         UpdateBatteryProperties(batteryStatus);
-        StatusText = "Updated";
+        StatusText = Loc.T("Updated");
         HasInitialData = true;
         NoDeviceFound = false;
         IsLoading = false;

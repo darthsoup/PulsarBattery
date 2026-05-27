@@ -3,7 +3,8 @@
     x:Class="PulsarBattery.Pages.SettingsPage"
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-    xmlns:controls="using:CommunityToolkit.WinUI.Controls"
+    xmlns:controls="using:PulsarBattery.Controls"
+    xmlns:settingscontrols="using:CommunityToolkit.WinUI.Controls"
     xmlns:converters="using:PulsarBattery.Converters"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -20,17 +21,15 @@
               PointerPressed="RootGrid_PointerPressed">
             <StackPanel Spacing="24" MaxWidth="1000">
 
-                <TextBlock Text="Settings" Style="{ThemeResource TitleTextBlockStyle}" />
+                <controls:TranslatedTextBlock Text="Settings" TextStyle="{ThemeResource TitleTextBlockStyle}" />
 
                 <!-- Monitoring Section -->
                 <StackPanel Spacing="4">
-                    <TextBlock Text="Monitoring"
-                               Style="{ThemeResource BodyStrongTextBlockStyle}"
-                               Margin="0,0,0,4" />
+                    <controls:TranslatedTextBlock Text="Monitoring"
+                                                  TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
+                                                  Margin="0,0,0,4" />
 
-                    <controls:SettingsCard
-                        Header="Battery check interval"
-                        Description="How often the app polls the device and updates the dashboard">
+                    <settingscontrols:SettingsCard x:Name="PollIntervalCard">
                         <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                             <NumberBox Minimum="1"
                                        Maximum="120"
@@ -38,16 +37,14 @@
                                        SpinButtonPlacementMode="Compact"
                                        Value="{x:Bind ViewModel.PollIntervalMinutes, Mode=TwoWay}"
                                        Width="120" />
-                            <TextBlock Text="min"
-                                       Style="{ThemeResource CaptionTextBlockStyle}"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                       VerticalAlignment="Center" />
+                            <controls:TranslatedTextBlock Text="min"
+                                                          TextStyle="{ThemeResource CaptionTextBlockStyle}"
+                                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                          VerticalAlignment="Center" />
                         </StackPanel>
-                    </controls:SettingsCard>
+                    </settingscontrols:SettingsCard>
 
-                    <controls:SettingsCard
-                        Header="Log interval"
-                        Description="How often readings are added to history">
+                    <settingscontrols:SettingsCard x:Name="LogIntervalCard">
                         <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                             <NumberBox Minimum="1"
                                        Maximum="240"
@@ -55,25 +52,23 @@
                                        SpinButtonPlacementMode="Compact"
                                        Value="{x:Bind ViewModel.LogIntervalMinutes, Mode=TwoWay}"
                                        Width="120" />
-                            <TextBlock Text="min"
-                                       Style="{ThemeResource CaptionTextBlockStyle}"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                       VerticalAlignment="Center" />
+                            <controls:TranslatedTextBlock Text="min"
+                                                          TextStyle="{ThemeResource CaptionTextBlockStyle}"
+                                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                          VerticalAlignment="Center" />
                         </StackPanel>
-                    </controls:SettingsCard>
+                    </settingscontrols:SettingsCard>
                 </StackPanel>
 
                 <!-- Notifications Section -->
                 <StackPanel Spacing="4">
-                    <TextBlock Text="Notifications"
-                               Style="{ThemeResource BodyStrongTextBlockStyle}"
-                               Margin="0,0,0,4" />
+                    <controls:TranslatedTextBlock Text="Notifications"
+                                                  TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
+                                                  Margin="0,0,0,4" />
 
-                    <controls:SettingsExpander
-                        Header="Low battery alerts"
-                        Description="Configure thresholds, sound, and cooldown for low-battery notifications">
-                        <controls:SettingsExpander.Items>
-                            <controls:SettingsCard Header="Alert threshold (unlocked)">
+                    <settingscontrols:SettingsExpander x:Name="LowBatteryExpander">
+                        <settingscontrols:SettingsExpander.Items>
+                            <settingscontrols:SettingsCard x:Name="AlertThresholdUnlockedCard">
                                 <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                     <NumberBox Minimum="1"
                                                Maximum="100"
@@ -86,9 +81,9 @@
                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                                VerticalAlignment="Center" />
                                 </StackPanel>
-                            </controls:SettingsCard>
+                            </settingscontrols:SettingsCard>
 
-                            <controls:SettingsCard Header="Alert threshold (locked)">
+                            <settingscontrols:SettingsCard x:Name="AlertThresholdLockedCard">
                                 <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                     <NumberBox Minimum="1"
                                                Maximum="100"
@@ -101,54 +96,49 @@
                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                                VerticalAlignment="Center" />
                                 </StackPanel>
-                            </controls:SettingsCard>
+                            </settingscontrols:SettingsCard>
 
-                            <controls:SettingsCard Header="Alert cooldown">
+                            <settingscontrols:SettingsCard x:Name="AlertCooldownCard">
                                 <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                     <NumberBox Minimum="0"
                                                Maximum="1440"
                                                SpinButtonPlacementMode="Compact"
                                                Value="{x:Bind ViewModel.AlertCooldownMinutes, Mode=TwoWay}"
                                                Width="120" />
-                                    <TextBlock Text="min"
-                                               Style="{ThemeResource CaptionTextBlockStyle}"
-                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                               VerticalAlignment="Center" />
+                                    <controls:TranslatedTextBlock Text="min"
+                                                                  TextStyle="{ThemeResource CaptionTextBlockStyle}"
+                                                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                  VerticalAlignment="Center" />
                                 </StackPanel>
-                            </controls:SettingsCard>
+                            </settingscontrols:SettingsCard>
 
-                            <controls:SettingsCard Header="Enable beeps">
+                            <settingscontrols:SettingsCard x:Name="EnableBeepsCard">
                                 <ToggleSwitch IsOn="{x:Bind ViewModel.EnableBeeps, Mode=TwoWay}"
-                                              AutomationProperties.Name="Enable beeps"
+                                              x:Name="EnableBeepsToggle"
                                               OnContent="On"
                                               OffContent="Off" />
-                            </controls:SettingsCard>
+                            </settingscontrols:SettingsCard>
 
-                            <controls:SettingsCard Header="Alert sound">
+                            <settingscontrols:SettingsCard x:Name="AlertSoundCard">
                                 <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                     <TextBox Text="{x:Bind ViewModel.LowBatterySoundDisplay, Mode=OneWay}"
                                              IsReadOnly="True"
                                              TextWrapping="NoWrap"
                                              Width="200" />
-                                    <Button Content="Choose" Click="ChooseLowBatterySound_Click" AutomationProperties.Name="Choose alert sound file" />
-                                    <Button Content="Clear" Click="ClearLowBatterySound_Click" AutomationProperties.Name="Clear alert sound" />
+                                    <Button x:Name="ChooseSoundButton" Click="ChooseLowBatterySound_Click" />
+                                    <Button x:Name="ClearSoundButton" Click="ClearLowBatterySound_Click" />
                                 </StackPanel>
-                            </controls:SettingsCard>
-                        </controls:SettingsExpander.Items>
-                    </controls:SettingsExpander>
+                            </settingscontrols:SettingsCard>
+                        </settingscontrols:SettingsExpander.Items>
+                    </settingscontrols:SettingsExpander>
 
-                    <controls:SettingsCard
-                        Header="Quick actions"
-                        Description="Send a test Windows notification or refresh the battery reading"
-                        ContentAlignment="Left">
+                    <settingscontrols:SettingsCard x:Name="QuickActionsCard" ContentAlignment="Left">
                         <StackPanel Spacing="8">
                             <StackPanel Orientation="Horizontal" Spacing="8">
-                                <Button Content="Send low battery test"
+                                <Button x:Name="SendLowBatteryTestButton"
                                         Click="SendLowBatteryTest_Click"
-                                        AutomationProperties.Name="Send low battery test notification"
                                         Style="{ThemeResource AccentButtonStyle}" />
-                                <Button Content="Refresh battery status"
-                                        AutomationProperties.Name="Refresh battery status"
+                                <Button x:Name="RefreshBatteryStatusButton"
                                         Click="RefreshBatteryStatus_Click" />
                             </StackPanel>
                             <StackPanel Spacing="2">
@@ -160,66 +150,60 @@
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </StackPanel>
                         </StackPanel>
-                    </controls:SettingsCard>
+                    </settingscontrols:SettingsCard>
                 </StackPanel>
 
                 <!-- Window Behavior Section -->
                 <StackPanel Spacing="4">
-                    <TextBlock Text="Window Behavior"
-                               Style="{ThemeResource BodyStrongTextBlockStyle}"
-                               Margin="0,0,0,4" />
+                    <controls:TranslatedTextBlock Text="Window behavior"
+                                                  TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
+                                                  Margin="0,0,0,4" />
 
-                    <controls:SettingsCard
-                        Header="Minimize to tray on close"
-                        Description="When enabled, clicking the window close button minimizes to system tray. When disabled, the application will exit.">
+                    <settingscontrols:SettingsCard x:Name="MinimizeToTrayCard">
                         <ToggleSwitch IsOn="{x:Bind ViewModel.MinimizeToTrayOnClose, Mode=TwoWay}"
-                                      AutomationProperties.Name="Minimize to tray on close"
+                                      x:Name="MinimizeToTrayToggle"
                                       OnContent="On"
                                       OffContent="Off" />
-                    </controls:SettingsCard>
+                    </settingscontrols:SettingsCard>
 
-                    <controls:SettingsCard
-                        Header="Start with Windows"
-                        Description="Launches Pulsar Battery in the background when you sign in.">
+                    <settingscontrols:SettingsCard x:Name="StartWithWindowsCard">
                         <ToggleSwitch x:Name="StartWithWindowsToggle"
                                       IsOn="{x:Bind ViewModel.StartWithWindows, Mode=OneWay}"
-                                      AutomationProperties.Name="Start with Windows"
                                       Toggled="StartWithWindowsToggle_Toggled"
                                       OnContent="On"
                                       OffContent="Off" />
-                    </controls:SettingsCard>
+                    </settingscontrols:SettingsCard>
                 </StackPanel>
 
                 <!-- About Section -->
                 <StackPanel Spacing="4">
-                    <TextBlock Text="About"
-                               Style="{ThemeResource BodyStrongTextBlockStyle}"
-                               Margin="0,0,0,4" />
+                    <controls:TranslatedTextBlock Text="About"
+                                                  TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
+                                                  Margin="0,0,0,4" />
 
-                    <controls:SettingsExpander
+                    <settingscontrols:SettingsExpander
                         Header="Pulsar Battery"
                         Description="&#169; 2026 darthsoup, Elehiggle">
-                        <controls:SettingsExpander.HeaderIcon>
+                        <settingscontrols:SettingsExpander.HeaderIcon>
                             <ImageIcon Source="/Assets/StoreLogo.png" />
-                        </controls:SettingsExpander.HeaderIcon>
+                        </settingscontrols:SettingsExpander.HeaderIcon>
 
                         <TextBlock Text="{x:Bind AppVersion}"
                                    Style="{ThemeResource CaptionTextBlockStyle}"
                                    Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                    VerticalAlignment="Center" />
 
-                        <controls:SettingsExpander.Items>
-                            <controls:SettingsCard
-                                Header="View on GitHub"
+                        <settingscontrols:SettingsExpander.Items>
+                            <settingscontrols:SettingsCard x:Name="ViewOnGitHubCard"
                                 Description="github.com/darthsoup/PulsarBattery"
                                 IsClickEnabled="True"
                                 Click="GitHubCard_Click">
-                                <controls:SettingsCard.ActionIcon>
+                                <settingscontrols:SettingsCard.ActionIcon>
                                     <FontIcon Glyph="&#xE8A7;" />
-                                </controls:SettingsCard.ActionIcon>
-                            </controls:SettingsCard>
-                        </controls:SettingsExpander.Items>
-                    </controls:SettingsExpander>
+                                </settingscontrols:SettingsCard.ActionIcon>
+                            </settingscontrols:SettingsCard>
+                        </settingscontrols:SettingsExpander.Items>
+                    </settingscontrols:SettingsExpander>
                 </StackPanel>
 
             </StackPanel>

@@ -3,6 +3,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using PulsarBattery.Pages;
+using PulsarBattery.Tools;
 using PulsarBattery.ViewModels;
 using System;
 using System.IO;
@@ -39,6 +40,9 @@ public sealed partial class MainWindow : Window
 
         RootGrid.DataContext = _viewModel;
         _viewModel.Start();
+
+        DashboardItem.Content = Loc.T("Dashboard");
+        HistoryItem.Content = Loc.T("History");
 
         Activated += MainWindow_Activated;
 

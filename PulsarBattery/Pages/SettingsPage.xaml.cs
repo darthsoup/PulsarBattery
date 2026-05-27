@@ -1,9 +1,11 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using PulsarBattery.Services;
+using PulsarBattery.Tools;
 using System;
 using System.IO;
 using System.Threading.Tasks;
@@ -39,6 +41,53 @@ public sealed partial class SettingsPage : Page
     public SettingsPage()
     {
         InitializeComponent();
+        ApplyLocalization();
+    }
+
+    private void ApplyLocalization()
+    {
+        PollIntervalCard.Header = Loc.T("Battery check interval");
+        PollIntervalCard.Description = Loc.T("How often the app polls the device and updates the dashboard");
+
+        LogIntervalCard.Header = Loc.T("Log interval");
+        LogIntervalCard.Description = Loc.T("How often readings are added to history");
+
+        LowBatteryExpander.Header = Loc.T("Low battery alerts");
+        LowBatteryExpander.Description = Loc.T("Configure thresholds, sound, and cooldown for low-battery notifications");
+
+        AlertThresholdUnlockedCard.Header = Loc.T("Alert threshold (unlocked)");
+        AlertThresholdLockedCard.Header = Loc.T("Alert threshold (locked)");
+        AlertCooldownCard.Header = Loc.T("Alert cooldown");
+
+        EnableBeepsCard.Header = Loc.T("Enable beeps");
+        AutomationProperties.SetName(EnableBeepsToggle, Loc.T("Enable beeps"));
+
+        AlertSoundCard.Header = Loc.T("Alert sound");
+
+        ChooseSoundButton.Content = Loc.T("Choose");
+        AutomationProperties.SetName(ChooseSoundButton, Loc.T("Choose alert sound file"));
+
+        ClearSoundButton.Content = Loc.T("Clear");
+        AutomationProperties.SetName(ClearSoundButton, Loc.T("Clear alert sound"));
+
+        QuickActionsCard.Header = Loc.T("Quick actions");
+        QuickActionsCard.Description = Loc.T("Send a test Windows notification or refresh the battery reading");
+
+        SendLowBatteryTestButton.Content = Loc.T("Send low battery test");
+        AutomationProperties.SetName(SendLowBatteryTestButton, Loc.T("Send low battery test notification"));
+
+        RefreshBatteryStatusButton.Content = Loc.T("Refresh battery status");
+        AutomationProperties.SetName(RefreshBatteryStatusButton, Loc.T("Refresh battery status"));
+
+        MinimizeToTrayCard.Header = Loc.T("Minimize to tray on close");
+        MinimizeToTrayCard.Description = Loc.T("When enabled, clicking the window close button minimizes to system tray. When disabled, the application will exit.");
+        AutomationProperties.SetName(MinimizeToTrayToggle, Loc.T("Minimize to tray on close"));
+
+        StartWithWindowsCard.Header = Loc.T("Start with Windows");
+        StartWithWindowsCard.Description = Loc.T("Launches Pulsar Battery in the background when you sign in.");
+        AutomationProperties.SetName(StartWithWindowsToggle, Loc.T("Start with Windows"));
+
+        ViewOnGitHubCard.Header = Loc.T("View on GitHub");
     }
 
     private void RootGrid_PointerPressed(object sender, PointerRoutedEventArgs e)

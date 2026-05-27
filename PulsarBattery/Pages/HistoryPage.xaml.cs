@@ -1,5 +1,7 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using PulsarBattery.Tools;
 
 namespace PulsarBattery.Pages;
 
@@ -10,6 +12,12 @@ public sealed partial class HistoryPage : Page
     public HistoryPage()
     {
         InitializeComponent();
+        PreviousButton.Content = Loc.T("Previous");
+        AutomationProperties.SetName(PreviousButton, Loc.T("Previous history page"));
+        NextButton.Content = Loc.T("Next");
+        AutomationProperties.SetName(NextButton, Loc.T("Next history page"));
+        ClearButton.Content = Loc.T("Clear");
+        AutomationProperties.SetName(ClearButton, Loc.T("Clear history"));
     }
 
     private void PreviousPage_Click(object sender, RoutedEventArgs e)

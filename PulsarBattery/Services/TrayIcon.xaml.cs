@@ -1,6 +1,7 @@
 using H.NotifyIcon;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml.Controls;
+using PulsarBattery.Tools;
 using PulsarBattery.ViewModels;
 using System;
 using WinRT.Interop;
@@ -15,6 +16,9 @@ internal sealed partial class TrayIcon : UserControl, IDisposable
     public TrayIcon()
     {
         InitializeComponent();
+
+        OpenMenuItem.Text = Loc.T("Open");
+        ExitMenuItem.Text = Loc.T("Exit");
 
         // Assign commands directly to the auto-generated fields
         TaskbarIcon.LeftClickCommand = new RelayCommand(ShowWindow);

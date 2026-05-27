@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml.Data;
+using PulsarBattery.Tools;
 using System;
 
 namespace PulsarBattery.Converters;
@@ -9,7 +10,7 @@ public sealed class ChargingStatusConverter : IValueConverter
     {
         if (value is bool isCharging)
         {
-            return isCharging ? "Charging" : "Not Charging";
+            return isCharging ? Loc.T("Charging") : Loc.T("Not Charging");
         }
 
         return "Status: --";
