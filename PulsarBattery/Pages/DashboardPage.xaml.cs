@@ -2,6 +2,8 @@ using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using PulsarBattery.Tools;
+using System;
+using System.Diagnostics;
 
 namespace PulsarBattery.Pages;
 
@@ -18,9 +20,16 @@ public sealed partial class DashboardPage : Page
 
     private async void RetryConnection_Click(object sender, RoutedEventArgs e)
     {
-        if (ViewModel is not null)
+        try
         {
-            await ViewModel.RetryConnectionAsync();
+            if (ViewModel is not null)
+            {
+                await ViewModel.RetryConnectionAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[DashboardPage] RetryConnection_Click: {ex.Message}");
         }
     }
 }

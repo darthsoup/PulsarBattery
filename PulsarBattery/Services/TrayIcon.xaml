@@ -16,7 +16,7 @@
     <!-- TaskbarIcon -->
     <tb:TaskbarIcon 
         x:Name="TaskbarIcon"
-        ToolTipText="{Binding BatteryPercentage, Converter={StaticResource BatteryTooltipConverter}}"
+        ToolTipText="{x:Bind ViewModel.BatteryPercentage, Converter={StaticResource BatteryTooltipConverter}, Mode=OneWay}"
         IconSource="ms-appx:///Assets/icon.ico"
         ContextMenuMode="SecondWindow"
         NoLeftClickDelay="True">
@@ -25,7 +25,7 @@
             <MenuFlyout AreOpenCloseAnimationsEnabled="True">
                 <!-- Battery Status -->
                 <MenuFlyoutItem 
-                    Text="{Binding BatteryPercentage, Converter={StaticResource BatteryPercentageConverter}}"
+                    Text="{x:Bind ViewModel.BatteryPercentage, Converter={StaticResource BatteryPercentageConverter}, Mode=OneWay}"
                     IsEnabled="False">
                     <MenuFlyoutItem.Icon>
                         <FontIcon Glyph="&#xEBAA;" FontFamily="Segoe Fluent Icons"/>
@@ -34,7 +34,7 @@
                 
                 <!-- Charging Status -->
                 <MenuFlyoutItem 
-                    Text="{Binding IsCharging, Converter={StaticResource ChargingStatusConverter}}"
+                    Text="{x:Bind ViewModel.IsCharging, Converter={StaticResource ChargingStatusConverter}, Mode=OneWay}"
                     IsEnabled="False">
                     <MenuFlyoutItem.Icon>
                         <FontIcon Glyph="&#xEBAB;" FontFamily="Segoe Fluent Icons"/>

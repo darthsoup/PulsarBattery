@@ -1,7 +1,7 @@
+using PulsarBattery.Tools;
 using System;
 using System.IO;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -12,12 +12,6 @@ internal sealed class SettingsStore
     private const string SettingsFileName = "settings.json";
     private const string ApplicationFolderName = "PulsarBattery";
     private const string TemporaryFileExtension = ".tmp";
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = true,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
 
     private readonly string _filePath;
     private readonly SemaphoreSlim _fileAccessLock;
@@ -40,9 +34,9 @@ internal sealed class SettingsStore
             }
 
             await using var stream = File.OpenRead(_filePath);
-            return await JsonSerializer.DeserializeAsync<AppSettings>(
+            return await JsonSerializer.DeserializeAsync(
                 stream,
-                JsonOptions,
+                SettingsJsonContext.Default.AppSettings,
                 cancellationToken).ConfigureAwait(false);
         }
         catch
@@ -81,7 +75,7 @@ internal sealed class SettingsStore
     private static async Task WriteToTemporaryFileAsync(AppSettings settings, string temporaryFilePath, CancellationToken cancellationToken)
     {
         await using var stream = File.Create(temporaryFilePath);
-        await JsonSerializer.SerializeAsync(stream, settings, JsonOptions, cancellationToken).ConfigureAwait(false);
+        await JsonSerializer.SerializeAsync(stream, settings, SettingsJsonContext.Default.AppSettings, cancellationToken).ConfigureAwait(false);
     }
 
     private void ReplaceFileWithTemporary(string temporaryFilePath)

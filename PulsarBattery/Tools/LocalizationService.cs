@@ -57,7 +57,7 @@ internal static class LocalizationService
         try
         {
             string json = File.ReadAllText(path);
-            var result = JsonSerializer.Deserialize<Dictionary<string, string>>(json);
+            var result = JsonSerializer.Deserialize(json, CompactJsonContext.Default.DictionaryStringString);
             return result ?? [];
         }
         catch (Exception ex)

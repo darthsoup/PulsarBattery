@@ -4,14 +4,28 @@ using Microsoft.UI.Xaml.Controls;
 using PulsarBattery.Tools;
 using PulsarBattery.ViewModels;
 using System;
+using System.ComponentModel;
 using WinRT.Interop;
 using WinUIWindow = Microsoft.UI.Xaml.Window;
 
 namespace PulsarBattery.Services;
 
-internal sealed partial class TrayIcon : UserControl, IDisposable
+internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyPropertyChanged
 {
     private WinUIWindow? _window;
+    private MainViewModel? _viewModel;
+
+    public event PropertyChangedEventHandler? PropertyChanged;
+
+    public MainViewModel? ViewModel
+    {
+        get => _viewModel;
+        private set
+        {
+            _viewModel = value;
+            PropertyChanged?.Invoke(this, new PropertyChangedEventArgs(nameof(ViewModel)));
+        }
+    }
 
     public TrayIcon()
     {
@@ -32,11 +46,7 @@ internal sealed partial class TrayIcon : UserControl, IDisposable
     public void Initialize(WinUIWindow window, MainViewModel? viewModel = null)
     {
         _window = window;
-
-        if (viewModel is not null)
-        {
-            TaskbarIcon.DataContext = viewModel;
-        }
+        ViewModel = viewModel;
     }
 
     private void ShowWindow()

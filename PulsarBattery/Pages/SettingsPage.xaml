@@ -173,6 +173,11 @@
                                       OnContent="On"
                                       OffContent="Off" />
                     </settingscontrols:SettingsCard>
+
+                    <InfoBar x:Name="InstallInfoBar"
+                             IsOpen="False"
+                             IsClosable="True"
+                             Margin="0,8,0,0" />
                 </StackPanel>
 
                 <!-- About Section -->

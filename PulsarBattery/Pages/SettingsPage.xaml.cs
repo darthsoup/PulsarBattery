@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Media;
 using PulsarBattery.Services;
 using PulsarBattery.Tools;
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using Windows.ApplicationModel;
@@ -141,30 +142,37 @@ public sealed partial class SettingsPage : Page
 
     private async void ChooseLowBatterySound_Click(object sender, RoutedEventArgs e)
     {
-        if (DataContext is not ViewModels.MainViewModel viewModel)
+        try
         {
-            return;
+            if (DataContext is not ViewModels.MainViewModel viewModel)
+            {
+                return;
+            }
+
+            var window = App.MainWindow;
+            if (window is null)
+            {
+                return;
+            }
+
+            var picker = new FileOpenPicker
+            {
+                SuggestedStartLocation = PickerLocationId.MusicLibrary
+            };
+            picker.FileTypeFilter.Add(".mp3");
+            picker.FileTypeFilter.Add(".wav");
+
+            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(window));
+
+            var file = await picker.PickSingleFileAsync();
+            if (file is not null)
+            {
+                viewModel.LowBatterySoundPath = file.Path;
+            }
         }
-
-        var window = App.MainWindow;
-        if (window is null)
+        catch (Exception ex)
         {
-            return;
-        }
-
-        var picker = new FileOpenPicker
-        {
-            SuggestedStartLocation = PickerLocationId.MusicLibrary
-        };
-        picker.FileTypeFilter.Add(".mp3");
-        picker.FileTypeFilter.Add(".wav");
-
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(window));
-
-        var file = await picker.PickSingleFileAsync();
-        if (file is not null)
-        {
-            viewModel.LowBatterySoundPath = file.Path;
+            Debug.WriteLine($"[SettingsPage] ChooseLowBatterySound_Click: {ex.Message}");
         }
     }
 
@@ -192,6 +200,18 @@ public sealed partial class SettingsPage : Page
     }
 
     private async void StartWithWindowsToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await HandleStartWithWindowsToggledAsync();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[SettingsPage] StartWithWindowsToggle_Toggled: {ex.Message}");
+        }
+    }
+
+    private async Task HandleStartWithWindowsToggledAsync()
     {
         if (_isUpdatingStartWithWindowsToggle)
         {
@@ -336,42 +356,29 @@ public sealed partial class SettingsPage : Page
         }
     }
 
-    private async Task ShowErrorDialogAsync(string message)
+    private Task ShowErrorDialogAsync(string message)
     {
-        var dialog = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            Title = "Installation failed",
-            CloseButtonText = "OK",
-            DefaultButton = ContentDialogButton.Close,
-            Content = new TextBlock
-            {
-                Text = message,
-                TextWrapping = TextWrapping.Wrap
-            }
-        };
-
-        await dialog.ShowAsync();
+        ShowInstallInfoBar(InfoBarSeverity.Error, "Installation failed", message);
+        return Task.CompletedTask;
     }
 
-    private async Task ShowBundledBuildRequiredDialogAsync()
+    private Task ShowBundledBuildRequiredDialogAsync()
     {
-        var dialog = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            Title = "Autostart unavailable",
-            CloseButtonText = "OK",
-            DefaultButton = ContentDialogButton.Close,
-            Content = new TextBlock
-            {
-                Text =
-                    "Autostart can only be enabled from a bundled single-file PulsarBattery.exe.\n\n" +
-                    "Please launch the published single-file build and try again.",
-                TextWrapping = TextWrapping.Wrap
-            }
-        };
+        ShowInstallInfoBar(
+            InfoBarSeverity.Informational,
+            "Autostart unavailable",
+            "Autostart can only be enabled from a bundled single-file PulsarBattery.exe. " +
+            "Please launch the published single-file build and try again.");
+        return Task.CompletedTask;
+    }
 
-        await dialog.ShowAsync();
+    private void ShowInstallInfoBar(InfoBarSeverity severity, string title, string message)
+    {
+        InstallInfoBar.IsOpen = false;
+        InstallInfoBar.Severity = severity;
+        InstallInfoBar.Title = title;
+        InstallInfoBar.Message = message;
+        InstallInfoBar.IsOpen = true;
     }
 
     private void ApplyStartWithWindowsToggleState(bool value)
@@ -389,6 +396,13 @@ public sealed partial class SettingsPage : Page
 
     private async void GitHubCard_Click(object sender, RoutedEventArgs e)
     {
-        await Launcher.LaunchUriAsync(new Uri("https://github.com/darthsoup/PulsarBattery"));
+        try
+        {
+            await Launcher.LaunchUriAsync(new Uri("https://github.com/darthsoup/PulsarBattery"));
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[SettingsPage] GitHubCard_Click: {ex.Message}");
+        }
     }
 }
