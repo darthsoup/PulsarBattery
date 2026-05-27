@@ -7,7 +7,6 @@ using PulsarBattery.Services;
 using System;
 using System.IO;
 using System.Threading.Tasks;
-using Windows.ApplicationModel;
 using Windows.Storage.Pickers;
 using Windows.System;
 using WinRT.Interop;
@@ -24,16 +23,15 @@ public sealed partial class SettingsPage : Page
 
     private static string GetAppVersion()
     {
-        try
+        var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+        if (v is null)
         {
-            var v = Package.Current.Id.Version;
-            return $"{v.Major}.{v.Minor}.{v.Build}.{v.Revision}";
+            return "1.0.0";
         }
-        catch
-        {
-            var v = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
-            return v is null ? "develop" : $"{v.Major}.{v.Minor}.{v.Build}.{v.Revision}";
-        }
+
+        return v.Revision > 0
+            ? $"{v.Major}.{v.Minor}.{v.Build}.{v.Revision}"
+            : $"{v.Major}.{v.Minor}.{v.Build}";
     }
 
     public SettingsPage()

@@ -20,11 +20,44 @@ jobs:
         with:
           dotnet-version: "10.x"
 
+      - name: Extract version from tag
+        id: version
+        shell: pwsh
+        run: |
+          $tag = '${{ github.ref_name }}'
+          $ver = $tag -replace '^v', ''
+          $parts = $ver.Split('.')
+          while ($parts.Count -lt 4) { $parts += '0' }
+          $ver4 = ($parts[0..3]) -join '.'
+          echo "VER=$ver" >> $env:GITHUB_OUTPUT
+          echo "VER4=$ver4" >> $env:GITHUB_OUTPUT
+
+      - name: Update app.manifest version
+        shell: pwsh
+        run: |
+          $ver4 = '${{ steps.version.outputs.VER4 }}'
+          $file = 'PulsarBattery\app.manifest'
+          (Get-Content $file) -replace 'version="[\d.]+"', "version=`"$ver4`"" | Set-Content $file
+
+      - name: Update Package.appxmanifest version
+        shell: pwsh
+        run: |
+          $ver4 = '${{ steps.version.outputs.VER4 }}'
+          $file = 'PulsarBattery\Package.appxmanifest'
+          (Get-Content $file) -replace 'Version="[\d.]+"', "Version=`"$ver4`"" | Set-Content $file
+
       - name: Restore
         run: dotnet restore .\PulsarBattery\PulsarBattery.csproj
 
       - name: Publish
-        run: dotnet publish .\PulsarBattery\PulsarBattery.csproj -c Release -p:Platform=x64 -p:PublishProfile=win-x64
+        run: >
+          dotnet publish .\PulsarBattery\PulsarBattery.csproj
+          -c Release
+          -p:Platform=x64
+          -p:PublishProfile=win-x64
+          -p:Version=${{ steps.version.outputs.VER4 }}
+          -p:FileVersion=${{ steps.version.outputs.VER4 }}
+          -p:AssemblyVersion=${{ steps.version.outputs.VER4 }}
 
       - name: Zip artifact
         run: Compress-Archive -Path PulsarBattery\bin\Publish\win-x64\PulsarBattery.exe -DestinationPath PulsarBattery-win-x64.zip
