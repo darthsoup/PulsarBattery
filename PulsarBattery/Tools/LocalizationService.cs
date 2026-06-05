@@ -3,20 +3,23 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Globalization;
 using System.IO;
+using System.Reflection;
 using System.Text.Json;
 
 namespace PulsarBattery.Tools;
 
 internal static class LocalizationService
 {
+    private const string DefaultLocale = "en-US";
+
     private static Dictionary<string, string> _strings = [];
 
-    private static readonly string[] SupportedLocales = ["de-DE"];
+    private static readonly string[] SupportedLocales = ["de-DE", DefaultLocale];
 
     public static void Initialize()
     {
         string locale = ResolveLocale(CultureInfo.CurrentUICulture);
-        _strings = LoadFile(locale);
+        _strings = LoadEmbedded(locale);
     }
 
     public static string GetString(string key)
@@ -40,29 +43,28 @@ internal static class LocalizationService
                 return locale;
         }
 
-        return "en-US";
+        return DefaultLocale;
     }
 
-    private static Dictionary<string, string> LoadFile(string locale)
+    private static Dictionary<string, string> LoadEmbedded(string locale)
     {
-        string exeDir = AppContext.BaseDirectory;
-        string path = Path.Combine(exeDir, "Strings", $"{locale}.json");
-
-        if (!File.Exists(path))
-        {
-            Debug.WriteLine($"[Localization] File not found: {path}");
-            return [];
-        }
+        string resourceName = $"PulsarBattery.Strings.{locale}.json";
 
         try
         {
-            string json = File.ReadAllText(path);
-            var result = JsonSerializer.Deserialize(json, CompactJsonContext.Default.DictionaryStringString);
+            using Stream? stream = Assembly.GetExecutingAssembly().GetManifestResourceStream(resourceName);
+            if (stream is null)
+            {
+                Debug.WriteLine($"[Localization] Embedded resource not found: {resourceName}");
+                return [];
+            }
+
+            var result = JsonSerializer.Deserialize(stream, CompactJsonContext.Default.DictionaryStringString);
             return result ?? [];
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[Localization] Failed to load {path}: {ex.Message}");
+            Debug.WriteLine($"[Localization] Failed to load {resourceName}: {ex.Message}");
             return [];
         }
     }

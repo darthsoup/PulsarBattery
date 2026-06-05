@@ -107,14 +107,8 @@
     <Page Include="Pages\SettingsPage.xaml" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="Strings\en-US.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-    </Content>
-    <Content Include="Strings\de-DE.json">
-      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
-      <CopyToPublishDirectory>Always</CopyToPublishDirectory>
-    </Content>
+    <EmbeddedResource Include="Strings\en-US.json" LogicalName="PulsarBattery.Strings.en-US.json" />
+    <EmbeddedResource Include="Strings\de-DE.json" LogicalName="PulsarBattery.Strings.de-DE.json" />
   </ItemGroup>
   <ItemGroup>
     <None Include="..\README.md">
