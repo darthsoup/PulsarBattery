@@ -114,9 +114,7 @@
 
                             <settingscontrols:SettingsCard x:Name="EnableBeepsCard">
                                 <ToggleSwitch IsOn="{x:Bind ViewModel.EnableBeeps, Mode=TwoWay}"
-                                              x:Name="EnableBeepsToggle"
-                                              OnContent="On"
-                                              OffContent="Off" />
+                                              x:Name="EnableBeepsToggle" />
                             </settingscontrols:SettingsCard>
 
                             <settingscontrols:SettingsCard x:Name="AlertSoundCard">
@@ -161,17 +159,13 @@
 
                     <settingscontrols:SettingsCard x:Name="MinimizeToTrayCard">
                         <ToggleSwitch IsOn="{x:Bind ViewModel.MinimizeToTrayOnClose, Mode=TwoWay}"
-                                      x:Name="MinimizeToTrayToggle"
-                                      OnContent="On"
-                                      OffContent="Off" />
+                                      x:Name="MinimizeToTrayToggle" />
                     </settingscontrols:SettingsCard>
 
                     <settingscontrols:SettingsCard x:Name="StartWithWindowsCard">
                         <ToggleSwitch x:Name="StartWithWindowsToggle"
                                       IsOn="{x:Bind ViewModel.StartWithWindows, Mode=OneWay}"
-                                      Toggled="StartWithWindowsToggle_Toggled"
-                                      OnContent="On"
-                                      OffContent="Off" />
+                                      Toggled="StartWithWindowsToggle_Toggled" />
                     </settingscontrols:SettingsCard>
 
                     <InfoBar x:Name="InstallInfoBar"

@@ -50,7 +50,6 @@
             <NavigationView.MenuItems>
                 <NavigationViewItem
                     x:Name="DashboardItem"
-                    Content="Dashboard"
                     Icon="Home"
                     Tag="dashboard" />
                 <NavigationViewItem x:Name="HistoryItem">

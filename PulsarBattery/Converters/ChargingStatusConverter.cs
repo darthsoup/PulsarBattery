@@ -10,10 +10,10 @@ public sealed class ChargingStatusConverter : IValueConverter
     {
         if (value is bool isCharging)
         {
-            return isCharging ? Loc.T("Charging") : Loc.T("Not Charging");
+            return isCharging ? Loc.T("Charging") : Loc.T("Not charging");
         }
 
-        return "Status: --";
+        return Loc.T("Status: --");
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, string language)

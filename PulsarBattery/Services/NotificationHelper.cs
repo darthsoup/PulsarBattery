@@ -83,8 +83,8 @@ internal static class NotificationHelper
             var title = isCharging ? Loc.T("Charging") : Loc.T("Battery Update");
 
             // Build device info line
-            var deviceLine = string.IsNullOrWhiteSpace(model) ? 
-                $"Battery: {currentPercentage}%" : 
+            var deviceLine = string.IsNullOrWhiteSpace(model) ?
+                string.Format(Loc.T("Battery: {0}%"), currentPercentage) :
                 $"{model}: {currentPercentage}%";
 
             var changeText = GetBatteryChangeText(previousPercentage, currentPercentage);
@@ -139,7 +139,7 @@ internal static class NotificationHelper
             var title = Loc.T("Low Battery");
 
             var deviceLine = string.IsNullOrWhiteSpace(model)
-                ? $"Battery: {batteryPercentage}%"
+                ? string.Format(Loc.T("Battery: {0}%"), batteryPercentage)
                 : $"{model}: {batteryPercentage}%";
 
             var statusLine = string.Format(Loc.T("Not charging (threshold: {0}%)"), thresholdPercent);
