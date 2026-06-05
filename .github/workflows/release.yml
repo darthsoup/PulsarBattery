@@ -36,15 +36,19 @@ jobs:
         shell: pwsh
         run: |
           $ver4 = '${{ steps.version.outputs.VER4 }}'
-          $file = 'PulsarBattery\app.manifest'
-          (Get-Content $file) -replace 'version="[\d.]+"', "version=`"$ver4`"" | Set-Content $file
+          $file = Resolve-Path 'PulsarBattery\app.manifest'
+          $xml = [xml](Get-Content $file -Raw)
+          $xml.assembly.assemblyIdentity.SetAttribute('version', $ver4)
+          $xml.Save($file)
 
       - name: Update Package.appxmanifest version
         shell: pwsh
         run: |
           $ver4 = '${{ steps.version.outputs.VER4 }}'
-          $file = 'PulsarBattery\Package.appxmanifest'
-          (Get-Content $file) -replace 'Version="[\d.]+"', "Version=`"$ver4`"" | Set-Content $file
+          $file = Resolve-Path 'PulsarBattery\Package.appxmanifest'
+          $xml = [xml](Get-Content $file -Raw)
+          $xml.Package.Identity.SetAttribute('Version', $ver4)
+          $xml.Save($file)
 
       - name: Restore
         run: dotnet restore .\PulsarBattery\PulsarBattery.csproj
