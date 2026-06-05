@@ -8,6 +8,9 @@ namespace PulsarBattery.Controls;
 
 public sealed partial class TranslatedTextBlock : UserControl
 {
+    public static readonly DependencyProperty TextProperty =
+        DependencyProperty.Register(nameof(Text), typeof(string), typeof(TranslatedTextBlock), new PropertyMetadata(string.Empty, OnTextChanged));
+
     public static readonly DependencyProperty TextStyleProperty =
         DependencyProperty.Register(nameof(TextStyle), typeof(Style), typeof(TranslatedTextBlock), new PropertyMetadata(null));
 
@@ -46,13 +49,17 @@ public sealed partial class TranslatedTextBlock : UserControl
 
     public string Text
     {
-        set => ApplyText(value);
+        get => (string)GetValue(TextProperty);
+        set => SetValue(TextProperty, value);
     }
 
     public TranslatedTextBlock()
     {
         this.InitializeComponent();
     }
+
+    private static void OnTextChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        => ((TranslatedTextBlock)d).ApplyText((string?)e.NewValue ?? string.Empty);
 
     private void ApplyText(string text)
     {
