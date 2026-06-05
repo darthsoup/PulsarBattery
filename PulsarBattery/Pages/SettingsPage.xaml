@@ -174,6 +174,19 @@
                              Margin="0,8,0,0" />
                 </StackPanel>
 
+                <!-- Language Section -->
+                <StackPanel Spacing="4">
+                    <controls:TranslatedTextBlock Text="Language"
+                                                  TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
+                                                  Margin="0,0,0,4" />
+
+                    <settingscontrols:SettingsCard x:Name="LanguageCard">
+                        <ComboBox x:Name="LanguageComboBox"
+                                  MinWidth="200"
+                                  SelectionChanged="LanguageComboBox_SelectionChanged" />
+                    </settingscontrols:SettingsCard>
+                </StackPanel>
+
                 <!-- About Section -->
                 <StackPanel Spacing="4">
                     <controls:TranslatedTextBlock Text="About"

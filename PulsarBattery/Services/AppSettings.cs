@@ -1,3 +1,4 @@
+using PulsarBattery.Tools;
 using System;
 
 namespace PulsarBattery.Services;
@@ -21,6 +22,9 @@ internal sealed record AppSettings
     public bool MinimizeToTrayOnClose { get; init; } = true;
 
     public bool StartWithWindows { get; init; } = false;
+
+    /// <summary>Locale override (e.g. "de-DE"); null means follow the system language.</summary>
+    public string? Language { get; init; }
 
     public static AppSettings CreateDefaultsFromEnvironment()
     {
@@ -47,6 +51,7 @@ internal sealed record AppSettings
             LowBatterySoundPath = string.IsNullOrWhiteSpace(settings.LowBatterySoundPath)
                 ? null
                 : settings.LowBatterySoundPath,
+            Language = LocalizationService.NormalizeLocale(settings.Language),
         };
     }
 

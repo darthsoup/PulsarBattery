@@ -93,5 +93,9 @@
   "Installation failed": "Installation failed",
   "Installation failed.": "Installation failed.",
   "Autostart unavailable": "Autostart unavailable",
-  "Autostart can only be enabled from a bundled single-file PulsarBattery.exe. Please launch the published single-file build and try again.": "Autostart can only be enabled from a bundled single-file PulsarBattery.exe. Please launch the published single-file build and try again."
+  "Autostart can only be enabled from a bundled single-file PulsarBattery.exe. Please launch the published single-file build and try again.": "Autostart can only be enabled from a bundled single-file PulsarBattery.exe. Please launch the published single-file build and try again.",
+  "Language": "Language",
+  "App language": "App language",
+  "Takes effect after the app is restarted.": "Takes effect after the app is restarted.",
+  "Auto (system language)": "Auto (system language)"
 }

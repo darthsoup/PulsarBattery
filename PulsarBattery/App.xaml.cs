@@ -68,8 +68,6 @@ public partial class App : Application
 
     protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
-        LocalizationService.Initialize();
-
         try
         {
             await AppSettingsService.InitializeAsync();
@@ -78,6 +76,9 @@ public partial class App : Application
         {
             // ignore
         }
+
+        // Initialize after settings are loaded so a saved language override applies.
+        LocalizationService.Initialize(AppSettingsService.Current.Language);
 
         NotificationHelper.Init();
 
