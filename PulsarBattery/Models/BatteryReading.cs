@@ -1,3 +1,4 @@
+using PulsarBattery.Tools;
 using System;
 using System.Globalization;
 
@@ -7,5 +8,5 @@ public sealed record BatteryReading(DateTimeOffset Timestamp, int Percentage, bo
 {
     public string FormattedTimestamp => Timestamp.ToString("G", CultureInfo.CurrentCulture);
     
-    public string ChargingStatus => IsCharging ? "Yes" : "No";
+    public string ChargingStatus => IsCharging ? Loc.T("Yes") : Loc.T("No");
 }

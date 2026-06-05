@@ -1,9 +1,9 @@
 using PulsarBattery.Models;
+using PulsarBattery.Tools;
 using System;
 using System.Collections.Generic;
 using System.IO;
 using System.Text.Json;
-using System.Text.Json.Serialization;
 using System.Threading;
 using System.Threading.Tasks;
 
@@ -14,12 +14,6 @@ internal sealed class HistoryStore
     private const string HistoryFileName = "history.json";
     private const string ApplicationFolderName = "PulsarBattery";
     private const string TemporaryFileExtension = ".tmp";
-
-    private static readonly JsonSerializerOptions JsonOptions = new()
-    {
-        WriteIndented = false,
-        DefaultIgnoreCondition = JsonIgnoreCondition.WhenWritingNull,
-    };
 
     private readonly string _filePath;
     private readonly SemaphoreSlim _fileAccessLock;
@@ -74,9 +68,9 @@ internal sealed class HistoryStore
     private async Task<IReadOnlyList<BatteryReading>> DeserializeHistoryFileAsync(CancellationToken cancellationToken)
     {
         await using var stream = File.OpenRead(_filePath);
-        var readings = await JsonSerializer.DeserializeAsync<List<BatteryReading>>(
-            stream, 
-            JsonOptions, 
+        var readings = await JsonSerializer.DeserializeAsync(
+            stream,
+            CompactJsonContext.Default.ListBatteryReading,
             cancellationToken).ConfigureAwait(false);
 
         return readings ?? new List<BatteryReading>();
@@ -93,7 +87,7 @@ internal sealed class HistoryStore
     private async Task WriteToTemporaryFileAsync(IReadOnlyCollection<BatteryReading> readings, string temporaryFilePath, CancellationToken cancellationToken)
     {
         await using var stream = File.Create(temporaryFilePath);
-        await JsonSerializer.SerializeAsync(stream, readings, JsonOptions, cancellationToken).ConfigureAwait(false);
+        await JsonSerializer.SerializeAsync(stream, readings, CompactJsonContext.Default.ListBatteryReading, cancellationToken).ConfigureAwait(false);
     }
 
     private void ReplaceFileWithTemporary(string temporaryFilePath)

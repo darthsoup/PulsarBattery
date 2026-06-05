@@ -1,4 +1,5 @@
 using Microsoft.UI.Xaml.Data;
+using PulsarBattery.Tools;
 using System;
 
 namespace PulsarBattery.Converters;
@@ -9,10 +10,10 @@ public sealed class BatteryPercentageConverter : IValueConverter
     {
         if (value is int percentage)
         {
-            return $"Battery: {percentage}%";
+            return string.Format(Loc.T("Battery: {0}%"), percentage);
         }
 
-        return "Battery: --";
+        return Loc.T("Battery: --");
     }
 
     public object ConvertBack(object value, Type targetType, object parameter, string language)

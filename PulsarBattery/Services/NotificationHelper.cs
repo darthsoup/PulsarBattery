@@ -1,5 +1,6 @@
 using Microsoft.Windows.AppNotifications;
 using Microsoft.Windows.AppNotifications.Builder;
+using PulsarBattery.Tools;
 using System.IO;
 using Windows.Media.Core;
 using Windows.Media.Playback;
@@ -79,16 +80,17 @@ internal static class NotificationHelper
 
         try
         {
-            var title = isCharging ? "Charging" : "Battery Update";
+            var title = isCharging ? Loc.T("Charging") : Loc.T("Battery Update");
 
             // Build device info line
-            var deviceLine = string.IsNullOrWhiteSpace(model) ? 
-                $"Battery: {currentPercentage}%" : 
+            var deviceLine = string.IsNullOrWhiteSpace(model) ?
+                string.Format(Loc.T("Battery: {0}%"), currentPercentage) :
                 $"{model}: {currentPercentage}%";
 
+            var changeText = GetBatteryChangeText(previousPercentage, currentPercentage);
             var statusLine = isCharging
-                ? $"Currently charging - {GetBatteryChangeText(previousPercentage, currentPercentage)}"
-                : $"Not charging - {GetBatteryChangeText(previousPercentage, currentPercentage)}";
+                ? string.Format(Loc.T("Currently charging - {0}"), changeText)
+                : string.Format(Loc.T("Not charging - {0}"), changeText);
 
             var builder = new AppNotificationBuilder()
                 .AddText(title)
@@ -111,15 +113,15 @@ internal static class NotificationHelper
         
         if (change > 0)
         {
-            return $"+{change}% since last update";
+            return string.Format(Loc.T("+{0}% since last update"), change);
         }
         else if (change < 0)
         {
-            return $"{change}% since last update";
+            return string.Format(Loc.T("{0}% since last update"), change);
         }
         else
         {
-            return "No change";
+            return Loc.T("No change");
         }
     }
 
@@ -134,13 +136,13 @@ internal static class NotificationHelper
 
         try
         {
-            var title = "Low Battery";
+            var title = Loc.T("Low Battery");
 
             var deviceLine = string.IsNullOrWhiteSpace(model)
-                ? $"Battery: {batteryPercentage}%"
+                ? string.Format(Loc.T("Battery: {0}%"), batteryPercentage)
                 : $"{model}: {batteryPercentage}%";
 
-            var statusLine = $"Not charging (threshold: {thresholdPercent}%)";
+            var statusLine = string.Format(Loc.T("Not charging (threshold: {0}%)"), thresholdPercent);
 
             var builder = new AppNotificationBuilder()
                 .AddText(title)

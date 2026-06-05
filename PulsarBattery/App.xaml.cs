@@ -1,5 +1,6 @@
 ﻿using Microsoft.UI.Xaml;
 using PulsarBattery.Services;
+using PulsarBattery.Tools;
 using System;
 using System.Collections.Generic;
 using System.Diagnostics;
@@ -67,6 +68,8 @@ public partial class App : Application
 
     protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
     {
+        LocalizationService.Initialize();
+
         try
         {
             await AppSettingsService.InitializeAsync();

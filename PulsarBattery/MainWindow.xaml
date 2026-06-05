@@ -50,10 +50,9 @@
             <NavigationView.MenuItems>
                 <NavigationViewItem
                     x:Name="DashboardItem"
-                    Content="Dashboard"
                     Icon="Home"
                     Tag="dashboard" />
-                <NavigationViewItem Content="History">
+                <NavigationViewItem x:Name="HistoryItem">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE81C;" />
                     </NavigationViewItem.Icon>

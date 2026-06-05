@@ -3,6 +3,7 @@ using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Controls;
 using PulsarBattery.Pages;
+using PulsarBattery.Tools;
 using PulsarBattery.ViewModels;
 using System;
 using System.IO;
@@ -40,6 +41,10 @@ public sealed partial class MainWindow : Window
         RootGrid.DataContext = _viewModel;
         _viewModel.Start();
 
+        DashboardItem.Content = Loc.T("Dashboard");
+        HistoryItem.Content = Loc.T("History");
+        NavView.Loaded += NavView_Loaded;
+
         Activated += MainWindow_Activated;
 
         NavView.SelectedItem = DashboardItem;
@@ -47,6 +52,16 @@ public sealed partial class MainWindow : Window
     }
 
     internal void Stop() => _viewModel.Stop();
+
+    private void NavView_Loaded(object sender, RoutedEventArgs e)
+    {
+        // The built-in settings item is created by the framework and only
+        // available once the NavigationView has loaded.
+        if (NavView.SettingsItem is NavigationViewItem settingsItem)
+        {
+            settingsItem.Content = Loc.T("Settings");
+        }
+    }
 
     private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
     {

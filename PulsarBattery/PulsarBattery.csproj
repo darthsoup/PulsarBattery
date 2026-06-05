@@ -107,6 +107,10 @@
     <Page Include="Pages\SettingsPage.xaml" />
   </ItemGroup>
   <ItemGroup>
+    <EmbeddedResource Include="Strings\en-US.json" LogicalName="PulsarBattery.Strings.en-US.json" />
+    <EmbeddedResource Include="Strings\de-DE.json" LogicalName="PulsarBattery.Strings.de-DE.json" />
+  </ItemGroup>
+  <ItemGroup>
     <None Include="..\README.md">
       <Pack>True</Pack>
       <PackagePath>\</PackagePath>

@@ -1,10 +1,13 @@
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
 using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using PulsarBattery.Services;
+using PulsarBattery.Tools;
 using System;
+using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
 using Windows.Storage.Pickers;
@@ -37,6 +40,59 @@ public sealed partial class SettingsPage : Page
     public SettingsPage()
     {
         InitializeComponent();
+        ApplyLocalization();
+    }
+
+    private void ApplyLocalization()
+    {
+        PollIntervalCard.Header = Loc.T("Battery check interval");
+        PollIntervalCard.Description = Loc.T("How often the app polls the device and updates the dashboard");
+
+        LogIntervalCard.Header = Loc.T("Log interval");
+        LogIntervalCard.Description = Loc.T("How often readings are added to history");
+
+        LowBatteryExpander.Header = Loc.T("Low battery alerts");
+        LowBatteryExpander.Description = Loc.T("Configure thresholds, sound, and cooldown for low-battery notifications");
+
+        AlertThresholdUnlockedCard.Header = Loc.T("Alert threshold (unlocked)");
+        AlertThresholdLockedCard.Header = Loc.T("Alert threshold (locked)");
+        AlertCooldownCard.Header = Loc.T("Alert cooldown");
+
+        EnableBeepsCard.Header = Loc.T("Enable beeps");
+        EnableBeepsToggle.OnContent = Loc.T("On");
+        EnableBeepsToggle.OffContent = Loc.T("Off");
+        AutomationProperties.SetName(EnableBeepsToggle, Loc.T("Enable beeps"));
+
+        AlertSoundCard.Header = Loc.T("Alert sound");
+
+        ChooseSoundButton.Content = Loc.T("Choose");
+        AutomationProperties.SetName(ChooseSoundButton, Loc.T("Choose alert sound file"));
+
+        ClearSoundButton.Content = Loc.T("Clear");
+        AutomationProperties.SetName(ClearSoundButton, Loc.T("Clear alert sound"));
+
+        QuickActionsCard.Header = Loc.T("Quick actions");
+        QuickActionsCard.Description = Loc.T("Send a test Windows notification or refresh the battery reading");
+
+        SendLowBatteryTestButton.Content = Loc.T("Send low battery test");
+        AutomationProperties.SetName(SendLowBatteryTestButton, Loc.T("Send low battery test notification"));
+
+        RefreshBatteryStatusButton.Content = Loc.T("Refresh battery status");
+        AutomationProperties.SetName(RefreshBatteryStatusButton, Loc.T("Refresh battery status"));
+
+        MinimizeToTrayCard.Header = Loc.T("Minimize to tray on close");
+        MinimizeToTrayCard.Description = Loc.T("When enabled, clicking the window close button minimizes to system tray. When disabled, the application will exit.");
+        MinimizeToTrayToggle.OnContent = Loc.T("On");
+        MinimizeToTrayToggle.OffContent = Loc.T("Off");
+        AutomationProperties.SetName(MinimizeToTrayToggle, Loc.T("Minimize to tray on close"));
+
+        StartWithWindowsCard.Header = Loc.T("Start with Windows");
+        StartWithWindowsCard.Description = Loc.T("Launches Pulsar Battery in the background when you sign in.");
+        StartWithWindowsToggle.OnContent = Loc.T("On");
+        StartWithWindowsToggle.OffContent = Loc.T("Off");
+        AutomationProperties.SetName(StartWithWindowsToggle, Loc.T("Start with Windows"));
+
+        ViewOnGitHubCard.Header = Loc.T("View on GitHub");
     }
 
     private void RootGrid_PointerPressed(object sender, PointerRoutedEventArgs e)
@@ -90,30 +146,37 @@ public sealed partial class SettingsPage : Page
 
     private async void ChooseLowBatterySound_Click(object sender, RoutedEventArgs e)
     {
-        if (DataContext is not ViewModels.MainViewModel viewModel)
+        try
         {
-            return;
+            if (DataContext is not ViewModels.MainViewModel viewModel)
+            {
+                return;
+            }
+
+            var window = App.MainWindow;
+            if (window is null)
+            {
+                return;
+            }
+
+            var picker = new FileOpenPicker
+            {
+                SuggestedStartLocation = PickerLocationId.MusicLibrary
+            };
+            picker.FileTypeFilter.Add(".mp3");
+            picker.FileTypeFilter.Add(".wav");
+
+            InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(window));
+
+            var file = await picker.PickSingleFileAsync();
+            if (file is not null)
+            {
+                viewModel.LowBatterySoundPath = file.Path;
+            }
         }
-
-        var window = App.MainWindow;
-        if (window is null)
+        catch (Exception ex)
         {
-            return;
-        }
-
-        var picker = new FileOpenPicker
-        {
-            SuggestedStartLocation = PickerLocationId.MusicLibrary
-        };
-        picker.FileTypeFilter.Add(".mp3");
-        picker.FileTypeFilter.Add(".wav");
-
-        InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(window));
-
-        var file = await picker.PickSingleFileAsync();
-        if (file is not null)
-        {
-            viewModel.LowBatterySoundPath = file.Path;
+            Debug.WriteLine($"[SettingsPage] ChooseLowBatterySound_Click: {ex.Message}");
         }
     }
 
@@ -136,11 +199,23 @@ public sealed partial class SettingsPage : Page
         }
         else
         {
-            NotificationHelper.NotifyLowBattery(10, 15, model: "Test Device");
+            NotificationHelper.NotifyLowBattery(10, 15, model: Loc.T("Test Device"));
         }
     }
 
     private async void StartWithWindowsToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        try
+        {
+            await HandleStartWithWindowsToggledAsync();
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[SettingsPage] StartWithWindowsToggle_Toggled: {ex.Message}");
+        }
+    }
+
+    private async Task HandleStartWithWindowsToggledAsync()
     {
         if (_isUpdatingStartWithWindowsToggle)
         {
@@ -180,7 +255,7 @@ public sealed partial class SettingsPage : Page
 
             if (!result.Success)
             {
-                await ShowErrorDialogAsync(result.ErrorMessage ?? "Installation failed.");
+                await ShowErrorDialogAsync(result.ErrorMessage ?? Loc.T("Installation failed."));
                 ApplyStartWithWindowsToggleState(viewModel.StartWithWindows);
                 return;
             }
@@ -209,7 +284,7 @@ public sealed partial class SettingsPage : Page
 
     private async Task<bool> ShowAutostartInstallDialogAsync()
     {
-        var sourceExe = SelfInstallService.GetCurrentExecutablePath() ?? "Unknown";
+        var sourceExe = SelfInstallService.GetCurrentExecutablePath() ?? Loc.T("Unknown");
         var installDirectory = SelfInstallService.GetInstallDirectory();
         var installedExeTargetPath = string.IsNullOrWhiteSpace(sourceExe)
             ? Path.Combine(installDirectory, "PulsarBattery.exe")
@@ -218,28 +293,28 @@ public sealed partial class SettingsPage : Page
         var hasExistingAutostart = StartupRegistrationService.TryGetRegistrationState(out var autostartState)
             && autostartState.IsEnabled;
         var existingAutostartPath = hasExistingAutostart
-            ? autostartState.ExecutablePath ?? "(unknown path)"
+            ? autostartState.ExecutablePath ?? Loc.T("(unknown path)")
             : string.Empty;
         var isSameAutostartTarget = hasExistingAutostart &&
             ArePathsEqual(existingAutostartPath, installedExeTargetPath);
         var primaryButtonText = !hasExistingAutostart
-            ? "Install and Enable"
+            ? Loc.T("Install and Enable")
             : isSameAutostartTarget
-                ? "Update and Enable"
-                : "Replace and Enable";
+                ? Loc.T("Update and Enable")
+                : Loc.T("Replace and Enable");
         var titleText = !hasExistingAutostart
-            ? "Enable Autostart"
+            ? Loc.T("Enable Autostart")
             : isSameAutostartTarget
-                ? "Update installed autostart version?"
-                : "Replace existing autostart?";
+                ? Loc.T("Update installed autostart version?")
+                : Loc.T("Replace existing autostart?");
         var autostartSection = hasExistingAutostart
             ? isSameAutostartTarget
-                ? "Windows autostart is already configured for the installed location.\n" +
-                  $"Current autostart target:\n{existingAutostartPath}\n\n" +
-                  "If you continue, the installed executable at this path will be updated.\n\n"
-                : "Windows autostart is already configured.\n" +
-                  $"Current autostart target:\n{existingAutostartPath}\n\n" +
-                  $"If you continue, it will be replaced with:\n{installedExeTargetPath}\n\n"
+                ? string.Format(
+                    Loc.T("Windows autostart is already configured for the installed location.\nCurrent autostart target:\n{0}\n\nIf you continue, the installed executable at this path will be updated.\n\n"),
+                    existingAutostartPath)
+                : string.Format(
+                    Loc.T("Windows autostart is already configured.\nCurrent autostart target:\n{0}\n\nIf you continue, it will be replaced with:\n{1}\n\n"),
+                    existingAutostartPath, installedExeTargetPath)
             : string.Empty;
 
         var dialog = new ContentDialog
@@ -247,17 +322,13 @@ public sealed partial class SettingsPage : Page
             XamlRoot = XamlRoot,
             Title = titleText,
             PrimaryButtonText = primaryButtonText,
-            CloseButtonText = "Cancel",
+            CloseButtonText = Loc.T("Cancel"),
             DefaultButton = ContentDialogButton.Primary,
             Content = new TextBlock
             {
-                Text =
-                    "To enable autostart reliably, Pulsar Battery must be installed in a stable location.\n\n" +
-                    autostartSection +
-                    "If you continue:\n" +
-                    $"1. Only this executable is copied to:\n{installedExeTargetPath}\n\n" +
-                    "2. Windows autostart is registered for that installed executable.\n" +
-                    $"3. The current executable is closed and deleted:\n{sourceExe}",
+                Text = string.Format(
+                    Loc.T("To enable autostart reliably, Pulsar Battery must be installed in a stable location.\n\n{0}If you continue:\n1. Only this executable is copied to:\n{1}\n\n2. Windows autostart is registered for that installed executable.\n3. The current executable is closed and deleted:\n{2}"),
+                    autostartSection, installedExeTargetPath, sourceExe),
                 TextWrapping = TextWrapping.Wrap
             }
         };
@@ -285,42 +356,28 @@ public sealed partial class SettingsPage : Page
         }
     }
 
-    private async Task ShowErrorDialogAsync(string message)
+    private Task ShowErrorDialogAsync(string message)
     {
-        var dialog = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            Title = "Installation failed",
-            CloseButtonText = "OK",
-            DefaultButton = ContentDialogButton.Close,
-            Content = new TextBlock
-            {
-                Text = message,
-                TextWrapping = TextWrapping.Wrap
-            }
-        };
-
-        await dialog.ShowAsync();
+        ShowInstallInfoBar(InfoBarSeverity.Error, Loc.T("Installation failed"), message);
+        return Task.CompletedTask;
     }
 
-    private async Task ShowBundledBuildRequiredDialogAsync()
+    private Task ShowBundledBuildRequiredDialogAsync()
     {
-        var dialog = new ContentDialog
-        {
-            XamlRoot = XamlRoot,
-            Title = "Autostart unavailable",
-            CloseButtonText = "OK",
-            DefaultButton = ContentDialogButton.Close,
-            Content = new TextBlock
-            {
-                Text =
-                    "Autostart can only be enabled from a bundled single-file PulsarBattery.exe.\n\n" +
-                    "Please launch the published single-file build and try again.",
-                TextWrapping = TextWrapping.Wrap
-            }
-        };
+        ShowInstallInfoBar(
+            InfoBarSeverity.Informational,
+            Loc.T("Autostart unavailable"),
+            Loc.T("Autostart can only be enabled from a bundled single-file PulsarBattery.exe. Please launch the published single-file build and try again."));
+        return Task.CompletedTask;
+    }
 
-        await dialog.ShowAsync();
+    private void ShowInstallInfoBar(InfoBarSeverity severity, string title, string message)
+    {
+        InstallInfoBar.IsOpen = false;
+        InstallInfoBar.Severity = severity;
+        InstallInfoBar.Title = title;
+        InstallInfoBar.Message = message;
+        InstallInfoBar.IsOpen = true;
     }
 
     private void ApplyStartWithWindowsToggleState(bool value)
@@ -338,6 +395,13 @@ public sealed partial class SettingsPage : Page
 
     private async void GitHubCard_Click(object sender, RoutedEventArgs e)
     {
-        await Launcher.LaunchUriAsync(new Uri("https://github.com/darthsoup/PulsarBattery"));
+        try
+        {
+            await Launcher.LaunchUriAsync(new Uri("https://github.com/darthsoup/PulsarBattery"));
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[SettingsPage] GitHubCard_Click: {ex.Message}");
+        }
     }
 }
