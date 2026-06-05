@@ -23,6 +23,7 @@ public sealed partial class SettingsPage : Page
     private ViewModels.MainViewModel? ViewModel => DataContext as ViewModels.MainViewModel;
 
     private bool _isUpdatingStartWithWindowsToggle;
+    private bool _isUpdatingLanguageSelection;
 
     private static string GetAppVersion()
     {
@@ -41,6 +42,42 @@ public sealed partial class SettingsPage : Page
     {
         InitializeComponent();
         ApplyLocalization();
+        InitializeLanguageSelection();
+    }
+
+    private void InitializeLanguageSelection()
+    {
+        _isUpdatingLanguageSelection = true;
+        try
+        {
+            LanguageComboBox.Items.Clear();
+            LanguageComboBox.Items.Add(new ComboBoxItem { Content = Loc.T("Auto (system language)") });
+            // Language names are endonyms and intentionally not localized.
+            LanguageComboBox.Items.Add(new ComboBoxItem { Content = "English", Tag = "en-US" });
+            LanguageComboBox.Items.Add(new ComboBoxItem { Content = "Deutsch", Tag = "de-DE" });
+
+            LanguageComboBox.SelectedIndex = AppSettingsService.Current.Language switch
+            {
+                "en-US" => 1,
+                "de-DE" => 2,
+                _ => 0,
+            };
+        }
+        finally
+        {
+            _isUpdatingLanguageSelection = false;
+        }
+    }
+
+    private void LanguageComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isUpdatingLanguageSelection)
+        {
+            return;
+        }
+
+        var language = (LanguageComboBox.SelectedItem as ComboBoxItem)?.Tag as string;
+        AppSettingsService.Update(s => s with { Language = language });
     }
 
     private void ApplyLocalization()
@@ -91,6 +128,10 @@ public sealed partial class SettingsPage : Page
         StartWithWindowsToggle.OnContent = Loc.T("On");
         StartWithWindowsToggle.OffContent = Loc.T("Off");
         AutomationProperties.SetName(StartWithWindowsToggle, Loc.T("Start with Windows"));
+
+        LanguageCard.Header = Loc.T("App language");
+        LanguageCard.Description = Loc.T("Takes effect after the app is restarted.");
+        AutomationProperties.SetName(LanguageComboBox, Loc.T("App language"));
 
         ViewOnGitHubCard.Header = Loc.T("View on GitHub");
     }

@@ -16,10 +16,25 @@ internal static class LocalizationService
 
     private static readonly string[] SupportedLocales = ["de-DE", DefaultLocale];
 
-    public static void Initialize()
+    public static void Initialize(string? languageOverride = null)
     {
-        string locale = ResolveLocale(CultureInfo.CurrentUICulture);
+        string locale = NormalizeLocale(languageOverride) ?? ResolveLocale(CultureInfo.CurrentUICulture);
         _strings = LoadEmbedded(locale);
+    }
+
+    /// <summary>Maps a language value to its canonical supported locale, or null if unsupported.</summary>
+    internal static string? NormalizeLocale(string? language)
+    {
+        if (string.IsNullOrWhiteSpace(language))
+            return null;
+
+        foreach (string locale in SupportedLocales)
+        {
+            if (string.Equals(locale, language.Trim(), StringComparison.OrdinalIgnoreCase))
+                return locale;
+        }
+
+        return null;
     }
 
     public static string GetString(string key)
