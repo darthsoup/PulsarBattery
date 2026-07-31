@@ -35,6 +35,7 @@ public sealed class BatteryMonitor : IDisposable
     public void Dispose()
     {
         _cancellationTokenSource.Cancel();
+        _cancellationTokenSource.Dispose();
     }
 
     private async Task MonitorBatteryAsync(CancellationToken cancellationToken)

@@ -80,8 +80,8 @@ internal sealed class SettingsStore
 
     private void ReplaceFileWithTemporary(string temporaryFilePath)
     {
-        File.Copy(temporaryFilePath, _filePath, overwrite: true);
-        File.Delete(temporaryFilePath);
+        // Move is atomic; Copy + Delete could leave a torn settings file on crash.
+        File.Move(temporaryFilePath, _filePath, overwrite: true);
     }
 
     private void EnsureDirectoryExists()

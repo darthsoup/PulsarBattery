@@ -178,6 +178,7 @@ internal static class NotificationHelper
             {
                 AudioCategory = MediaPlayerAudioCategory.Alerts
             };
+            (_alertPlayer.Source as IDisposable)?.Dispose();
             _alertPlayer.Source = MediaSource.CreateFromUri(soundUri);
             _alertPlayer.Play();
         }

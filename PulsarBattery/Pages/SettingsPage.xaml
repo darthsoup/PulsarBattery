@@ -219,6 +219,9 @@
                 </StackPanel>
 
             </StackPanel>
+            <!-- Invisible focus target: clicking empty page space moves focus here so a
+                 NumberBox being edited loses focus and commits its value (NumberBox only
+                 updates its binding on focus loss). See RootGrid_PointerPressed. -->
             <Button x:Name="FocusSink"
                     Width="1"
                     Height="1"

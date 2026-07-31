@@ -60,28 +60,7 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
         });
     }
 
-    private void ExitApp()
-    {
-        try
-        {
-            global::PulsarBattery.App.RequestExit();
-        }
-        catch
-        {
-            // ignore
-        }
-
-        try
-        {
-            _window?.Close();
-        }
-        catch
-        {
-            // ignore
-        }
-
-        Microsoft.UI.Xaml.Application.Current?.Exit();
-    }
+    private static void ExitApp() => global::PulsarBattery.App.ExitApplication();
 
     public void Dispose()
     {

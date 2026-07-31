@@ -97,5 +97,6 @@
   "Language": "Sprache",
   "App language": "App-Sprache",
   "Takes effect after the app is restarted.": "Wird nach einem Neustart der App wirksam.",
-  "Auto (system language)": "Automatisch (Systemsprache)"
+  "Auto (system language)": "Automatisch (Systemsprache)",
+  "Default (Windows low battery sound)": "Standard (Windows-Ton für niedrigen Akkustand)"
 }

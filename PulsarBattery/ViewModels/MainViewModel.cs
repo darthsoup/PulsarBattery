@@ -115,8 +115,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public string HistoryCountText => string.Format(Loc.T("{0} entries"), History.Count);
 
-    public static double GlobalPollIntervalMinutes { get; private set; } = DefaultPollIntervalMinutes;
-
     public double PollIntervalMinutes
     {
         get => _pollIntervalMinutes;
@@ -125,7 +123,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var clampedMinutes = Math.Clamp(value, MinimumPollIntervalMinutes, 120);
             if (SetProperty(ref _pollIntervalMinutes, clampedMinutes))
             {
-                GlobalPollIntervalMinutes = clampedMinutes;
                 UpdatePollTimerInterval();
                 AppSettingsService.Update(settings => settings with { PollIntervalMinutes = clampedMinutes });
             }
@@ -251,7 +248,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public string LowBatterySoundDisplay => string.IsNullOrWhiteSpace(LowBatterySoundPath)
-        ? "Default (Windows low battery sound)"
+        ? Loc.T("Default (Windows low battery sound)")
         : LowBatterySoundPath;
 
     public Visibility HistoryEmptyVisibility => History.Count == 0 ? Visibility.Visible : Visibility.Collapsed;
@@ -302,8 +299,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
         History = new ObservableCollection<BatteryReading>();
         PagedHistory = new ObservableCollection<BatteryReading>();
         _currentHistoryPage = 1;
-
-        GlobalPollIntervalMinutes = _pollIntervalMinutes;
 
         _pollTimer = CreatePollTimer();
         _historySaveTimer = CreateHistorySaveTimer();
@@ -555,30 +550,30 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         try
         {
-        IsLoading = true;
-        NoDeviceFound = false;
-        StatusText = Loc.T("Reading battery status...");
-        
-        var batteryStatus = await ReadBatteryStatusAsync();
-        
-        if (batteryStatus is null)
-        {
-            StatusText = Loc.T("No Pulsar mouse detected");
-            NoDeviceFound = true;
+            IsLoading = true;
+            NoDeviceFound = false;
+            StatusText = Loc.T("Reading battery status...");
+
+            var batteryStatus = await ReadBatteryStatusAsync();
+
+            if (batteryStatus is null)
+            {
+                StatusText = Loc.T("No Pulsar mouse detected");
+                NoDeviceFound = true;
+                IsLoading = false;
+                return;
+            }
+
+            UpdateBatteryProperties(batteryStatus);
+            StatusText = Loc.T("Updated");
+            HasInitialData = true;
+            NoDeviceFound = false;
             IsLoading = false;
-            return;
-        }
 
-        UpdateBatteryProperties(batteryStatus);
-        StatusText = Loc.T("Updated");
-        HasInitialData = true;
-        NoDeviceFound = false;
-        IsLoading = false;
-
-        if (ShouldLogCurrentReading())
-        {
-            LogBatteryReading(batteryStatus);
-        }
+            if (ShouldLogCurrentReading())
+            {
+                LogBatteryReading(batteryStatus);
+            }
         }
         finally
         {
