@@ -52,6 +52,12 @@
                     x:Name="DashboardItem"
                     Icon="Home"
                     Tag="dashboard" />
+                <NavigationViewItem x:Name="MouseItem">
+                    <NavigationViewItem.Icon>
+                        <FontIcon Glyph="&#xE962;" />
+                    </NavigationViewItem.Icon>
+                    <NavigationViewItem.Tag>mouse</NavigationViewItem.Tag>
+                </NavigationViewItem>
                 <NavigationViewItem x:Name="HistoryItem">
                     <NavigationViewItem.Icon>
                         <FontIcon Glyph="&#xE81C;" />

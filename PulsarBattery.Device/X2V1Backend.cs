@@ -92,8 +92,9 @@ public sealed class X2V1Backend : IHidBackend
             }
 
             var connection = writerDevice.ProductID == PidWired ? ConnectionKind.Wired : ConnectionKind.Dongle;
+            var connectionName = connection == ConnectionKind.Dongle ? HidHelpers.GetProductName(writerDevice) : null;
             var transport = writer!.Device.GetMaxFeatureReportLength() > 0 ? "feature" : "output";
-            return ReadBatteryCmd04(writer!, reader ?? writer!, debug, transport, connection);
+            return ReadBatteryCmd04(writer!, reader ?? writer!, debug, transport, connection, connectionName);
         }
         catch
         {
@@ -115,7 +116,8 @@ public sealed class X2V1Backend : IHidBackend
         HidStream reader,
         bool debug,
         string transport,
-        ConnectionKind connection)
+        ConnectionKind connection,
+        string? connectionName)
     {
         var maxLen = Math.Max(writer.Device.GetMaxInputReportLength(), reader.Device.GetMaxInputReportLength());
         HidHelpers.DrainInput(reader, 6, maxLen);
@@ -185,7 +187,7 @@ public sealed class X2V1Backend : IHidBackend
             System.Diagnostics.Debug.WriteLine($"cmd04 raw={battery} charging={charging} data={Convert.ToHexString(payload)}");
         }
 
-        return new DeviceStatus(battery, charging, Name, connection);
+        return new DeviceStatus(battery, charging, Name, connection, connectionName);
     }
 
     private static byte[]? ReadCmd04Response(HidStream reader, double timeoutSeconds, bool debug, int maxLen)

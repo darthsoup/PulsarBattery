@@ -23,6 +23,7 @@
     <Content Include="Assets\Square44x44Logo.scale-200.png" />
     <Content Include="Assets\StoreLogo.png" />
     <Content Include="Assets\Wide310x150Logo.scale-200.png" />
+    <Content Include="Assets\Devices\*.png" />
   </ItemGroup>
 
   <ItemGroup>
@@ -82,6 +83,7 @@
   <ItemGroup>
     <Page Remove="Pages\DashboardPage.xaml" />
     <Page Remove="Pages\HistoryPage.xaml" />
+    <Page Remove="Pages\MouseSettingsPage.xaml" />
     <Page Remove="Pages\SettingsPage.xaml" />
   </ItemGroup>
   <ItemGroup>
@@ -95,6 +97,9 @@
     <None Update="Pages\HistoryPage.xaml">
       <Generator>MSBuild:Compile</Generator>
     </None>
+    <None Update="Pages\MouseSettingsPage.xaml">
+      <Generator>MSBuild:Compile</Generator>
+    </None>
     <None Update="Pages\SettingsPage.xaml">
       <Generator>MSBuild:Compile</Generator>
     </None>
@@ -104,6 +109,7 @@
   <ItemGroup>
     <Page Include="Pages\DashboardPage.xaml" />
     <Page Include="Pages\HistoryPage.xaml" />
+    <Page Include="Pages\MouseSettingsPage.xaml" />
     <Page Include="Pages\SettingsPage.xaml" />
   </ItemGroup>
   <ItemGroup>

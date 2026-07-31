@@ -111,12 +111,21 @@
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
                                 <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
+                                <!-- Device picture -->
+                                <Image Grid.Row="0" Grid.Column="0"
+                                       Height="110"
+                                       Margin="0,0,20,0"
+                                       VerticalAlignment="Center"
+                                       Source="{x:Bind ViewModel.DeviceImage, Mode=OneWay}"
+                                       Visibility="{x:Bind ViewModel.DeviceImageVisibility, Mode=OneWay}" />
+
                                 <!-- Left side - Battery info -->
-                                <StackPanel Grid.Row="0" Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+                                <StackPanel Grid.Row="0" Grid.Column="1" Spacing="4" VerticalAlignment="Center">
                                     <TextBlock Text="{x:Bind ViewModel.ModelName, Mode=OneWay}" 
                                                Style="{ThemeResource TitleTextBlockStyle}"
                                                TextTrimming="CharacterEllipsis" />
@@ -129,7 +138,7 @@
                                 </StackPanel>
 
                                 <!-- Right side - Large percentage -->
-                                <TextBlock Grid.Row="0" Grid.Column="1"
+                                <TextBlock Grid.Row="0" Grid.Column="2"
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Right"
                                            FontSize="56"
@@ -139,7 +148,7 @@
                                 </TextBlock>
 
                                 <!-- Progress bar (full width) -->
-                                <ProgressBar Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
+                                <ProgressBar Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
                                              Minimum="0" 
                                              Maximum="100"
                                              Value="{x:Bind ViewModel.BatteryPercentage, Mode=OneWay}"
@@ -179,6 +188,37 @@
 
                                 <TextBlock Grid.Column="2" 
                                            Text="{x:Bind ViewModel.ModelName, Mode=OneWay}" 
+                                           Style="{ThemeResource BodyTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+
+                        <!-- Connection -->
+                        <Border Style="{StaticResource PulsarCardStyle}"
+                                Padding="16"
+                                Margin="0,0,0,2">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <FontIcon Grid.Column="0"
+                                          Glyph="&#xE71B;"
+                                          FontSize="16"
+                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                          VerticalAlignment="Center" />
+
+                                <controls:TranslatedTextBlock Grid.Column="1"
+                                                              Text="Connection"
+                                                              TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
+                                                              VerticalAlignment="Center" />
+
+                                <TextBlock Grid.Column="2"
+                                           Text="{x:Bind ViewModel.ConnectionText, Mode=OneWay}"
                                            Style="{ThemeResource BodyTextBlockStyle}"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            TextTrimming="CharacterEllipsis"
@@ -274,133 +314,6 @@
                                            Style="{ThemeResource BodyTextBlockStyle}"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            TextTrimming="CharacterEllipsis"
-                                           VerticalAlignment="Center" />
-                            </Grid>
-                        </Border>
-                    </StackPanel>
-
-                    <!-- Mouse Settings Section (devices with a readable settings register space) -->
-                    <StackPanel Spacing="4" Visibility="{x:Bind ViewModel.MouseSettingsVisibility, Mode=OneWay}">
-                        <controls:TranslatedTextBlock Text="Mouse settings"
-                                                      TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
-                                                      Margin="0,0,0,8" />
-
-                        <!-- Polling Rate -->
-                        <Border Style="{StaticResource PulsarCardStyle}"
-                                Padding="16"
-                                Margin="0,0,0,2">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-
-                                <FontIcon Grid.Column="0"
-                                          Glyph="&#xEC4A;"
-                                          FontSize="16"
-                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                          VerticalAlignment="Center" />
-
-                                <controls:TranslatedTextBlock Grid.Column="1"
-                                                              Text="Polling rate"
-                                                              TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
-                                                              VerticalAlignment="Center" />
-
-                                <TextBlock Grid.Column="2"
-                                           Text="{x:Bind ViewModel.PollingRateText, Mode=OneWay}"
-                                           Style="{ThemeResource BodyTextBlockStyle}"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           VerticalAlignment="Center" />
-                            </Grid>
-                        </Border>
-
-                        <!-- Debounce -->
-                        <Border Style="{StaticResource PulsarCardStyle}"
-                                Padding="16"
-                                Margin="0,0,0,2">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-
-                                <FontIcon Grid.Column="0"
-                                          Glyph="&#xE916;"
-                                          FontSize="16"
-                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                          VerticalAlignment="Center" />
-
-                                <controls:TranslatedTextBlock Grid.Column="1"
-                                                              Text="Debounce"
-                                                              TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
-                                                              VerticalAlignment="Center" />
-
-                                <TextBlock Grid.Column="2"
-                                           Text="{x:Bind ViewModel.DebounceText, Mode=OneWay}"
-                                           Style="{ThemeResource BodyTextBlockStyle}"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           VerticalAlignment="Center" />
-                            </Grid>
-                        </Border>
-
-                        <!-- Motion Sync -->
-                        <Border Style="{StaticResource PulsarCardStyle}"
-                                Padding="16"
-                                Margin="0,0,0,2">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-
-                                <FontIcon Grid.Column="0"
-                                          Glyph="&#xE895;"
-                                          FontSize="16"
-                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                          VerticalAlignment="Center" />
-
-                                <controls:TranslatedTextBlock Grid.Column="1"
-                                                              Text="Motion sync"
-                                                              TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
-                                                              VerticalAlignment="Center" />
-
-                                <TextBlock Grid.Column="2"
-                                           Text="{x:Bind ViewModel.MotionSyncText, Mode=OneWay}"
-                                           Style="{ThemeResource BodyTextBlockStyle}"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           VerticalAlignment="Center" />
-                            </Grid>
-                        </Border>
-
-                        <!-- DPI -->
-                        <Border Style="{StaticResource PulsarCardStyle}"
-                                Padding="16"
-                                Margin="0,0,0,2">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-
-                                <FontIcon Grid.Column="0"
-                                          Glyph="&#xE8A3;"
-                                          FontSize="16"
-                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                          VerticalAlignment="Center" />
-
-                                <controls:TranslatedTextBlock Grid.Column="1"
-                                                              Text="DPI"
-                                                              TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
-                                                              VerticalAlignment="Center" />
-
-                                <TextBlock Grid.Column="2"
-                                           Text="{x:Bind ViewModel.DpiText, Mode=OneWay}"
-                                           Style="{ThemeResource BodyTextBlockStyle}"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            VerticalAlignment="Center" />
                             </Grid>
                         </Border>

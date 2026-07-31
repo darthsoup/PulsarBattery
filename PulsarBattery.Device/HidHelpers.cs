@@ -71,6 +71,19 @@ internal static class HidHelpers
         stream.Write(payload.ToArray());
     }
 
+    public static string? GetProductName(HidDevice device)
+    {
+        try
+        {
+            var name = device.GetProductName()?.Trim();
+            return string.IsNullOrEmpty(name) ? null : name;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public static IEnumerable<HidDevice> EnumerateDevices(int vendorId, Func<HidDevice, bool>? filter = null)
     {
         var devices = DeviceList.Local.GetHidDevices(vendorId);

@@ -32,13 +32,14 @@ public sealed class Sonix64Backend : IHidBackend
 
             var connection = Sonix64Protocol.ReadConnectionKind(stream, dbg);
             var charging = connection == ConnectionKind.Wired;
+            var connectionName = connection == ConnectionKind.Dongle ? HidHelpers.GetProductName(stream.Device) : null;
 
             if (dbg)
             {
-                System.Diagnostics.Debug.WriteLine($"sonix64 battery={percentage} charging={charging} conn={connection}");
+                System.Diagnostics.Debug.WriteLine($"sonix64 battery={percentage} charging={charging} conn={connection} via={connectionName ?? "-"}");
             }
 
-            return new DeviceStatus(percentage.Value, charging, Name, connection);
+            return new DeviceStatus(percentage.Value, charging, Name, connection, connectionName);
         });
     }
 
@@ -51,11 +52,66 @@ public sealed class Sonix64Backend : IHidBackend
                 DebounceMs: Sonix64Protocol.ReadDebounceMs(stream, dbg),
                 MotionSync: Sonix64Protocol.ReadMotionSync(stream, dbg),
                 Dpi: Sonix64Protocol.ReadDpi(stream, dbg),
-                DpiStage: Sonix64Protocol.ReadDpiStage(stream, dbg));
+                DpiStage: Sonix64Protocol.ReadDpiStage(stream, dbg),
+                LodMm10: Sonix64Protocol.ReadLodMm10(stream, dbg),
+                AngleSnap: Sonix64Protocol.ReadAngleSnap(stream, dbg),
+                RippleControl: Sonix64Protocol.ReadRippleControl(stream, dbg));
 
             // All-null means the device never answered; treat as not found.
             return settings == new DeviceSettings() ? null : settings;
         });
+    }
+
+    public bool SupportsSettingsWrite => true;
+
+    public bool ApplySettings(DeviceSettings changes, bool debug)
+    {
+        var result = WithConfigInterface(debug, (stream, dbg) =>
+        {
+            var allApplied = true;
+
+            if (changes.MotionSync is bool motionSync)
+            {
+                allApplied &= Sonix64Protocol.WriteMotionSync(stream, motionSync, dbg);
+            }
+
+            if (changes.AngleSnap is bool angleSnap)
+            {
+                allApplied &= Sonix64Protocol.WriteAngleSnap(stream, angleSnap, dbg);
+            }
+
+            if (changes.RippleControl is bool ripple)
+            {
+                allApplied &= Sonix64Protocol.WriteRippleControl(stream, ripple, dbg);
+            }
+
+            if (changes.DebounceMs is int debounce)
+            {
+                allApplied &= Sonix64Protocol.WriteDebounceMs(stream, debounce, dbg);
+            }
+
+            if (changes.LodMm10 is int lod)
+            {
+                allApplied &= Sonix64Protocol.WriteLodMm10(stream, lod, dbg);
+            }
+
+            if (changes.Dpi is int dpi)
+            {
+                allApplied &= Sonix64Protocol.WriteDpi(stream, dpi, dbg);
+            }
+
+            if (changes.PollingRateHz is int pollingRate)
+            {
+                // Accepted-but-deferred is possible here; the caller re-reads
+                // settings afterwards and surfaces any mismatch.
+                allApplied &= Sonix64Protocol.WritePollingRateHz(stream, pollingRate, dbg);
+            }
+
+            // Box the bool so the generic null-on-failure contract holds.
+            return (object)allApplied;
+        });
+
+        return result is true;
     }
 
     private T? WithConfigInterface<T>(bool debug, Func<HidStream, bool, T?> read)

@@ -42,6 +42,7 @@ public sealed partial class MainWindow : Window
         _viewModel.Start();
 
         DashboardItem.Content = Loc.T("Dashboard");
+        MouseItem.Content = Loc.T("Mouse");
         HistoryItem.Content = Loc.T("History");
         NavView.Loaded += NavView_Loaded;
 
@@ -215,6 +216,7 @@ public sealed partial class MainWindow : Window
     {
         var pageType = tag switch
         {
+            "mouse" => typeof(MouseSettingsPage),
             "history" => typeof(HistoryPage),
             "settings" => typeof(SettingsPage),
             _ => typeof(DashboardPage)
