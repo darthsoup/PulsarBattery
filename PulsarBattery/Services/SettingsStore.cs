@@ -39,8 +39,10 @@ internal sealed class SettingsStore
                 SettingsJsonContext.Default.AppSettings,
                 cancellationToken).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
+            // A corrupt or unreadable file falls back to defaults, but leave a trace.
+            Log.Error(nameof(SettingsStore), ex);
             return null;
         }
         finally

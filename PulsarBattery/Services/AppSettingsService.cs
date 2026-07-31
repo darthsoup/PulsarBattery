@@ -1,3 +1,4 @@
+using PulsarBattery.Tools;
 using System;
 using System.Threading;
 using System.Threading.Tasks;
@@ -30,8 +31,9 @@ internal static class AppSettingsService
         {
             loaded = await Store.TryLoadAsync(cancellationToken).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Error(nameof(AppSettingsService), ex);
         }
 
         lock (Gate)
@@ -49,6 +51,40 @@ internal static class AppSettingsService
             updated = AppSettings.Sanitize(update(_current));
             _current = updated;
             ScheduleSave_NoLock(updated);
+        }
+    }
+
+    /// <summary>
+    /// Cancels any pending debounced save and writes the current settings immediately.
+    /// Call on app exit so changes made within the debounce window are not lost.
+    /// </summary>
+    public static void Flush()
+    {
+        AppSettings snapshot;
+
+        lock (Gate)
+        {
+            if (_pendingSave is null)
+            {
+                // No Update() has ever run, so there is nothing to persist.
+                return;
+            }
+
+            _pendingSave.Cancel();
+            _pendingSave.Dispose();
+            _pendingSave = null;
+            snapshot = _current;
+        }
+
+        try
+        {
+            // SettingsStore awaits with ConfigureAwait(false) throughout, so blocking here
+            // cannot deadlock the UI thread; the write is a tiny local file.
+            Store.SaveAsync(snapshot).GetAwaiter().GetResult();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(nameof(AppSettingsService), ex);
         }
     }
 
@@ -70,8 +106,9 @@ internal static class AppSettingsService
             catch (OperationCanceledException)
             {
             }
-            catch
+            catch (Exception ex)
             {
+                Log.Error(nameof(AppSettingsService), ex);
             }
         }, token);
     }

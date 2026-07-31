@@ -28,9 +28,29 @@ public partial class App : Application
 
     public App()
     {
+        Log.Initialize(HasCommandLineArg("--verbose"));
         TrySetAppUserModelId();
         InitializeComponent();
-        AppDomain.CurrentDomain.ProcessExit += (_, _) => NotificationHelper.Unregister();
+        AppDomain.CurrentDomain.ProcessExit += (_, _) =>
+        {
+            NotificationHelper.Unregister();
+            // Backstop for exit paths that bypass ExitApplication (e.g. closing the
+            // window with "minimize to tray" disabled).
+            AppSettingsService.Flush();
+        };
+    }
+
+    private static bool HasCommandLineArg(string name)
+    {
+        try
+        {
+            return Environment.GetCommandLineArgs().Any(arg =>
+                string.Equals(arg, name, StringComparison.OrdinalIgnoreCase));
+        }
+        catch
+        {
+            return false;
+        }
     }
 
     private static void TrySetAppUserModelId()
@@ -53,6 +73,7 @@ public partial class App : Application
     internal static void ExitApplication()
     {
         RequestExit();
+        AppSettingsService.Flush();
 
         try
         {
@@ -72,9 +93,10 @@ public partial class App : Application
         {
             await AppSettingsService.InitializeAsync();
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore
+            // The app still starts with default settings, but leave a trace.
+            Log.Error(nameof(App), ex);
         }
 
         // Initialize after settings are loaded so a saved language override applies.
@@ -126,9 +148,9 @@ public partial class App : Application
         {
             _trayIcon.ForceCreate();
         }
-        catch
+        catch (Exception ex)
         {
-            // ignore
+            Log.Error(nameof(App), ex);
         }
 
         var sourceExeToDelete = SelfInstallService.TryGetCleanupSourceExePath(Environment.GetCommandLineArgs());

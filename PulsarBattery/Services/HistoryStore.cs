@@ -37,8 +37,9 @@ internal sealed class HistoryStore
 
             return await DeserializeHistoryFileAsync(cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Error(nameof(HistoryStore), ex);
             return Array.Empty<BatteryReading>();
         }
         finally
@@ -56,8 +57,9 @@ internal sealed class HistoryStore
             EnsureDirectoryExists();
             await WriteHistoryFileAtomicallyAsync(readings, cancellationToken);
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Error(nameof(HistoryStore), ex);
         }
         finally
         {

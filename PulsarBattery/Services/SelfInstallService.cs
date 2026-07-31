@@ -140,7 +140,22 @@ internal static class SelfInstallService
             }
 
             var path = args[i + 1];
-            return string.IsNullOrWhiteSpace(path) ? null : path;
+            if (string.IsNullOrWhiteSpace(path))
+            {
+                return null;
+            }
+
+            // The cleanup argument exists solely so a freshly installed copy can delete
+            // the source exe it was copied from. Refuse anything whose filename does not
+            // match this executable's, so the argument cannot delete arbitrary files.
+            var currentExeName = Path.GetFileName(GetCurrentExecutablePath());
+            if (string.IsNullOrWhiteSpace(currentExeName) ||
+                !string.Equals(Path.GetFileName(path), currentExeName, StringComparison.OrdinalIgnoreCase))
+            {
+                return null;
+            }
+
+            return path;
         }
 
         return null;

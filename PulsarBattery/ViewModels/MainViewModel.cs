@@ -443,8 +443,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 });
             }
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Error(nameof(MainViewModel), ex);
         }
     }
 
@@ -517,8 +518,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var snapshot = CreateHistorySnapshot();
             await _historyStore.SaveAsync(snapshot).ConfigureAwait(false);
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Error(nameof(MainViewModel), ex);
         }
         finally
         {
