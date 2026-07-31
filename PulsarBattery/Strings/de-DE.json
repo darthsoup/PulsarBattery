@@ -98,5 +98,7 @@
   "App language": "App-Sprache",
   "Takes effect after the app is restarted.": "Wird nach einem Neustart der App wirksam.",
   "Auto (system language)": "Automatisch (Systemsprache)",
-  "Default (Windows low battery sound)": "Standard (Windows-Ton für niedrigen Akkustand)"
+  "Default (Windows low battery sound)": "Standard (Windows-Ton für niedrigen Akkustand)",
+  "Clear history?": "Verlauf löschen?",
+  "All recorded battery readings will be permanently deleted.": "Alle aufgezeichneten Akkustände werden dauerhaft gelöscht."
 }

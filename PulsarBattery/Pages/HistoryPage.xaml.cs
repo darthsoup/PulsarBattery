@@ -42,10 +42,27 @@ public sealed partial class HistoryPage : Page
     {
         try
         {
-            if (DataContext is ViewModels.MainViewModel viewModel)
+            if (DataContext is not ViewModels.MainViewModel viewModel)
             {
-                await viewModel.ClearHistoryAsync();
+                return;
             }
+
+            var dialog = new ContentDialog
+            {
+                XamlRoot = XamlRoot,
+                Title = Loc.T("Clear history?"),
+                Content = Loc.T("All recorded battery readings will be permanently deleted."),
+                PrimaryButtonText = Loc.T("Clear"),
+                CloseButtonText = Loc.T("Cancel"),
+                DefaultButton = ContentDialogButton.Close,
+            };
+
+            if (await dialog.ShowAsync() != ContentDialogResult.Primary)
+            {
+                return;
+            }
+
+            await viewModel.ClearHistoryAsync();
         }
         catch (Exception ex)
         {

@@ -98,5 +98,7 @@
   "App language": "App language",
   "Takes effect after the app is restarted.": "Takes effect after the app is restarted.",
   "Auto (system language)": "Auto (system language)",
-  "Default (Windows low battery sound)": "Default (Windows low battery sound)"
+  "Default (Windows low battery sound)": "Default (Windows low battery sound)",
+  "Clear history?": "Clear history?",
+  "All recorded battery readings will be permanently deleted.": "All recorded battery readings will be permanently deleted."
 }
