@@ -162,6 +162,11 @@
                                       x:Name="MinimizeToTrayToggle" />
                     </settingscontrols:SettingsCard>
 
+                    <settingscontrols:SettingsCard x:Name="ShowBatteryInTrayCard">
+                        <ToggleSwitch IsOn="{x:Bind ViewModel.ShowBatteryInTray, Mode=TwoWay}"
+                                      x:Name="ShowBatteryInTrayToggle" />
+                    </settingscontrols:SettingsCard>
+
                     <settingscontrols:SettingsCard x:Name="StartWithWindowsCard">
                         <ToggleSwitch x:Name="StartWithWindowsToggle"
                                       IsOn="{x:Bind ViewModel.StartWithWindows, Mode=OneWay}"

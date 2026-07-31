@@ -47,12 +47,19 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
     {
         _window = window;
         ViewModel = viewModel;
+
+        // This control never enters a visual tree, so its Loading event never
+        // fires and x:Bind stays dormant. Kick the generated bindings by hand
+        // so the icon text/tooltip/menu rows actually track the view model.
+        Bindings.Update();
     }
 
     private void ShowWindow()
     {
         _window?.DispatcherQueue.TryEnqueue(() =>
         {
+            EfficiencyMode.Set(false);
+
             var hwnd = WindowNative.GetWindowHandle(_window);
             var appWindow = AppWindow.GetFromWindowId(Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd));
             appWindow?.Show();

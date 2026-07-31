@@ -123,6 +123,12 @@ public sealed partial class SettingsPage : Page
         MinimizeToTrayToggle.OffContent = Loc.T("Off");
         AutomationProperties.SetName(MinimizeToTrayToggle, Loc.T("Minimize to tray on close"));
 
+        ShowBatteryInTrayCard.Header = Loc.T("Battery level in tray icon");
+        ShowBatteryInTrayCard.Description = Loc.T("When enabled, the tray icon shows the battery percentage. When disabled, it shows the app icon.");
+        ShowBatteryInTrayToggle.OnContent = Loc.T("On");
+        ShowBatteryInTrayToggle.OffContent = Loc.T("Off");
+        AutomationProperties.SetName(ShowBatteryInTrayToggle, Loc.T("Battery level in tray icon"));
+
         StartWithWindowsCard.Header = Loc.T("Start with Windows");
         StartWithWindowsCard.Description = Loc.T("Launches Pulsar Battery in the background when you sign in.");
         StartWithWindowsToggle.OnContent = Loc.T("On");

@@ -207,6 +207,7 @@ public sealed partial class MainWindow : Window
             try
             {
                 sender.Hide();
+                EfficiencyMode.Set(true);
             }
             catch
             {

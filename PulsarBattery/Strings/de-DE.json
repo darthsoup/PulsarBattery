@@ -64,6 +64,8 @@
   "Window behavior": "Fensterverhalten",
   "Minimize to tray on close": "Beim Schließen in Taskleiste minimieren",
   "When enabled, clicking the window close button minimizes to system tray. When disabled, the application will exit.": "Wenn aktiviert, minimiert das Fenster beim Schließen in die Taskleiste. Wenn deaktiviert, wird die Anwendung beendet.",
+  "Battery level in tray icon": "Akkustand im Tray-Symbol",
+  "When enabled, the tray icon shows the battery percentage. When disabled, it shows the app icon.": "Wenn aktiviert, zeigt das Tray-Symbol den Akkustand in Prozent. Wenn deaktiviert, wird das App-Symbol angezeigt.",
   "Start with Windows": "Mit Windows starten",
   "Launches Pulsar Battery in the background when you sign in.": "Startet Pulsar Battery im Hintergrund, wenn du dich anmeldest.",
   "About": "Über",

@@ -143,10 +143,11 @@ public partial class App : Application
             _trayIcon.Initialize(_window);
         }
 
-        // Some WinUI scenarios require an explicit creation call.
+        // Some WinUI scenarios require an explicit creation call. Only drop
+        // into efficiency mode when starting hidden in the tray.
         try
         {
-            _trayIcon.ForceCreate();
+            _trayIcon.ForceCreate(enablesEfficiencyMode: startInTray);
         }
         catch (Exception ex)
         {

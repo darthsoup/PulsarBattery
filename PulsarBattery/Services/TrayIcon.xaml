@@ -10,21 +10,44 @@
         <!-- Converters -->
         <converters:BatteryPercentageConverter x:Key="BatteryPercentageConverter"/>
         <converters:ChargingStatusConverter x:Key="ChargingStatusConverter"/>
-        <converters:BatteryTooltipConverter x:Key="BatteryTooltipConverter"/>
     </UserControl.Resources>
 
     <!-- TaskbarIcon -->
-    <tb:TaskbarIcon 
+    <tb:TaskbarIcon
         x:Name="TaskbarIcon"
-        ToolTipText="{x:Bind ViewModel.BatteryPercentage, Converter={StaticResource BatteryTooltipConverter}, Mode=OneWay}"
-        IconSource="ms-appx:///Assets/icon.ico"
+        ToolTipText="{x:Bind ViewModel.TrayTooltipText, Mode=OneWay}"
         ContextMenuMode="SecondWindow"
         NoLeftClickDelay="True">
-        
+
+        <!-- One permanently-attached GeneratedIconSource renders both styles:
+             battery percentage as text, or the app icon via BackgroundSource
+             with empty text. The IconSource is deliberately never swapped —
+             H.NotifyIcon's IconSource change handler races its async icon
+             updates and leaks change subscriptions. TextMargin carries the
+             centering rectangle computed by the view model. -->
+        <tb:TaskbarIcon.IconSource>
+            <tb:GeneratedIconSource
+                Text="{x:Bind ViewModel.TrayIconText, Mode=OneWay}"
+                Foreground="{x:Bind ViewModel.TrayIconForeground, Mode=OneWay}"
+                FontSize="{x:Bind ViewModel.TrayIconFontSize, Mode=OneWay}"
+                TextMargin="{x:Bind ViewModel.TrayIconTextMargin, Mode=OneWay}"
+                BackgroundSource="{x:Bind ViewModel.TrayIconBackgroundSource, Mode=OneWay}"
+                FontWeight="Bold" />
+        </tb:TaskbarIcon.IconSource>
+
         <tb:TaskbarIcon.ContextFlyout>
             <MenuFlyout AreOpenCloseAnimationsEnabled="True">
+                <!-- Model -->
+                <MenuFlyoutItem
+                    Text="{x:Bind ViewModel.ModelName, Mode=OneWay}"
+                    IsEnabled="False">
+                    <MenuFlyoutItem.Icon>
+                        <FontIcon Glyph="&#xE962;" FontFamily="Segoe Fluent Icons"/>
+                    </MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+
                 <!-- Battery Status -->
-                <MenuFlyoutItem 
+                <MenuFlyoutItem
                     Text="{x:Bind ViewModel.BatteryPercentage, Converter={StaticResource BatteryPercentageConverter}, Mode=OneWay}"
                     IsEnabled="False">
                     <MenuFlyoutItem.Icon>
