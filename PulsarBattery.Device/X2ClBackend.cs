@@ -7,7 +7,7 @@ namespace PulsarBattery.Device;
 
 public sealed class X2ClBackend : IHidBackend
 {
-    public string Name => "X2 Crazylight";
+    public string Name => "X2 CrazyLight";
 
     private const int Vid = 0x3710;
     private const int PidWireless = 0x5406;
