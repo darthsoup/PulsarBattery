@@ -62,13 +62,15 @@
                                                           TextAlignment="Center"
                                                           TextWrapping="Wrap"
                                                           HorizontalAlignment="Center" />
-                            <controls:TranslatedTextBlock Text="Supported devices: X2 CrazyLight, X2 V1"
-                                                          TextStyle="{ThemeResource CaptionTextBlockStyle}"
-                                                          Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                                          TextAlignment="Center"
-                                                          TextWrapping="Wrap"
-                                                          HorizontalAlignment="Center"
-                                                          Margin="0,8,0,0" />
+                            <HyperlinkButton NavigateUri="https://github.com/darthsoup/PulsarBattery#supported-devices"
+                                             HorizontalAlignment="Center"
+                                             Margin="0,8,0,0"
+                                             Padding="4,2">
+                                <controls:TranslatedTextBlock Text="See supported devices on GitHub"
+                                                              TextStyle="{ThemeResource CaptionTextBlockStyle}"
+                                                              TextAlignment="Center"
+                                                              TextWrapping="Wrap" />
+                            </HyperlinkButton>
                         </StackPanel>
                         <Button x:Name="RetryButton"
                                 Style="{ThemeResource AccentButtonStyle}"
@@ -272,6 +274,133 @@
                                            Style="{ThemeResource BodyTextBlockStyle}"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+                    </StackPanel>
+
+                    <!-- Mouse Settings Section (devices with a readable settings register space) -->
+                    <StackPanel Spacing="4" Visibility="{x:Bind ViewModel.MouseSettingsVisibility, Mode=OneWay}">
+                        <controls:TranslatedTextBlock Text="Mouse settings"
+                                                      TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
+                                                      Margin="0,0,0,8" />
+
+                        <!-- Polling Rate -->
+                        <Border Style="{StaticResource PulsarCardStyle}"
+                                Padding="16"
+                                Margin="0,0,0,2">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <FontIcon Grid.Column="0"
+                                          Glyph="&#xEC4A;"
+                                          FontSize="16"
+                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                          VerticalAlignment="Center" />
+
+                                <controls:TranslatedTextBlock Grid.Column="1"
+                                                              Text="Polling rate"
+                                                              TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
+                                                              VerticalAlignment="Center" />
+
+                                <TextBlock Grid.Column="2"
+                                           Text="{x:Bind ViewModel.PollingRateText, Mode=OneWay}"
+                                           Style="{ThemeResource BodyTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+
+                        <!-- Debounce -->
+                        <Border Style="{StaticResource PulsarCardStyle}"
+                                Padding="16"
+                                Margin="0,0,0,2">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <FontIcon Grid.Column="0"
+                                          Glyph="&#xE916;"
+                                          FontSize="16"
+                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                          VerticalAlignment="Center" />
+
+                                <controls:TranslatedTextBlock Grid.Column="1"
+                                                              Text="Debounce"
+                                                              TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
+                                                              VerticalAlignment="Center" />
+
+                                <TextBlock Grid.Column="2"
+                                           Text="{x:Bind ViewModel.DebounceText, Mode=OneWay}"
+                                           Style="{ThemeResource BodyTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+
+                        <!-- Motion Sync -->
+                        <Border Style="{StaticResource PulsarCardStyle}"
+                                Padding="16"
+                                Margin="0,0,0,2">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <FontIcon Grid.Column="0"
+                                          Glyph="&#xE895;"
+                                          FontSize="16"
+                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                          VerticalAlignment="Center" />
+
+                                <controls:TranslatedTextBlock Grid.Column="1"
+                                                              Text="Motion sync"
+                                                              TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
+                                                              VerticalAlignment="Center" />
+
+                                <TextBlock Grid.Column="2"
+                                           Text="{x:Bind ViewModel.MotionSyncText, Mode=OneWay}"
+                                           Style="{ThemeResource BodyTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+
+                        <!-- DPI -->
+                        <Border Style="{StaticResource PulsarCardStyle}"
+                                Padding="16"
+                                Margin="0,0,0,2">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <FontIcon Grid.Column="0"
+                                          Glyph="&#xE8A3;"
+                                          FontSize="16"
+                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                          VerticalAlignment="Center" />
+
+                                <controls:TranslatedTextBlock Grid.Column="1"
+                                                              Text="DPI"
+                                                              TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
+                                                              VerticalAlignment="Center" />
+
+                                <TextBlock Grid.Column="2"
+                                           Text="{x:Bind ViewModel.DpiText, Mode=OneWay}"
+                                           Style="{ThemeResource BodyTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            VerticalAlignment="Center" />
                             </Grid>
                         </Border>

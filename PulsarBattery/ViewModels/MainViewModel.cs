@@ -1,5 +1,6 @@
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using PulsarBattery.Device;
 using PulsarBattery.Models;
 using PulsarBattery.Services;
 using PulsarBattery.Tools;
@@ -56,6 +57,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _statusText;
     private string? _lowBatterySoundPath;
     private int _currentHistoryPage;
+    private DeviceSettings? _deviceSettings;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -108,6 +110,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public string ChargingStateText => IsCharging ? Loc.T("Charging") : Loc.T("Not charging");
+
+    public Visibility MouseSettingsVisibility => _deviceSettings is null ? Visibility.Collapsed : Visibility.Visible;
+
+    public string PollingRateText => _deviceSettings?.PollingRateHz is int hz ? $"{hz} Hz" : "—";
+
+    public string DebounceText => _deviceSettings?.DebounceMs is int ms ? $"{ms} ms" : "—";
+
+    public string MotionSyncText => _deviceSettings?.MotionSync is bool motionSync
+        ? Loc.T(motionSync ? "On" : "Off")
+        : "—";
+
+    public string DpiText => _deviceSettings?.Dpi is int dpi
+        ? _deviceSettings?.DpiStage is int stage
+            ? $"{dpi} ({string.Format(Loc.T("Stage {0}"), stage)})"
+            : dpi.ToString(CultureInfo.CurrentCulture)
+        : "—";
 
     public string LastUpdatedText => _lastUpdated.HasValue
         ? _lastUpdated.Value.ToString("T", CultureInfo.CurrentCulture)
@@ -560,6 +578,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
             if (batteryStatus is null)
             {
+                UpdateDeviceSettings(null);
                 StatusText = Loc.T("No Pulsar mouse detected");
                 NoDeviceFound = true;
                 IsLoading = false;
@@ -567,6 +586,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             }
 
             UpdateBatteryProperties(batteryStatus);
+            UpdateDeviceSettings(await ReadDeviceSettingsAsync());
             StatusText = Loc.T("Updated");
             HasInitialData = true;
             NoDeviceFound = false;
@@ -586,6 +606,26 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private Task<PulsarBatteryReader.BatteryStatus?> ReadBatteryStatusAsync()
     {
         return Task.Run(() => _batteryReader.ReadBatteryStatus());
+    }
+
+    private Task<DeviceSettings?> ReadDeviceSettingsAsync()
+    {
+        return Task.Run(() => _batteryReader.ReadDeviceSettings());
+    }
+
+    private void UpdateDeviceSettings(DeviceSettings? settings)
+    {
+        if (Equals(_deviceSettings, settings))
+        {
+            return;
+        }
+
+        _deviceSettings = settings;
+        OnPropertyChanged(nameof(MouseSettingsVisibility));
+        OnPropertyChanged(nameof(PollingRateText));
+        OnPropertyChanged(nameof(DebounceText));
+        OnPropertyChanged(nameof(MotionSyncText));
+        OnPropertyChanged(nameof(DpiText));
     }
 
     private void UpdateBatteryProperties(PulsarBatteryReader.BatteryStatus status)

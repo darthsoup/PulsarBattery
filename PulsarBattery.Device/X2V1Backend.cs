@@ -12,16 +12,16 @@ public sealed class X2V1Backend : IHidBackend
     private const int Vid = 0x25A7;
     private const int PidWireless = 0xFA7C;
     private const int PidWired = 0xFA7B;
-    private const byte OutputReportId = 0x08;
+    private const byte OutputReportId = Legacy17Protocol.OutputReportId;
     private const byte DefaultInputReportId = 0x09;
 
-    private static readonly HashSet<byte> InputReportIds = new([0x08, 0x09]);
+    private static readonly HashSet<byte> InputReportIds = [0x08, 0x09];
 
-    private static readonly byte[] Cmd03Packet = [OutputReportId, 0x03, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x4A];
-    private static readonly byte[] Cmd04Packet = [OutputReportId, 0x04, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x49];
-    private static readonly byte[] Cmd0EPacket = Convert.FromHexString("080e00000000000000000000000000003f");
+    private static readonly byte[] Cmd03Packet = Legacy17Protocol.BuildPacket(OutputReportId, 0x03);
+    private static readonly byte[] Cmd04Packet = Legacy17Protocol.BuildPacket(OutputReportId, Legacy17Protocol.CmdBattery);
+    private static readonly byte[] Cmd0EPacket = Legacy17Protocol.BuildPacket(OutputReportId, 0x0E);
 
-    public DeviceBatteryStatus? ReadBatteryStatus(bool debug)
+    public DeviceStatus? ReadBatteryStatus(bool debug)
     {
         var allDevices = HidHelpers.EnumerateDevices(Vid, d => d.ProductID is PidWireless or PidWired).ToList();
 
@@ -42,7 +42,7 @@ public sealed class X2V1Backend : IHidBackend
         return null;
     }
 
-    private DeviceBatteryStatus? TryReadWithReaders(HidDevice writerCandidate, List<HidDevice> readerPool, bool debug)
+    private DeviceStatus? TryReadWithReaders(HidDevice writerCandidate, List<HidDevice> readerPool, bool debug)
     {
         var status = TryReadPair(writerCandidate, writerCandidate, debug);
         if (status is not null)
@@ -62,7 +62,7 @@ public sealed class X2V1Backend : IHidBackend
         return null;
     }
 
-    private DeviceBatteryStatus? TryReadPair(HidDevice writerDevice, HidDevice readerDevice, bool debug)
+    private DeviceStatus? TryReadPair(HidDevice writerDevice, HidDevice readerDevice, bool debug)
     {
         HidStream? writer = null;
         HidStream? reader = null;
@@ -91,7 +91,9 @@ public sealed class X2V1Backend : IHidBackend
                 reader.ReadTimeout = 250;
             }
 
-            return ReadBatteryCmd04(writer!, reader ?? writer!, debug, transport: writer!.Device.GetMaxFeatureReportLength() > 0 ? "feature" : "output");
+            var connection = writerDevice.ProductID == PidWired ? ConnectionKind.Wired : ConnectionKind.Dongle;
+            var transport = writer!.Device.GetMaxFeatureReportLength() > 0 ? "feature" : "output";
+            return ReadBatteryCmd04(writer!, reader ?? writer!, debug, transport, connection);
         }
         catch
         {
@@ -108,11 +110,12 @@ public sealed class X2V1Backend : IHidBackend
         }
     }
 
-    private DeviceBatteryStatus? ReadBatteryCmd04(
+    private DeviceStatus? ReadBatteryCmd04(
         HidStream writer,
         HidStream reader,
         bool debug,
-        string transport)
+        string transport,
+        ConnectionKind connection)
     {
         var maxLen = Math.Max(writer.Device.GetMaxInputReportLength(), reader.Device.GetMaxInputReportLength());
         HidHelpers.DrainInput(reader, 6, maxLen);
@@ -121,7 +124,7 @@ public sealed class X2V1Backend : IHidBackend
         {
             HidHelpers.SendReport(writer, Cmd04Packet, transport);
             System.Threading.Thread.Sleep(20);
-            return ReadCmd(reader, expectedCmd: 0x04, timeoutSeconds, logOther: true, debug: debug, maxLen: maxLen);
+            return ReadCmd04Response(reader, timeoutSeconds, debug, maxLen);
         }
 
         byte[]? payload;
@@ -165,7 +168,7 @@ public sealed class X2V1Backend : IHidBackend
             return null;
         }
 
-        var parsed = HidHelpers.ParseCmd04Payload(payload);
+        var parsed = Legacy17Protocol.ParseBatteryPayload(payload);
         if (parsed is null)
         {
             if (debug)
@@ -182,7 +185,21 @@ public sealed class X2V1Backend : IHidBackend
             System.Diagnostics.Debug.WriteLine($"cmd04 raw={battery} charging={charging} data={Convert.ToHexString(payload)}");
         }
 
-        return new DeviceBatteryStatus(battery, charging, Name);
+        return new DeviceStatus(battery, charging, Name, connection);
+    }
+
+    private static byte[]? ReadCmd04Response(HidStream reader, double timeoutSeconds, bool debug, int maxLen)
+    {
+        return Legacy17Protocol.ReadResponse(
+            reader,
+            Legacy17Protocol.CmdBattery,
+            timeoutSeconds,
+            InputReportIds,
+            normalizeReportId: DefaultInputReportId,
+            bareReportFilter: static b => b is 0x01 or 0x02 or 0x03 or 0x04 or 0x08 or 0x0E,
+            debug,
+            maxLen,
+            idleSleepMs: 10);
     }
 
     private static IEnumerable<byte[]> BuildWarmupSequence()
@@ -194,84 +211,18 @@ public sealed class X2V1Backend : IHidBackend
 
     private static byte[] BuildCmd01Packet()
     {
+        // Deliberately 16 bytes (not 17 like the other packets) — this
+        // preserves the byte-exact captured warmup packet.
         var nonce = (uint)(DateTime.UtcNow.Ticks & 0xFFFFFFFF);
-        Span<byte> nonceBytes = stackalloc byte[4];
-        BitConverter.TryWriteBytes(nonceBytes, nonce);
-
         Span<byte> body = stackalloc byte[15];
         body[0] = OutputReportId;
         body[1] = 0x01;
-        body[2] = 0x00;
-        body[3] = 0x00;
-        body[4] = 0x00;
         body[5] = 0x08;
-        nonceBytes.CopyTo(body[6..10]);
-        body[10] = 0x00;
-        body[11] = 0x00;
-        body[12] = 0x00;
-        body[13] = 0x00;
-        body[14] = 0x00;
+        BitConverter.TryWriteBytes(body[6..10], nonce);
 
-        var sum = 0;
-        foreach (var b in body)
-        {
-            sum += b;
-        }
-
-        var chk = (byte)((0x55 - (sum & 0xFF)) & 0xFF);
         var result = new byte[16];
         body.CopyTo(result);
-        result[15] = chk;
+        result[15] = Legacy17Protocol.Checksum(body);
         return result;
-    }
-
-    private static byte[]? ReadCmd(
-        HidStream reader,
-        byte expectedCmd,
-        double timeoutSeconds,
-        bool logOther,
-        bool debug,
-        int maxLen)
-    {
-        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
-        while (DateTime.UtcNow < deadline)
-        {
-            var data = HidHelpers.ReadWithTimeout(reader, maxLen, 250);
-            if (data is null || data.Length == 0)
-            {
-                System.Threading.Thread.Sleep(10);
-                continue;
-            }
-
-            var payload = NormalizeInputReport(data);
-            if (payload.Length < 7 || !InputReportIds.Contains(payload[0]))
-            {
-                continue;
-            }
-
-            if (payload[1] != expectedCmd)
-            {
-                if (debug && logOther)
-                {
-                    System.Diagnostics.Debug.WriteLine($"cmd04 skip cmd=0x{payload[1]:X2} data={Convert.ToHexString(payload)}");
-                }
-
-                continue;
-            }
-
-            return payload;
-        }
-
-        return null;
-    }
-
-    private static byte[] NormalizeInputReport(IReadOnlyCollection<byte> data)
-    {
-        if (data.Count == 16 && data.First() is 0x01 or 0x02 or 0x03 or 0x04 or 0x08 or 0x0E)
-        {
-            return new[] { DefaultInputReportId }.Concat(data).ToArray();
-        }
-
-        return data.ToArray();
     }
 }

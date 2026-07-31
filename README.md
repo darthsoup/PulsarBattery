@@ -10,8 +10,15 @@ This project is inspired by https://github.com/jonkristian/pulsar-x3-python/
 
 ## Supported Devices
 
-- X2 CrazyLight
-- X2 V1
+| Device | VID | PID (wired) | PID (dongle) | Protocol |
+|---|---|---|---|---|
+| X2 CrazyLight | `0x3710` | `0x3414` | `0x5406` | 17-byte reports |
+| X2 V1 | `0x25A7` | `0xFA7B` | `0xFA7C` | 17-byte reports |
+| X2 V3 eS | `0x3710` | `0x3406` | `0x5403` (8K Dongle) | 64-byte feature reports |
+
+The `0x5403` "8K Dongle" is a shared Pulsar accessory (also used by the X3 family), so other mice paired to it may work as well.
+
+Devices speaking the 64-byte protocol additionally report polling rate, debounce, motion sync, and DPI on the dashboard.
 
 ## Build (Visual Studio)
 

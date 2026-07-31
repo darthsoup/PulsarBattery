@@ -7,18 +7,6 @@ namespace PulsarBattery.Device;
 
 internal static class HidHelpers
 {
-    public static (int battery, bool charging)? ParseCmd04Payload(IReadOnlyList<byte> payload)
-    {
-        if (payload.Count < 8)
-        {
-            return null;
-        }
-
-        var battery = payload[6];
-        var charging = payload[7] != 0x00;
-        return (battery, charging);
-    }
-
     public static byte[]? ReadWithTimeout(HidStream stream, int maxLength, int timeoutMs)
     {
         var buffer = new byte[maxLength];

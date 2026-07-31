@@ -1,5 +1,5 @@
 using PulsarBattery.Device;
-using System;
+using System.Collections.Generic;
 
 namespace PulsarBattery.Services;
 
@@ -9,11 +9,7 @@ public sealed class PulsarBatteryReader
 
     private static readonly object GlobalReadLock = new();
 
-    private readonly IHidBackend[] _backends =
-    [
-        new X2ClBackend(),
-        new X2V1Backend(),
-    ];
+    private readonly IReadOnlyList<IHidBackend> _backends = DeviceRegistry.CreateBackends();
 
     public BatteryStatus? ReadBatteryStatus(bool debug = false)
     {
@@ -25,6 +21,23 @@ public sealed class PulsarBatteryReader
                 if (status is not null)
                 {
                     return new BatteryStatus(status.Percentage, status.IsCharging, status.Model);
+                }
+            }
+
+            return null;
+        }
+    }
+
+    public DeviceSettings? ReadDeviceSettings(bool debug = false)
+    {
+        lock (GlobalReadLock)
+        {
+            foreach (var backend in _backends)
+            {
+                var settings = backend.ReadSettings(debug);
+                if (settings is not null)
+                {
+                    return settings;
                 }
             }
 
