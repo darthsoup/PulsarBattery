@@ -61,6 +61,10 @@ This project is a .NET split-off of https://github.com/Elehiggle/SimplePulsarBat
 
 That project also documents how the mouse was debugged to determine the data format.
 
+## Disclaimer
+
+PulsarBattery is an community project. It is not affiliated with Pulsar Gaming Gears and is neither supported nor sponsored by the company.
+
 ## Contributing
 
 Contributions are welcome! If you find any issues or have suggestions for improvements, please open an issue or submit a pull request.
