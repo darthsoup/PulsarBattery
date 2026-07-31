@@ -9,7 +9,27 @@
     mc:Ignorable="d">
 
     <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-        <Grid Padding="32,24,32,32">
+        <Grid x:Name="ContentRoot" Padding="32,24,32,32">
+            <VisualStateManager.VisualStateGroups>
+                <VisualStateGroup>
+                    <VisualState x:Name="WideLayout">
+                        <VisualState.StateTriggers>
+                            <AdaptiveTrigger MinWindowWidth="680" />
+                        </VisualState.StateTriggers>
+                    </VisualState>
+                    <VisualState x:Name="NarrowLayout">
+                        <VisualState.StateTriggers>
+                            <AdaptiveTrigger MinWindowWidth="0" />
+                        </VisualState.StateTriggers>
+                        <VisualState.Setters>
+                            <Setter Target="ContentRoot.Padding" Value="16,16,16,24" />
+                            <Setter Target="DeviceImageHost.Visibility" Value="Collapsed" />
+                            <Setter Target="PercentageText.FontSize" Value="40" />
+                            <Setter Target="PercentageText.Margin" Value="12,0,0,0" />
+                        </VisualState.Setters>
+                    </VisualState>
+                </VisualStateGroup>
+            </VisualStateManager.VisualStateGroups>
             <StackPanel Spacing="24" MaxWidth="1000">
 
                 <controls:TranslatedTextBlock Text="Dashboard" TextStyle="{ThemeResource TitleTextBlockStyle}" />
@@ -116,13 +136,15 @@
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <!-- Device picture -->
-                                <Image Grid.Row="0" Grid.Column="0"
-                                       Height="110"
-                                       Margin="0,0,20,0"
-                                       VerticalAlignment="Center"
-                                       Source="{x:Bind ViewModel.DeviceImage, Mode=OneWay}"
-                                       Visibility="{x:Bind ViewModel.DeviceImageVisibility, Mode=OneWay}" />
+                                <!-- Device picture (host grid so the narrow visual state can
+                                     collapse it without fighting the view-model binding) -->
+                                <Grid x:Name="DeviceImageHost" Grid.Row="0" Grid.Column="0">
+                                    <Image Height="110"
+                                           Margin="0,0,20,0"
+                                           VerticalAlignment="Center"
+                                           Source="{x:Bind ViewModel.DeviceImage, Mode=OneWay}"
+                                           Visibility="{x:Bind ViewModel.DeviceImageVisibility, Mode=OneWay}" />
+                                </Grid>
 
                                 <!-- Left side - Battery info -->
                                 <StackPanel Grid.Row="0" Grid.Column="1" Spacing="4" VerticalAlignment="Center">
@@ -138,7 +160,8 @@
                                 </StackPanel>
 
                                 <!-- Right side - Large percentage -->
-                                <TextBlock Grid.Row="0" Grid.Column="2"
+                                <TextBlock x:Name="PercentageText"
+                                           Grid.Row="0" Grid.Column="2"
                                            VerticalAlignment="Center"
                                            HorizontalAlignment="Right"
                                            FontSize="56"

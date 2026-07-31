@@ -16,6 +16,13 @@ public sealed partial class MainWindow : Window
 {
     private const string EmbeddedIconResourceName = "PulsarBattery.Assets.icon.ico";
 
+    // Logical (DIP) minimum below which page layouts become unreadable.
+    private const int MinWindowWidthDip = 480;
+    private const int MinWindowHeightDip = 420;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hWnd);
+
     private readonly MainViewModel _viewModel = new();
     private AppWindow? _appWindow;
     private static string? _extractedEmbeddedIconPath;
@@ -88,6 +95,14 @@ public sealed partial class MainWindow : Window
 
             // A small utility window: good default.
             _appWindow.Resize(new Windows.Graphics.SizeInt32(900, 820));
+
+            if (_appWindow.Presenter is OverlappedPresenter presenter)
+            {
+                // PreferredMinimum* takes physical pixels.
+                var scale = GetDpiForWindow(hwnd) / 96.0;
+                presenter.PreferredMinimumWidth = (int)(MinWindowWidthDip * scale);
+                presenter.PreferredMinimumHeight = (int)(MinWindowHeightDip * scale);
+            }
 
             _appWindow.Closing += AppWindow_Closing;
         }
