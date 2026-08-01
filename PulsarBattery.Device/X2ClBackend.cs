@@ -77,7 +77,10 @@ public sealed class X2ClBackend : IHidBackend
 
             var connection = device.ProductID == PidWired ? ConnectionKind.Wired : ConnectionKind.Dongle;
             var connectionName = connection == ConnectionKind.Dongle ? HidHelpers.GetProductName(device) : null;
-            return ReadBatteryCmd04(writer, writer, debug, "output", connection, connectionName);
+            // No known firmware command in the legacy protocol; wired bcdDevice
+            // is the mouse's own version, the dongle's would be the dongle's.
+            var firmware = connection == ConnectionKind.Wired ? HidHelpers.GetFirmwareFromBcd(device) : null;
+            return ReadBatteryCmd04(writer, writer, debug, "output", connection, connectionName, firmware);
         }
         catch
         {
@@ -89,7 +92,7 @@ public sealed class X2ClBackend : IHidBackend
         }
     }
 
-    private DeviceStatus? ReadBatteryCmd04(HidStream writer, HidStream reader, bool debug, string transport, ConnectionKind connection, string? connectionName)
+    private DeviceStatus? ReadBatteryCmd04(HidStream writer, HidStream reader, bool debug, string transport, ConnectionKind connection, string? connectionName, string? firmware)
     {
         var maxLength = writer.Device.GetMaxInputReportLength();
         HidHelpers.DrainInput(reader, 6, maxLength);
@@ -134,7 +137,7 @@ public sealed class X2ClBackend : IHidBackend
             System.Diagnostics.Debug.WriteLine($"cmd04 raw={battery} charging={charging} data={Convert.ToHexString(payload)}");
         }
 
-        return new DeviceStatus(battery, charging, Name, connection, connectionName);
+        return new DeviceStatus(battery, charging, Name, connection, connectionName, firmware);
     }
 
     private static byte[]? ReadCmd04Response(HidStream reader, double timeoutSeconds, bool debug, int maxLength)

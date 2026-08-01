@@ -84,6 +84,23 @@ internal static class HidHelpers
         }
     }
 
+    /// <summary>
+    /// USB bcdDevice formatted "01.25"-style. Meaningful as a firmware version
+    /// only for the device actually on the bus (a dongle reports its own).
+    /// </summary>
+    public static string? GetFirmwareFromBcd(HidDevice device)
+    {
+        try
+        {
+            var bcd = device.ReleaseNumberBcd;
+            return bcd == 0 ? null : $"{(bcd >> 8) & 0xFF:X2}.{bcd & 0xFF:X2}";
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
     public static IEnumerable<HidDevice> EnumerateDevices(int vendorId, Func<HidDevice, bool>? filter = null)
     {
         var devices = DeviceList.Local.GetHidDevices(vendorId);

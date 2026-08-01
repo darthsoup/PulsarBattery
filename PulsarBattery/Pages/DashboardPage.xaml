@@ -249,6 +249,37 @@
                             </Grid>
                         </Border>
 
+                        <!-- Firmware -->
+                        <Border Style="{StaticResource PulsarCardStyle}"
+                                Padding="16"
+                                Margin="0,0,0,2">
+                            <Grid ColumnSpacing="12">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+
+                                <FontIcon Grid.Column="0"
+                                          Glyph="&#xE950;"
+                                          FontSize="16"
+                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                          VerticalAlignment="Center" />
+
+                                <controls:TranslatedTextBlock Grid.Column="1"
+                                                              Text="Firmware"
+                                                              TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
+                                                              VerticalAlignment="Center" />
+
+                                <TextBlock Grid.Column="2"
+                                           Text="{x:Bind ViewModel.FirmwareText, Mode=OneWay}"
+                                           Style="{ThemeResource BodyTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           TextTrimming="CharacterEllipsis"
+                                           VerticalAlignment="Center" />
+                            </Grid>
+                        </Border>
+
                         <!-- Battery Level -->
                         <Border Style="{StaticResource PulsarCardStyle}"
                                 Padding="16"
@@ -261,7 +292,7 @@
                                 </Grid.ColumnDefinitions>
 
                                 <FontIcon Grid.Column="0"
-                                          Glyph="&#xECBF;" 
+                                          Glyph="&#xECBF;"
                                           FontSize="16"
                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                           VerticalAlignment="Center" />

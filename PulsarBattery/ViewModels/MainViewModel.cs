@@ -66,6 +66,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string _mouseSettingsError = string.Empty;
     private ConnectionKind _connection;
     private string? _connectionName;
+    private string? _firmwareVersion;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -264,6 +265,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ConnectionKind.Dongle => _connectionName ?? Loc.T("Wireless"),
         _ => "—",
     };
+
+    public string FirmwareText => _firmwareVersion ?? "—";
 
     public Visibility MouseSettingsVisibility => _deviceSettings is null ? Visibility.Collapsed : Visibility.Visible;
 
@@ -1002,10 +1005,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ModelName = status.Model;
         _connection = status.Connection;
         _connectionName = status.ConnectionName;
+        _firmwareVersion = status.FirmwareVersion;
         _lastUpdated = DateTimeOffset.Now;
 
         OnPropertyChanged(nameof(ChargingStateText));
         OnPropertyChanged(nameof(ConnectionText));
+        OnPropertyChanged(nameof(FirmwareText));
         OnPropertyChanged(nameof(LastUpdatedText));
         NotifyTrayProperties();
     }

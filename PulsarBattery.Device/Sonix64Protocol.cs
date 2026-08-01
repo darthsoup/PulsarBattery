@@ -20,6 +20,7 @@ internal static class Sonix64Protocol
     // Wire-format packet length excluding the report ID byte.
     public const int PacketLength = 64;
 
+    private static readonly byte[] FirmwareQuery = [0x01, 0x87, 0x04];
     private static readonly byte[] BatteryQuery = [0x08, 0x81, 0x01];
     private static readonly byte[] ConnectionTypeQuery = [0x08, 0x83, 0x01];
     private static readonly byte[] PollingRateQuery = [0x08, 0x85, 0x03];
@@ -64,6 +65,21 @@ internal static class Sonix64Protocol
     };
 
     public static IReadOnlyCollection<int> SupportedPollingRates => PollingRateCodeByHz.Keys;
+
+    /// <summary>
+    /// Firmware version register: b6 = minor, b7 = major, hex-formatted
+    /// ("01.25"-style, matching the USB bcdDevice notation).
+    /// </summary>
+    public static string? ReadFirmwareVersion(HidStream stream, bool debug)
+    {
+        var wire = Query(stream, FirmwareQuery, debug);
+        if (wire is null || (wire[6] == 0 && wire[7] == 0))
+        {
+            return null;
+        }
+
+        return $"{wire[7]:X2}.{wire[6]:X2}";
+    }
 
     public static int? ReadBatteryPercent(HidStream stream, bool debug)
     {

@@ -13,6 +13,12 @@ public sealed class Sonix64Backend : IHidBackend
 {
     private readonly DeviceDescriptor _descriptor;
 
+    // Firmware never changes while the app runs, and a failed Query costs up
+    // to ~900ms — read it once and stop retrying after a few misses so the
+    // 5s poll loops don't pay that penalty every tick.
+    private string? _firmwareVersion;
+    private int _firmwareAttemptsLeft = 3;
+
     public Sonix64Backend(DeviceDescriptor descriptor)
     {
         _descriptor = descriptor;
@@ -33,13 +39,14 @@ public sealed class Sonix64Backend : IHidBackend
             var connection = Sonix64Protocol.ReadConnectionKind(stream, dbg);
             var charging = connection == ConnectionKind.Wired;
             var connectionName = connection == ConnectionKind.Dongle ? HidHelpers.GetProductName(stream.Device) : null;
+            var firmware = ReadFirmwareVersionCached(stream, dbg);
 
             if (dbg)
             {
-                System.Diagnostics.Debug.WriteLine($"sonix64 battery={percentage} charging={charging} conn={connection} via={connectionName ?? "-"}");
+                System.Diagnostics.Debug.WriteLine($"sonix64 battery={percentage} charging={charging} conn={connection} via={connectionName ?? "-"} fw={firmware ?? "-"}");
             }
 
-            return new DeviceStatus(percentage.Value, charging, Name, connection, connectionName);
+            return new DeviceStatus(percentage.Value, charging, Name, connection, connectionName, firmware);
         });
     }
 
@@ -112,6 +119,20 @@ public sealed class Sonix64Backend : IHidBackend
         });
 
         return result is true;
+    }
+
+    private string? ReadFirmwareVersionCached(HidStream stream, bool debug)
+    {
+        if (_firmwareVersion is null && _firmwareAttemptsLeft > 0)
+        {
+            _firmwareVersion = Sonix64Protocol.ReadFirmwareVersion(stream, debug);
+            if (_firmwareVersion is null)
+            {
+                _firmwareAttemptsLeft--;
+            }
+        }
+
+        return _firmwareVersion;
     }
 
     private T? WithConfigInterface<T>(bool debug, Func<HidStream, bool, T?> read)
