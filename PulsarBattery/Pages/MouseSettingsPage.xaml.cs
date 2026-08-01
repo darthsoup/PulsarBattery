@@ -161,19 +161,23 @@ public sealed partial class MouseSettingsPage : Page
         DebounceCard.Description = Loc.T("Click debounce time in milliseconds");
 
         LodCard.Header = Loc.T("Lift-off distance");
+        LodCard.Description = Loc.T("Height at which the sensor stops tracking when the mouse is lifted");
         AutomationProperties.SetName(LodComboBox, Loc.T("Lift-off distance"));
 
         MotionSyncCard.Header = Loc.T("Motion sync");
+        MotionSyncCard.Description = Loc.T("Aligns sensor readings with the polling interval for smoother tracking");
         MotionSyncToggle.OnContent = Loc.T("On");
         MotionSyncToggle.OffContent = Loc.T("Off");
         AutomationProperties.SetName(MotionSyncToggle, Loc.T("Motion sync"));
 
         AngleSnapCard.Header = Loc.T("Angle snapping");
+        AngleSnapCard.Description = Loc.T("Straightens small hand movements into smooth lines");
         AngleSnapToggle.OnContent = Loc.T("On");
         AngleSnapToggle.OffContent = Loc.T("Off");
         AutomationProperties.SetName(AngleSnapToggle, Loc.T("Angle snapping"));
 
         RippleControlCard.Header = Loc.T("Ripple control");
+        RippleControlCard.Description = Loc.T("Smooths cursor jitter at high DPI values");
         RippleControlToggle.OnContent = Loc.T("On");
         RippleControlToggle.OffContent = Loc.T("Off");
         AutomationProperties.SetName(RippleControlToggle, Loc.T("Ripple control"));
