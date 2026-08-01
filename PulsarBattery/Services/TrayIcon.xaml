@@ -36,9 +36,15 @@
         </tb:TaskbarIcon.IconSource>
 
         <tb:TaskbarIcon.ContextFlyout>
+            <!-- SecondWindow mode sizes its host window from each item's measured
+                 DesiredSize; items whose x:Bind text changed can momentarily measure
+                 too narrow, clipping the menu. MinWidth on the items is the only
+                 sizing input that reaches that measurement (MenuFlyoutPresenterStyle
+                 is not copied to the second window's flyout). -->
             <MenuFlyout AreOpenCloseAnimationsEnabled="True">
                 <!-- Model -->
                 <MenuFlyoutItem
+                    MinWidth="200"
                     Text="{x:Bind ViewModel.ModelName, Mode=OneWay}"
                     IsEnabled="False">
                     <MenuFlyoutItem.Icon>
@@ -48,6 +54,7 @@
 
                 <!-- Battery Status -->
                 <MenuFlyoutItem
+                    MinWidth="200"
                     Text="{x:Bind ViewModel.BatteryPercentage, Converter={StaticResource BatteryPercentageConverter}, Mode=OneWay}"
                     IsEnabled="False">
                     <MenuFlyoutItem.Icon>
@@ -56,7 +63,8 @@
                 </MenuFlyoutItem>
                 
                 <!-- Charging Status -->
-                <MenuFlyoutItem 
+                <MenuFlyoutItem
+                    MinWidth="200"
                     Text="{x:Bind ViewModel.IsCharging, Converter={StaticResource ChargingStatusConverter}, Mode=OneWay}"
                     IsEnabled="False">
                     <MenuFlyoutItem.Icon>
@@ -67,7 +75,8 @@
                 <MenuFlyoutSeparator/>
                 
                 <!-- Open Command -->
-                <MenuFlyoutItem 
+                <MenuFlyoutItem
+                    MinWidth="200"
                     Text="Open"
                     x:Name="OpenMenuItem">
                     <MenuFlyoutItem.Icon>
@@ -76,7 +85,8 @@
                 </MenuFlyoutItem>
 
                 <!-- Exit Command -->
-                <MenuFlyoutItem 
+                <MenuFlyoutItem
+                    MinWidth="200"
                     Text="Exit"
                     x:Name="ExitMenuItem">
                     <MenuFlyoutItem.Icon>
