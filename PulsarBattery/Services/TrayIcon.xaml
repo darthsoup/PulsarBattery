@@ -19,21 +19,12 @@
         ContextMenuMode="SecondWindow"
         NoLeftClickDelay="True">
 
-        <!-- One permanently-attached GeneratedIconSource renders both styles:
-             battery percentage as text, or the app icon via BackgroundSource
-             with empty text. The IconSource is deliberately never swapped —
+        <!-- The icon is rendered in code (TrayIconRenderer) at the exact
+             physical tray size and assigned to TaskbarIcon.Icon from a single
+             UI-thread path in TrayIcon.xaml.cs. IconSource must NEVER be set:
              H.NotifyIcon's IconSource change handler races its async icon
-             updates and leaks change subscriptions. TextMargin carries the
-             centering rectangle computed by the view model. -->
-        <tb:TaskbarIcon.IconSource>
-            <tb:GeneratedIconSource
-                Text="{x:Bind ViewModel.TrayIconText, Mode=OneWay}"
-                Foreground="{x:Bind ViewModel.TrayIconForeground, Mode=OneWay}"
-                FontSize="{x:Bind ViewModel.TrayIconFontSize, Mode=OneWay}"
-                TextMargin="{x:Bind ViewModel.TrayIconTextMargin, Mode=OneWay}"
-                BackgroundSource="{x:Bind ViewModel.TrayIconBackgroundSource, Mode=OneWay}"
-                FontWeight="Bold" />
-        </tb:TaskbarIcon.IconSource>
+             updates and leaks change subscriptions, and any IconSource would
+             also overwrite the code-assigned Icon on DPI changes. -->
 
         <tb:TaskbarIcon.ContextFlyout>
             <!-- SecondWindow mode sizes its host window from each item's measured

@@ -158,105 +158,24 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public string ChargingStateText => IsCharging ? Loc.T("Charging") : Loc.T("Not charging");
 
-    private readonly SolidColorBrush _trayBrushOnDark = new(Colors.White);
-    private readonly SolidColorBrush _trayBrushOnLight = new(Colors.Black);
-    private readonly SolidColorBrush _trayBrushLow = new(Windows.UI.Color.FromArgb(255, 232, 17, 35));
-    private readonly SolidColorBrush _trayBrushCharging = new(Windows.UI.Color.FromArgb(255, 76, 201, 76));
-
-    private BitmapImage? _trayGearImage;
-
-    // Icon-style switching happens INSIDE the one GeneratedIconSource (text
-    // for the percentage, BackgroundSource for the app icon) instead of
-    // swapping TaskbarIcon.IconSource: H.NotifyIcon's IconSource change
-    // handler races its async icon updates and leaks change subscriptions,
-    // which made a swapped-in icon revert on the next refresh.
-    public string TrayIconText => !ShowBatteryInTray
-        ? string.Empty
-        : HasInitialData ? BatteryPercentage.ToString(CultureInfo.InvariantCulture) : "–";
-
-    public ImageSource? TrayIconBackgroundSource => ShowBatteryInTray
-        ? null
-        : _trayGearImage ??= new BitmapImage(new Uri("ms-appx:///Assets/icon.png"));
-
-    // H.NotifyIcon feeds this to System.Drawing.Font, so the unit is POINTS,
-    // not pixels. Three digits need a smaller face to fit the 128px canvas.
-    public double TrayIconFontSize => HasInitialData && BatteryPercentage >= 100 ? 44 : 56;
-
-    // The generator anchors text at the top-left of the TextMargin rectangle,
-    // so centering must be computed here with the same measurement it uses.
-    public Thickness TrayIconTextMargin
-    {
-        get
-        {
-            if (TrayIconText.Length == 0)
-            {
-                return new Thickness(0);
-            }
-
-            try
-            {
-                using var bitmap = new System.Drawing.Bitmap(1, 1);
-                using var graphics = System.Drawing.Graphics.FromImage(bitmap);
-                using var font = new System.Drawing.Font("Segoe UI", (float)TrayIconFontSize, System.Drawing.FontStyle.Bold);
-                var textSize = graphics.MeasureString(TrayIconText, font, new System.Drawing.SizeF(128, 128));
-                var left = 64.0 - textSize.Width / 2.0;
-                var top = 64.0 - textSize.Height / 2.0;
-                return new Thickness(left, top, 128.0 - left - textSize.Width, 128.0 - top - textSize.Height);
-            }
-            catch
-            {
-                return new Thickness(0);
-            }
-        }
-    }
-
-    public Brush TrayIconForeground
-    {
-        get
-        {
-            if (HasInitialData)
-            {
-                if (IsCharging)
-                {
-                    return _trayBrushCharging;
-                }
-
-                if (BatteryPercentage < AlertThresholdUnlockedPercent)
-                {
-                    return _trayBrushLow;
-                }
-            }
-
-            return IsSystemLightTheme() ? _trayBrushOnLight : _trayBrushOnDark;
-        }
-    }
+    /// <summary>
+    /// Snapshot for <see cref="Services.TrayIconRenderer"/>; the icon itself
+    /// is rendered in code (see TrayIcon.xaml.cs), not via bound properties.
+    /// </summary>
+    public TrayIconState TrayIconState => new(
+        ShowBattery: ShowBatteryInTray,
+        HasData: HasInitialData,
+        Percentage: BatteryPercentage,
+        IsCharging: IsCharging,
+        IsLow: HasInitialData && !IsCharging && BatteryPercentage < AlertThresholdUnlockedPercent);
 
     public string TrayTooltipText => HasInitialData
         ? $"{ModelName} — {BatteryPercentage}% · {ChargingStateText}"
         : "Pulsar Battery";
 
-    private static bool IsSystemLightTheme()
-    {
-        try
-        {
-            using var key = Microsoft.Win32.Registry.CurrentUser.OpenSubKey(
-                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
-            // The taskbar follows the *system* theme, not the app theme.
-            return key?.GetValue("SystemUsesLightTheme") is int value && value == 1;
-        }
-        catch
-        {
-            return false;
-        }
-    }
-
     private void NotifyTrayProperties()
     {
-        OnPropertyChanged(nameof(TrayIconText));
-        OnPropertyChanged(nameof(TrayIconFontSize));
-        OnPropertyChanged(nameof(TrayIconTextMargin));
-        OnPropertyChanged(nameof(TrayIconForeground));
-        OnPropertyChanged(nameof(TrayIconBackgroundSource));
+        OnPropertyChanged(nameof(TrayIconState));
         OnPropertyChanged(nameof(TrayTooltipText));
     }
 
@@ -473,6 +392,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (SetProperty(ref _alertThresholdUnlockedPercent, clamped))
             {
                 AppSettingsService.Update(settings => settings with { AlertThresholdUnlockedPercent = clamped });
+                // The threshold feeds TrayIconState.IsLow — recolor promptly.
+                NotifyTrayProperties();
             }
         }
     }

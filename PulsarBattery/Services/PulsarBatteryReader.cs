@@ -44,12 +44,21 @@ public sealed class PulsarBatteryReader
     {
         lock (GlobalReadLock)
         {
+            // Route to the backend whose device actually answered, not merely
+            // the first one in the registry that can write: with only a
+            // read-only device attached (e.g. an X2 V1) the old scan handed
+            // every write to the Sonix backend, which then failed against
+            // hardware that was not even present.
             foreach (var backend in _backends)
             {
-                if (backend.SupportsSettingsWrite)
+                if (backend.ReadBatteryStatus(debug) is null)
                 {
-                    return backend.ApplySettings(changes, debug);
+                    continue;
                 }
+
+                return backend.SupportsSettingsWrite
+                    ? backend.ApplySettings(changes, debug)
+                    : null;
             }
 
             return null;

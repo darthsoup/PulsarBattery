@@ -142,15 +142,20 @@
   <!-- WinAppSDK 2.x self-contained builds don't copy Microsoft.WindowsAppRuntime.Insights.Resource.dll
        (microsoft/WindowsAppSDK#6071); without it AppNotificationManager.Register() fails with
        0x8007007E and no notification is ever shown. Extract it from the runtime framework MSIX and
-       inject it the same way the SDK injects its other payload DLLs. Remove once the SDK ships it. -->
+       inject it the same way the SDK injects its other payload DLLs. Adding it to
+       MicrosoftWindowsAppSDKDllFiles puts it in the generated app manifest's loadFrom list, which
+       is how the single-file publish redirects LoadLibrary to the extraction directory — without
+       that entry the loose-file copy works but the bundled publish still fails to load it.
+       Remove once the SDK ships the DLL in its payload glob. -->
   <Target Name="AddMissingWindowsAppRuntimeInsightsDll"
-          BeforeTargets="AssignTargetPaths;CoreCompile"
+          BeforeTargets="CreateWinRTRegistration;AssignTargetPaths;CoreCompile"
           Condition="'$(WindowsAppSDKSelfContained)' == 'true'">
     <Unzip SourceFiles="$(PkgMicrosoft_WindowsAppSDK_Runtime)\tools\MSIX\win10-$(Platform)\Microsoft.WindowsAppRuntime.2.msix"
            DestinationFolder="$(IntermediateOutputPath)WindowsAppRuntimeMsix"
            Include="Microsoft.WindowsAppRuntime.Insights.Resource.dll"
            SkipUnchangedFiles="true" />
     <ItemGroup>
+      <MicrosoftWindowsAppSDKDllFiles Include="$(IntermediateOutputPath)WindowsAppRuntimeMsix\Microsoft.WindowsAppRuntime.Insights.Resource.dll" />
       <None Include="$(IntermediateOutputPath)WindowsAppRuntimeMsix\Microsoft.WindowsAppRuntime.Insights.Resource.dll"
             CopyToOutputDirectory="PreserveNewest"
             Link="Microsoft.WindowsAppRuntime.Insights.Resource.dll" />
