@@ -67,6 +67,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private ConnectionKind _connection;
     private string? _connectionName;
     private string? _firmwareVersion;
+    private int? _linkRateHz;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -259,12 +260,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(TrayTooltipText));
     }
 
-    public string ConnectionText => _connection switch
+    public string ConnectionText
     {
-        ConnectionKind.Wired => Loc.T("Wired"),
-        ConnectionKind.Dongle => _connectionName ?? Loc.T("Wireless"),
-        _ => "—",
-    };
+        get
+        {
+            var text = _connection switch
+            {
+                ConnectionKind.Wired => Loc.T("Wired"),
+                ConnectionKind.Dongle => _connectionName ?? Loc.T("Wireless"),
+                _ => "—",
+            };
+
+            return _linkRateHz is int hz ? $"{text} · {hz} Hz" : text;
+        }
+    }
 
     public string FirmwareText => _firmwareVersion ?? "—";
 
@@ -293,6 +302,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public int? PollingRateHz => _deviceSettings?.PollingRateHz;
 
     public int? LodMm10 => _deviceSettings?.LodMm10;
+
+    public int? DpiStage => _deviceSettings?.DpiStage;
 
     public bool MouseSettingsErrorOpen => _mouseSettingsError.Length > 0;
 
@@ -398,6 +409,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
 
         _ = ApplyDeviceSettingAsync(new DeviceSettings(LodMm10: mm10));
+    }
+
+    public void ApplyDpiStage(int stage)
+    {
+        if (_isRefreshingDeviceSettings || _deviceSettings?.DpiStage == stage)
+        {
+            return;
+        }
+
+        _ = ApplyDeviceSettingAsync(new DeviceSettings(DpiStage: stage));
     }
 
     public void ClearMouseSettingsError()
@@ -930,6 +951,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(DpiStageText));
             OnPropertyChanged(nameof(PollingRateHz));
             OnPropertyChanged(nameof(LodMm10));
+            OnPropertyChanged(nameof(DpiStage));
             OnPropertyChanged(nameof(MotionSyncIsOn));
             OnPropertyChanged(nameof(AngleSnapIsOn));
             OnPropertyChanged(nameof(RippleControlIsOn));
@@ -981,6 +1003,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             && (requested.DebounceMs is null || requested.DebounceMs == current.DebounceMs)
             && (requested.MotionSync is null || requested.MotionSync == current.MotionSync)
             && (requested.Dpi is null || requested.Dpi == current.Dpi)
+            && (requested.DpiStage is null || requested.DpiStage == current.DpiStage)
             && (requested.LodMm10 is null || requested.LodMm10 == current.LodMm10)
             && (requested.AngleSnap is null || requested.AngleSnap == current.AngleSnap)
             && (requested.RippleControl is null || requested.RippleControl == current.RippleControl);
@@ -1006,6 +1029,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _connection = status.Connection;
         _connectionName = status.ConnectionName;
         _firmwareVersion = status.FirmwareVersion;
+        _linkRateHz = status.LinkRateHz;
         _lastUpdated = DateTimeOffset.Now;
 
         OnPropertyChanged(nameof(ChargingStateText));

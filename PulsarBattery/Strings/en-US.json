@@ -15,6 +15,8 @@
   "Motion sync": "Motion sync",
   "DPI": "DPI",
   "Stage {0}": "Stage {0}",
+  "DPI stage": "DPI stage",
+  "Switches the active DPI preset": "Switches the active DPI preset",
   "Performance": "Performance",
   "Sensor": "Sensor",
   "Angle snapping": "Angle snapping",

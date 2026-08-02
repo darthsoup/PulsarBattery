@@ -36,17 +36,24 @@ public sealed class Sonix64Backend : IHidBackend
                 return null;
             }
 
-            var connection = Sonix64Protocol.ReadConnectionKind(stream, dbg);
-            var charging = connection == ConnectionKind.Wired;
+            var (connection, connRateHz) = Sonix64Protocol.ReadConnection(stream, dbg);
+            // The live register tracks on-mouse rate switching; the connection
+            // register only knows the rate the link was established with.
+            var linkRateHz = Sonix64Protocol.ReadLivePollingRateHz(stream, dbg) ?? connRateHz;
+            // The charge register is the source of truth when wired (a full
+            // battery on the cable is not charging); fall back to the old
+            // "cable = charging" heuristic if it doesn't answer.
+            var charging = connection == ConnectionKind.Wired
+                && (Sonix64Protocol.ReadChargingState(stream, dbg) ?? true);
             var connectionName = connection == ConnectionKind.Dongle ? HidHelpers.GetProductName(stream.Device) : null;
             var firmware = ReadFirmwareVersionCached(stream, dbg);
 
             if (dbg)
             {
-                System.Diagnostics.Debug.WriteLine($"sonix64 battery={percentage} charging={charging} conn={connection} via={connectionName ?? "-"} fw={firmware ?? "-"}");
+                System.Diagnostics.Debug.WriteLine($"sonix64 battery={percentage} charging={charging} conn={connection}@{linkRateHz?.ToString() ?? "?"}Hz via={connectionName ?? "-"} fw={firmware ?? "-"}");
             }
 
-            return new DeviceStatus(percentage.Value, charging, Name, connection, connectionName, firmware);
+            return new DeviceStatus(percentage.Value, charging, Name, connection, connectionName, firmware, linkRateHz);
         });
     }
 
@@ -100,6 +107,11 @@ public sealed class Sonix64Backend : IHidBackend
             if (changes.LodMm10 is int lod)
             {
                 allApplied &= Sonix64Protocol.WriteLodMm10(stream, lod, dbg);
+            }
+
+            if (changes.DpiStage is int stage)
+            {
+                allApplied &= Sonix64Protocol.WriteDpiStage(stream, stage, dbg);
             }
 
             if (changes.Dpi is int dpi)

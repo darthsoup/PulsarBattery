@@ -79,6 +79,12 @@
                                        Width="140" />
                         </settingscontrols:SettingsCard>
 
+                        <settingscontrols:SettingsCard x:Name="DpiStageCard">
+                            <ComboBox x:Name="DpiStageComboBox"
+                                      MinWidth="140"
+                                      SelectionChanged="DpiStageComboBox_SelectionChanged" />
+                        </settingscontrols:SettingsCard>
+
                         <settingscontrols:SettingsCard x:Name="DebounceCard">
                             <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
                                 <NumberBox Minimum="0"

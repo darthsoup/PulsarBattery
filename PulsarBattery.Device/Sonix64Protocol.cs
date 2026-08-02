@@ -21,7 +21,9 @@ internal static class Sonix64Protocol
     public const int PacketLength = 64;
 
     private static readonly byte[] FirmwareQuery = [0x01, 0x87, 0x04];
+    private static readonly byte[] LivePollingRateQuery = [0x01, 0x89, 0x02];
     private static readonly byte[] BatteryQuery = [0x08, 0x81, 0x01];
+    private static readonly byte[] ChargingStateQuery = [0x08, 0x82, 0x01];
     private static readonly byte[] ConnectionTypeQuery = [0x08, 0x83, 0x01];
     private static readonly byte[] PollingRateQuery = [0x08, 0x85, 0x03];
     private static readonly byte[] MotionSyncQuery = [0x07, 0x85, 0x02];
@@ -32,6 +34,7 @@ internal static class Sonix64Protocol
     private static readonly byte[] AngleSnapQuery = [0x07, 0x84, 0x02];
     private static readonly byte[] RippleControlQuery = [0x07, 0x83, 0x02];
 
+    private static readonly byte[] DpiStageWrite = [0x05, 0x01, 0x02];
     private static readonly byte[] MotionSyncWrite = [0x07, 0x05, 0x02];
     private static readonly byte[] DebounceWrite = [0x04, 0x03, 0x03];
     private static readonly byte[] DpiWrite = [0x05, 0x02, 0x05];
@@ -40,7 +43,9 @@ internal static class Sonix64Protocol
     private static readonly byte[] RippleControlWrite = [0x07, 0x03, 0x02];
     private static readonly byte[] PollingRateWrite = [0x01, 0x09, 0x02];
 
-    // Polling-rate register value ≈ 30000 / Hz, rounded (captured mapping).
+    // Stored polling register (08 85 03) value ≈ 30000 / Hz, rounded. This
+    // register does NOT track the live rate — it keeps the boot/profile value
+    // even after on-mouse or software rate switches (verified live).
     private static readonly Dictionary<byte, int> PollingRateByValue = new()
     {
         [240] = 125,
@@ -52,16 +57,31 @@ internal static class Sonix64Protocol
         [4] = 8000,
     };
 
-    // Write commands use a power-of-two code instead of the interval value.
+    // Live-rate register (01 89 02) and the write command (01 09 02) share one
+    // ascending power-of-two code per rate. Verified live on the X2 V3 eS:
+    // writing 0x01 sets 125 Hz and the change applies instantly, also
+    // wireless — the reversed table in older captures is wrong for this
+    // device.
     private static readonly Dictionary<int, byte> PollingRateCodeByHz = new()
     {
-        [125] = 0x40,
-        [250] = 0x20,
-        [500] = 0x10,
+        [125] = 0x01,
+        [250] = 0x02,
+        [500] = 0x04,
         [1000] = 0x08,
-        [2000] = 0x04,
-        [4000] = 0x02,
-        [8000] = 0x01,
+        [2000] = 0x10,
+        [4000] = 0x20,
+        [8000] = 0x40,
+    };
+
+    private static readonly Dictionary<byte, int> PollingRateHzByCode = new()
+    {
+        [0x01] = 125,
+        [0x02] = 250,
+        [0x04] = 500,
+        [0x08] = 1000,
+        [0x10] = 2000,
+        [0x20] = 4000,
+        [0x40] = 8000,
     };
 
     public static IReadOnlyCollection<int> SupportedPollingRates => PollingRateCodeByHz.Keys;
@@ -94,21 +114,57 @@ internal static class Sonix64Protocol
 
     /// <summary>
     /// Connection type register: 2/3 = wired 1k/8k (mouse is on the charging
-    /// cable), 0/1/4/5 = wireless via dongle at 1k/4k/2k/8k.
+    /// cable), 0/1/4/5 = wireless via dongle at 1k/4k/2k/8k. The value thus
+    /// also carries the live link rate.
     /// </summary>
-    public static ConnectionKind ReadConnectionKind(HidStream stream, bool debug)
+    public static (ConnectionKind Kind, int? LinkRateHz) ReadConnection(HidStream stream, bool debug)
     {
         var wire = Query(stream, ConnectionTypeQuery, debug);
         if (wire is null)
         {
-            return ConnectionKind.Unknown;
+            return (ConnectionKind.Unknown, null);
         }
 
-        return wire[6] is 2 or 3 ? ConnectionKind.Wired : ConnectionKind.Dongle;
+        return wire[6] switch
+        {
+            0 => (ConnectionKind.Dongle, 1000),
+            1 => (ConnectionKind.Dongle, 4000),
+            4 => (ConnectionKind.Dongle, 2000),
+            5 => (ConnectionKind.Dongle, 8000),
+            2 => (ConnectionKind.Wired, 1000),
+            3 => (ConnectionKind.Wired, 8000),
+            _ => (ConnectionKind.Dongle, null),
+        };
     }
 
+    /// <summary>
+    /// Charge-state register, b6: 1 = charging, 0 = not charging. Only read
+    /// while wired; null when the device doesn't answer or the value is
+    /// implausible so callers can fall back to a heuristic.
+    /// </summary>
+    public static bool? ReadChargingState(HidStream stream, bool debug)
+    {
+        var wire = Query(stream, ChargingStateQuery, debug);
+        if (wire is null || wire[6] > 1)
+        {
+            return null;
+        }
+
+        return wire[6] == 1;
+    }
+
+    /// <summary>
+    /// The actual current polling rate: reads the live register first (which
+    /// tracks on-mouse switching), falling back to the stored profile value.
+    /// </summary>
     public static int? ReadPollingRateHz(HidStream stream, bool debug)
     {
+        var live = ReadLivePollingRateHz(stream, debug);
+        if (live is not null)
+        {
+            return live;
+        }
+
         var wire = Query(stream, PollingRateQuery, debug);
         if (wire is null)
         {
@@ -116,6 +172,17 @@ internal static class Sonix64Protocol
         }
 
         return PollingRateByValue.TryGetValue(wire[7], out var hz) ? hz : null;
+    }
+
+    public static int? ReadLivePollingRateHz(HidStream stream, bool debug)
+    {
+        var wire = Query(stream, LivePollingRateQuery, debug);
+        if (wire is null)
+        {
+            return null;
+        }
+
+        return PollingRateHzByCode.TryGetValue(wire[7], out var hz) ? hz : null;
     }
 
     public static bool? ReadMotionSync(HidStream stream, bool debug)
@@ -174,6 +241,19 @@ internal static class Sonix64Protocol
         return stage is >= 1 and <= 10 ? stage : null;
     }
 
+    public static bool WriteDpiStage(HidStream stream, int stage, bool debug)
+    {
+        // The X2 V3 eS has 8 stages (stage 9 is rejected, verified live);
+        // the stage byte is the plain 1-based stage number on read and write.
+        if (stage is < 1 or > 8)
+        {
+            return false;
+        }
+
+        return Write(stream, DpiStageWrite, [(byte)stage], debug)
+               && ReadDpiStage(stream, debug) == stage;
+    }
+
     public static bool WriteMotionSync(HidStream stream, bool enabled, bool debug)
         => Write(stream, MotionSyncWrite, [(byte)(enabled ? 1 : 0)], debug)
            && ReadMotionSync(stream, debug) == enabled;
@@ -228,11 +308,8 @@ internal static class Sonix64Protocol
             return false;
         }
 
-        // The device ACKs the write but the live rate may not change until it
-        // reconnects (observed on the X2 V3 eS in wireless 1 kHz mode), so
-        // success here means "accepted", and the caller compares the re-read
-        // value to surface a mismatch.
-        return Write(stream, PollingRateWrite, [code], debug);
+        return Write(stream, PollingRateWrite, [code], debug)
+               && ReadLivePollingRateHz(stream, debug) == hz;
     }
 
     public static byte[]? Query(HidStream stream, IReadOnlyList<byte> command, bool debug)

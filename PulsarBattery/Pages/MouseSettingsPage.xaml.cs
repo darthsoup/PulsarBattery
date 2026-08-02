@@ -13,6 +13,7 @@ public sealed partial class MouseSettingsPage : Page
 {
     private static readonly int[] PollingRates = [125, 250, 500, 1000, 2000, 4000, 8000];
     private static readonly (int Mm10, string Label)[] LodOptions = [(7, "0.7 mm"), (10, "1.0 mm"), (20, "2.0 mm")];
+    private const int DpiStageCount = 8; // X2 V3 eS: stages 1-8, verified live
 
     private ViewModels.MainViewModel? ViewModel => DataContext as ViewModels.MainViewModel;
 
@@ -48,14 +49,11 @@ public sealed partial class MouseSettingsPage : Page
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(ViewModels.MainViewModel.PollingRateHz) or nameof(ViewModels.MainViewModel.LodMm10))
+        if (e.PropertyName is nameof(ViewModels.MainViewModel.PollingRateHz)
+            or nameof(ViewModels.MainViewModel.LodMm10)
+            or nameof(ViewModels.MainViewModel.DpiStage))
         {
             SyncComboSelections();
-        }
-
-        if (e.PropertyName is nameof(ViewModels.MainViewModel.DpiStageText))
-        {
-            UpdateDpiDescription();
         }
     }
 
@@ -75,6 +73,16 @@ public sealed partial class MouseSettingsPage : Page
             {
                 LodComboBox.Items.Add(new ComboBoxItem { Content = label, Tag = mm10 });
             }
+
+            DpiStageComboBox.Items.Clear();
+            for (var stage = 1; stage <= DpiStageCount; stage++)
+            {
+                DpiStageComboBox.Items.Add(new ComboBoxItem
+                {
+                    Content = string.Format(Loc.T("Stage {0}"), stage),
+                    Tag = stage,
+                });
+            }
         }
         finally
         {
@@ -89,6 +97,7 @@ public sealed partial class MouseSettingsPage : Page
         {
             SelectByTag(PollingRateComboBox, ViewModel?.PollingRateHz);
             SelectByTag(LodComboBox, ViewModel?.LodMm10);
+            SelectByTag(DpiStageComboBox, ViewModel?.DpiStage);
         }
         finally
         {
@@ -143,6 +152,19 @@ public sealed partial class MouseSettingsPage : Page
         }
     }
 
+    private void DpiStageComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isUpdatingSelection)
+        {
+            return;
+        }
+
+        if ((DpiStageComboBox.SelectedItem as ComboBoxItem)?.Tag is int stage)
+        {
+            ViewModel?.ApplyDpiStage(stage);
+        }
+    }
+
     private void ApplyInfoBar_CloseButtonClick(InfoBar sender, object args)
     {
         ViewModel?.ClearMouseSettingsError();
@@ -155,7 +177,11 @@ public sealed partial class MouseSettingsPage : Page
         AutomationProperties.SetName(PollingRateComboBox, Loc.T("Polling rate"));
 
         DpiCard.Header = Loc.T("DPI");
-        UpdateDpiDescription();
+        DpiCard.Description = Loc.T("Sensor resolution of the active profile");
+
+        DpiStageCard.Header = Loc.T("DPI stage");
+        DpiStageCard.Description = Loc.T("Switches the active DPI preset");
+        AutomationProperties.SetName(DpiStageComboBox, Loc.T("DPI stage"));
 
         DebounceCard.Header = Loc.T("Debounce");
         DebounceCard.Description = Loc.T("Click debounce time in milliseconds");
@@ -181,14 +207,6 @@ public sealed partial class MouseSettingsPage : Page
         RippleControlToggle.OnContent = Loc.T("On");
         RippleControlToggle.OffContent = Loc.T("Off");
         AutomationProperties.SetName(RippleControlToggle, Loc.T("Ripple control"));
-    }
-
-    private void UpdateDpiDescription()
-    {
-        var stage = ViewModel?.DpiStageText;
-        DpiCard.Description = string.IsNullOrEmpty(stage)
-            ? Loc.T("Sensor resolution of the active profile")
-            : $"{Loc.T("Sensor resolution of the active profile")} ({stage})";
     }
 
     private void RootGrid_PointerPressed(object sender, PointerRoutedEventArgs e)
