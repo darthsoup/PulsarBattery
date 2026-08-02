@@ -1,12 +1,18 @@
 # Pulsar Battery
 
-This project is a simple battery level indicator for Pulsar mice using the hidapi library. It provides a visual representation of the battery status and alerts the user when the battery is low.
+Pulsar Battery is a small Windows app that keeps an eye on the battery of your Pulsar wireless mouse. It sits in the system tray, shows the current charge, and warns you before the battery runs out. For newer mice it can also change the mouse settings, so no extra software is needed.
 
 ![alt text](screenshot.jpg)
 
-## Inspiration
+## Features
 
-This project is inspired by https://github.com/jonkristian/pulsar-x3-python/
+- Battery level, charging state and device info at a glance
+- Change mouse settings like DPI and polling rate directly from the app
+- Notifications when the battery runs low
+- Tray icon showing the current battery percentage
+- Battery history over time
+- Optional start with Windows
+- Available in English and German
 
 ## Supported Devices
 
@@ -18,7 +24,7 @@ This project is inspired by https://github.com/jonkristian/pulsar-x3-python/
 
 The `0x5403` "8K Dongle" is a shared Pulsar accessory (also used by the X3 family), so other mice paired to it may work as well.
 
-Devices speaking the 64-byte protocol additionally report polling rate, debounce, motion sync, and DPI on the dashboard.
+Devices speaking the 64-byte protocol get the full Mouse settings page (read and write), the firmware version, and the live polling rate. The X2 V3 eS protocol was reverse-engineered for this project since eS models have no official software. Devices on the 17-byte protocol report battery and charging state only, plus the firmware version when wired.
 
 ## Build (Visual Studio)
 
@@ -64,9 +70,9 @@ Startup folder:
 
 ## Related Projects
 
-This project is a .NET split-off of https://github.com/Elehiggle/SimplePulsarBatteryNotification.
-
-That project also documents how the mouse was debugged to determine the data format.
+- [pulsar-x3-python](https://github.com/jonkristian/pulsar-x3-python/) inspired this project.
+- [SimplePulsarBatteryNotification](https://github.com/Elehiggle/SimplePulsarBatteryNotification) base project as python application. It also documents how the mouse was debugged to determine the data format.
+- [OpenPulsar](https://github.com/Andalrick/OpenPulsar) is a Linux alternative.
 
 ## Contributing
 
