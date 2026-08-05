@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="utf-8"?>
+<UserControl
+    x:Class="PulsarBattery.Controls.SparklineControl"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:PulsarBattery.Controls">
+
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <Grid x:Name="PlotHost"
+              Grid.Row="0"
+              MinHeight="96"
+              SizeChanged="PlotHost_SizeChanged">
+            <Path x:Name="FillPath" Opacity="0.15">
+                <Path.Fill>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                        <GradientStop Color="{ThemeResource SystemAccentColor}" Offset="0" />
+                        <GradientStop Color="Transparent" Offset="1" />
+                    </LinearGradientBrush>
+                </Path.Fill>
+            </Path>
+            <Polyline x:Name="TrendLine"
+                      Stroke="{ThemeResource AccentFillColorDefaultBrush}"
+                      StrokeThickness="2"
+                      StrokeLineJoin="Round"
+                      StrokeStartLineCap="Round"
+                      StrokeEndLineCap="Round" />
+            <controls:TranslatedTextBlock x:Name="EmptyText"
+                                          Text="Not enough data yet"
+                                          TextStyle="{ThemeResource CaptionTextBlockStyle}"
+                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center"
+                                          Visibility="Collapsed" />
+        </Grid>
+
+        <Grid Grid.Row="1" Margin="0,8,0,0">
+            <TextBlock x:Name="StartLabel"
+                       Style="{ThemeResource CaptionTextBlockStyle}"
+                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                       HorizontalAlignment="Left" />
+            <TextBlock x:Name="EndLabel"
+                       Style="{ThemeResource CaptionTextBlockStyle}"
+                       Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                       HorizontalAlignment="Right" />
+        </Grid>
+    </Grid>
+</UserControl>

@@ -158,6 +158,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public string ChargingStateText => IsCharging ? Loc.T("Charging") : Loc.T("Not charging");
 
+    public enum BatteryState { Normal, Charging, Low }
+
+    /// <summary>
+    /// Drives the hero card's state colors; Low mirrors <see cref="TrayIconState"/>.IsLow.
+    /// </summary>
+    public BatteryState BatteryVisualState =>
+        IsCharging ? BatteryState.Charging
+        : HasInitialData && BatteryPercentage < AlertThresholdUnlockedPercent ? BatteryState.Low
+        : BatteryState.Normal;
+
+    public Visibility ChargingGlyphVisibility => IsCharging ? Visibility.Visible : Visibility.Collapsed;
+
     /// <summary>
     /// Snapshot for <see cref="Services.TrayIconRenderer"/>; the icon itself
     /// is rendered in code (see TrayIcon.xaml.cs), not via bound properties.
@@ -392,8 +404,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (SetProperty(ref _alertThresholdUnlockedPercent, clamped))
             {
                 AppSettingsService.Update(settings => settings with { AlertThresholdUnlockedPercent = clamped });
-                // The threshold feeds TrayIconState.IsLow — recolor promptly.
+                // The threshold feeds TrayIconState.IsLow and BatteryVisualState — recolor promptly.
                 NotifyTrayProperties();
+                OnPropertyChanged(nameof(BatteryVisualState));
             }
         }
     }
@@ -697,6 +710,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
                     HasInitialData = true;
                     OnPropertyChanged(nameof(ChargingStateText));
                     OnPropertyChanged(nameof(LastUpdatedText));
+                    OnPropertyChanged(nameof(BatteryVisualState));
+                    OnPropertyChanged(nameof(ChargingGlyphVisibility));
                 });
             }
         }
@@ -954,6 +969,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _lastUpdated = DateTimeOffset.Now;
 
         OnPropertyChanged(nameof(ChargingStateText));
+        OnPropertyChanged(nameof(BatteryVisualState));
+        OnPropertyChanged(nameof(ChargingGlyphVisibility));
         OnPropertyChanged(nameof(ConnectionText));
         OnPropertyChanged(nameof(FirmwareText));
         OnPropertyChanged(nameof(LastUpdatedText));
@@ -1032,6 +1049,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         if (propertyName == nameof(HasInitialData))
         {
             NotifyTrayProperties();
+            OnPropertyChanged(nameof(BatteryVisualState));
         }
         
         return true;

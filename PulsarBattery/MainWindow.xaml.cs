@@ -228,6 +228,12 @@ public sealed partial class MainWindow : Window
         NavigateTo(tag);
     }
 
+    /// <summary>
+    /// Selecting the item (rather than navigating directly) keeps the
+    /// NavigationView highlight in sync via NavView_SelectionChanged.
+    /// </summary>
+    internal void SelectHistoryTab() => NavView.SelectedItem = HistoryItem;
+
     private void NavigateTo(string tag)
     {
         var pageType = tag switch
