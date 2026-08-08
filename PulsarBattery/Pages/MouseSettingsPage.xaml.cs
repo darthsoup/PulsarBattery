@@ -207,6 +207,9 @@ public sealed partial class MouseSettingsPage : Page
         RippleControlToggle.OnContent = Loc.T("On");
         RippleControlToggle.OffContent = Loc.T("Off");
         AutomationProperties.SetName(RippleControlToggle, Loc.T("Ripple control"));
+
+        SleepCard.Header = Loc.T("Sleep timer");
+        SleepCard.Description = Loc.T("Idle time before the mouse sleeps to save battery");
     }
 
     private void RootGrid_PointerPressed(object sender, PointerRoutedEventArgs e)

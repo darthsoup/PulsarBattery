@@ -68,6 +68,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string? _connectionName;
     private string? _firmwareVersion;
     private int? _linkRateHz;
+    private int? _voltageMv;
+    private int? _signalStrength;
+    private string? _dongleFirmwareVersion;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -158,6 +161,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public string ChargingStateText => IsCharging ? Loc.T("Charging") : Loc.T("Not charging");
 
+    /// <summary>
+    /// Charging state plus the pack voltage when the device reports it. Kept
+    /// separate from <see cref="ChargingStateText"/> so the tray tooltip stays
+    /// short.
+    /// </summary>
+    public string BatteryDetailText => _voltageMv is int mv
+        ? $"{ChargingStateText} · {(mv / 1000.0).ToString("0.00", CultureInfo.CurrentCulture)} V"
+        : ChargingStateText;
+
+    public string SleepText => _deviceSettings?.SleepSeconds is int seconds
+        ? seconds < 60
+            ? $"{seconds} s"
+            : string.Format(CultureInfo.CurrentCulture, "{0} min", seconds / 60)
+        : "—";
+
     public enum BatteryState { Normal, Charging, Low }
 
     /// <summary>
@@ -191,20 +209,63 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(TrayTooltipText));
     }
 
-    public string ConnectionText
+    /// <summary>The transport itself — the receiver's name, or the cable.</summary>
+    public string ConnectionText => _connection switch
+    {
+        ConnectionKind.Wired => Loc.T("Wired"),
+        ConnectionKind.Dongle => _connectionName ?? Loc.T("Wireless"),
+        _ => "—",
+    };
+
+    /// <summary>
+    /// The link underneath the transport: radio band, negotiated rate and
+    /// signal quality, in whatever combination the device actually reports.
+    /// </summary>
+    public string ConnectionDetailText
     {
         get
         {
-            var text = _connection switch
-            {
-                ConnectionKind.Wired => Loc.T("Wired"),
-                ConnectionKind.Dongle => _connectionName ?? Loc.T("Wireless"),
-                _ => "—",
-            };
+            var parts = new List<string>(3);
 
-            return _linkRateHz is int hz ? $"{text} · {hz} Hz" : text;
+            if (_connection == ConnectionKind.Dongle)
+            {
+                parts.Add("2.4 GHz");
+            }
+
+            if (_linkRateHz is int hz)
+            {
+                parts.Add($"{hz} Hz");
+            }
+
+            if (SignalText.Length > 0)
+            {
+                parts.Add(SignalText);
+            }
+
+            return string.Join(" · ", parts);
         }
     }
+
+    public Visibility ConnectionDetailVisibility =>
+        ConnectionDetailText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>
+    /// Signal strength is a small bar count rather than a percentage, so it is
+    /// shown as a word. Thresholds follow the Pulsar cMouse notes: 4+ excellent,
+    /// 3 good, 2 fair, below that weak.
+    /// </summary>
+    public string SignalText => _signalStrength switch
+    {
+        null => string.Empty,
+        >= 4 => Loc.T("Excellent"),
+        3 => Loc.T("Good"),
+        2 => Loc.T("Fair"),
+        _ => Loc.T("Weak"),
+    };
+
+    public string ConnectionToolTip => _dongleFirmwareVersion is { Length: > 0 } version
+        ? string.Format(CultureInfo.CurrentCulture, Loc.T("Receiver firmware {0}"), version)
+        : ConnectionText;
 
     public string FirmwareText => _firmwareVersion ?? "—";
 
@@ -709,6 +770,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
                     _lastUpdated = mostRecent.Timestamp;
                     HasInitialData = true;
                     OnPropertyChanged(nameof(ChargingStateText));
+                    OnPropertyChanged(nameof(BatteryDetailText));
                     OnPropertyChanged(nameof(LastUpdatedText));
                     OnPropertyChanged(nameof(BatteryVisualState));
                     OnPropertyChanged(nameof(ChargingGlyphVisibility));
@@ -885,6 +947,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(MotionSyncText));
             OnPropertyChanged(nameof(DpiText));
             OnPropertyChanged(nameof(DpiStageText));
+            OnPropertyChanged(nameof(SleepText));
             OnPropertyChanged(nameof(PollingRateHz));
             OnPropertyChanged(nameof(LodMm10));
             OnPropertyChanged(nameof(DpiStage));
@@ -966,9 +1029,17 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _connectionName = status.ConnectionName;
         _firmwareVersion = status.FirmwareVersion;
         _linkRateHz = status.LinkRateHz;
+        _voltageMv = status.VoltageMv;
+        _signalStrength = status.SignalStrength;
+        _dongleFirmwareVersion = status.DongleFirmwareVersion;
         _lastUpdated = DateTimeOffset.Now;
 
         OnPropertyChanged(nameof(ChargingStateText));
+        OnPropertyChanged(nameof(BatteryDetailText));
+        OnPropertyChanged(nameof(SignalText));
+        OnPropertyChanged(nameof(ConnectionDetailText));
+        OnPropertyChanged(nameof(ConnectionDetailVisibility));
+        OnPropertyChanged(nameof(ConnectionToolTip));
         OnPropertyChanged(nameof(BatteryVisualState));
         OnPropertyChanged(nameof(ChargingGlyphVisibility));
         OnPropertyChanged(nameof(ConnectionText));

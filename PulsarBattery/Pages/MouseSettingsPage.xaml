@@ -129,6 +129,20 @@
                         </settingscontrols:SettingsCard>
                     </StackPanel>
 
+                    <!-- Power Section -->
+                    <StackPanel Spacing="4">
+                        <controls:TranslatedTextBlock Text="Power"
+                                                      TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
+                                                      Margin="0,0,0,4" />
+
+                        <settingscontrols:SettingsCard x:Name="SleepCard">
+                            <TextBlock Text="{x:Bind ViewModel.SleepText, Mode=OneWay}"
+                                       Style="{ThemeResource BodyTextBlockStyle}"
+                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                       VerticalAlignment="Center" />
+                        </settingscontrols:SettingsCard>
+                    </StackPanel>
+
                 </StackPanel>
 
             </StackPanel>

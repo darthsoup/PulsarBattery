@@ -10,10 +10,33 @@ namespace PulsarBattery.Device;
 /// the X2 CrazyLight and X2 V1: [reportId, cmd, data...(14), checksum] where
 /// checksum = 0x55 - sum(bytes[0..15]).
 /// </summary>
+/// <remarks>
+/// This is the Pulsar "cMouse" vendor protocol. Command names and field
+/// offsets below follow the reverse-engineering notes published in
+/// amassias/Bibimbap (MIT), docs/protocol.md — a macOS configurator that
+/// documented the same wire format we had been replaying blind. Their frame
+/// indices are relative to the frame; ours include the report ID at [0], so
+/// their data[n] is our payload[n + 1].
+/// </remarks>
 internal static class Legacy17Protocol
 {
     public const byte OutputReportId = 0x08;
     public const byte CmdBattery = 0x04;
+
+    /// <summary>Tells the device that configuration software is running.</summary>
+    public const byte CmdDriverStatus = 0x02;
+
+    /// <summary>
+    /// Firmware version of the responding device. Unlike the wired-only
+    /// bcdDevice fallback this answers over the dongle as well.
+    /// </summary>
+    public const byte CmdVersion = 0x12;
+
+    /// <summary>Firmware version of the receiver itself, same payload shape.</summary>
+    public const byte CmdDongleVersion = 0x1D;
+
+    /// <summary>Radio signal strength, only meaningful behind a receiver.</summary>
+    public const byte CmdRssi = 0x2B;
 
     /// <summary>
     /// Device-identification command. Unlike the other legacy commands this one
@@ -34,6 +57,31 @@ internal static class Legacy17Protocol
 
     /// <summary>Connection code from <see cref="CmdInfo"/>: mouse on the cable.</summary>
     public const byte ConnectionWired = 0x02;
+
+    /// <summary>Connection code from <see cref="CmdInfo"/>: cable at 8000 Hz.</summary>
+    public const byte ConnectionWired8K = 0x03;
+
+    /// <summary>Connection code from <see cref="CmdInfo"/>: dongle at 2000 Hz.</summary>
+    public const byte Connection2K = 0x04;
+
+    /// <summary>Connection code from <see cref="CmdInfo"/>: dongle at 8000 Hz.</summary>
+    public const byte Connection8K = 0x05;
+
+    /// <summary>
+    /// Maps a <see cref="CmdInfo"/> connection code to the transport and the
+    /// link rate it runs at. Codes 3..5 were missing here while only 0..2 were
+    /// known, which mis-read every 2K/8K link as an unknown connection.
+    /// </summary>
+    public static (ConnectionKind Kind, int LinkRateHz)? DecodeConnection(byte code) => code switch
+    {
+        Connection1K => (ConnectionKind.Dongle, 1000),
+        Connection4K => (ConnectionKind.Dongle, 4000),
+        ConnectionWired => (ConnectionKind.Wired, 1000),
+        ConnectionWired8K => (ConnectionKind.Wired, 8000),
+        Connection2K => (ConnectionKind.Dongle, 2000),
+        Connection8K => (ConnectionKind.Dongle, 8000),
+        _ => null,
+    };
 
     /// <summary>
     /// Reads a block of the mouse's settings EEPROM. The 16-bit address goes at
@@ -78,11 +126,43 @@ internal static class Legacy17Protocol
     }
 
     /// <summary>
-    /// Decodes one DPI stage from a <c>DpiPair</c> block. Each stage is four
-    /// bytes — x, y, high bits, check — with <c>check = 0x55 - x - y - high</c>.
-    /// Verified live on an X2 V1: 07 07 00 47 = 400 DPI, 0F 0F 00 37 = 800 DPI.
+    /// How the high bit of a stage's exponent code scales the value. The low
+    /// bit always doubles; the high bit doubles on most sensors but is
+    /// <c>x * 5 + 10000</c> on the "pulsar x1" family, and nothing on this
+    /// protocol identifies the sensor.
     /// </summary>
-    public static int? ParseDpiStage(IReadOnlyList<byte> payload, int stageWithinBlock)
+    public enum DpiExponentScaling
+    {
+        /// <summary>Sensor family unknown — reject stages that use the high bit.</summary>
+        Unknown,
+        Doubling,
+        PulsarX1,
+    }
+
+    /// <summary>
+    /// Decodes one DPI stage from a <c>DpiPair</c> block. Each stage is four
+    /// bytes — x, y, attributes, check — with <c>check = 0x55 - x - y - attr</c>.
+    /// </summary>
+    /// <remarks>
+    /// The attributes byte packs four 2-bit fields, not a plain high byte:
+    /// <c>xEx</c> at bits 0-1, x's high bits at 2-3, <c>yEx</c> at 4-5 and y's
+    /// high bits at 6-7. Reading it as a high byte (as this did) only agrees
+    /// with the real layout while it is zero, which is why the two X2 V1
+    /// samples verified live — 07 07 00 47 = 400 DPI and 0F 0F 00 37 = 800 DPI
+    /// — could not tell the formulas apart. Above 12800 DPI it diverged badly:
+    /// a 16000 stage decoded as 54400.
+    /// <para>
+    /// Cross-checked against the X2 CrazyLight flash dump published in
+    /// amassias/Bibimbap (Tests/.../x2-crazylight-core.json), with
+    /// <paramref name="baseStep"/> 10 and <see cref="DpiExponentScaling.PulsarX1"/>:
+    /// 27 27 00 07 = 400, 3F 3F 44 93 = 3200, 37 37 22 C5 = 12800.
+    /// </para>
+    /// </remarks>
+    public static int? ParseDpiStage(
+        IReadOnlyList<byte> payload,
+        int stageWithinBlock,
+        int baseStep,
+        DpiExponentScaling scaling = DpiExponentScaling.Unknown)
     {
         var at = 6 + (stageWithinBlock * 4);
         if (payload.Count < at + 4)
@@ -92,14 +172,37 @@ internal static class Legacy17Protocol
 
         var x = payload[at];
         var y = payload[at + 1];
-        var high = payload[at + 2];
-        if ((byte)((0x55 - x - y - high) & 0xFF) != payload[at + 3])
+        var attributes = payload[at + 2];
+        if ((byte)((0x55 - x - y - attributes) & 0xFF) != payload[at + 3])
         {
             return null;
         }
 
-        var dpi = ((x | (high << 8)) + 1) * 50;
-        return dpi is > 0 and <= 32000 ? dpi : null;
+        var dpi = ((x | (((attributes >> 2) & 0b11) << 8)) + 1) * baseStep;
+
+        if ((attributes & 0b10) != 0)
+        {
+            switch (scaling)
+            {
+                case DpiExponentScaling.Doubling:
+                    dpi *= 2;
+                    break;
+                case DpiExponentScaling.PulsarX1:
+                    dpi = (dpi * 5) + 10000;
+                    break;
+                default:
+                    // Guessing the branch would show a plausible but wrong DPI;
+                    // report "unknown" and let the caller surface an em dash.
+                    return null;
+            }
+        }
+
+        if ((attributes & 0b01) != 0)
+        {
+            dpi *= 2;
+        }
+
+        return dpi is > 0 and <= 42000 ? dpi : null;
     }
 
     public static byte[] BuildInfoPacket(byte reportId, ReadOnlySpan<byte> challenge)
@@ -120,7 +223,12 @@ internal static class Legacy17Protocol
     /// Verified live on an X2 V1: three different challenges all decoded to
     /// 06 04 00 00, matching bytes 10..13 exactly.
     /// </summary>
-    public static (int ModelId, byte ConnectionCode)? ParseInfoPayload(
+    /// <remarks>
+    /// The four info bytes are cid, mid, connection type and dongle type. The
+    /// dongle type gates receiver-side lighting and button features we do not
+    /// implement; it is returned for logging so the value is not silently lost.
+    /// </remarks>
+    public static (int ModelId, byte ConnectionCode, byte DongleType)? ParseInfoPayload(
         IReadOnlyList<byte> payload,
         ReadOnlySpan<byte> challenge)
     {
@@ -143,7 +251,7 @@ internal static class Legacy17Protocol
             }
         }
 
-        return ((decoded[0] << 8) | decoded[1], decoded[2]);
+        return ((decoded[0] << 8) | decoded[1], decoded[2], decoded[3]);
     }
 
     public static byte[] BuildPacket(byte reportId, byte cmd, ReadOnlySpan<byte> payload = default)
@@ -167,7 +275,12 @@ internal static class Legacy17Protocol
         return (byte)((0x55 - (sum & 0xFF)) & 0xFF);
     }
 
-    public static (int battery, bool charging)? ParseBatteryPayload(IReadOnlyList<byte> payload)
+    /// <summary>
+    /// Decodes a <see cref="CmdBattery"/> response. The frame also carries the
+    /// pack voltage in millivolts (their data[7..8]) after the level and the
+    /// charging flag; it is null when the frame is too short or reads zero.
+    /// </summary>
+    public static (int battery, bool charging, int? voltageMv)? ParseBatteryPayload(IReadOnlyList<byte> payload)
     {
         if (payload.Count < 8)
         {
@@ -176,6 +289,17 @@ internal static class Legacy17Protocol
 
         var battery = payload[6];
         var charging = payload[7] != 0x00;
+
+        int? voltageMv = null;
+        if (payload.Count >= 10)
+        {
+            var millivolts = (payload[8] << 8) | payload[9];
+            // Guard against an unpopulated field on models that don't report it.
+            if (millivolts is > 1000 and < 6000)
+            {
+                voltageMv = millivolts;
+            }
+        }
 
         // The dongle answers the battery command even when the mouse itself is
         // not reachable over RF (asleep, out of range, switched off) — and then
@@ -196,7 +320,94 @@ internal static class Legacy17Protocol
             return null;
         }
 
-        return (battery, charging);
+        return (battery, charging, voltageMv);
+    }
+
+    /// <summary>
+    /// Decodes a <see cref="CmdVersion"/> response into the "01.25"-style
+    /// string the rest of the app displays. The device reports a major byte
+    /// and a minor byte that is rendered in hex, so 3 / 0x05 reads "03.05".
+    /// </summary>
+    public static string? ParseVersionPayload(IReadOnlyList<byte> payload)
+    {
+        if (payload.Count < 8 || payload[2] != 0x00)
+        {
+            return null;
+        }
+
+        var major = payload[6];
+        var minor = payload[7];
+        if (major == 0 && minor == 0)
+        {
+            return null;
+        }
+
+        return $"{major:D2}.{minor:X2}";
+    }
+
+    /// <summary>
+    /// Decodes a <see cref="CmdRssi"/> response into a raw signal strength.
+    /// </summary>
+    /// <remarks>
+    /// The value is a small bar count, not a percentage or a dBm figure. The
+    /// Pulsar cMouse notes bucket it as 4+ excellent, 3 good, 2 fair, 0-1 weak.
+    /// A status of 1 is the protocol's way of saying "this model has no RSSI",
+    /// not an error — see <see cref="ParseBatteryPayload"/> for the same
+    /// convention. Only call this once <see cref="WaitUntilOnline"/> has
+    /// succeeded: a sleeping mouse behind a live receiver still answers, and
+    /// its zero must not be shown as a weak signal.
+    /// </remarks>
+    public static int? ParseSignalPayload(IReadOnlyList<byte> payload)
+    {
+        if (payload.Count < 7 || payload[2] != 0x00)
+        {
+            return null;
+        }
+
+        return payload[6];
+    }
+
+    /// <summary>
+    /// Blocks until the wireless side reports itself reachable, or the timeout
+    /// elapses. Behind a dongle the receiver answers the handshake before it
+    /// has reached the mouse, and anything read in that window times out with
+    /// no useful explanation — so callers wait for the mouse itself.
+    /// </summary>
+    /// <returns>True once the mouse is online and idle.</returns>
+    public static bool WaitUntilOnline(
+        HidStream writer,
+        HidStream reader,
+        byte reportId,
+        string transport,
+        ISet<byte> validReportIds,
+        double timeoutSeconds,
+        bool debug,
+        int maxLength)
+    {
+        var packet = BuildPacket(reportId, CmdOnline);
+        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+
+        while (DateTime.UtcNow < deadline)
+        {
+            HidHelpers.SendReport(writer, packet, transport);
+            var response = ReadResponse(reader, CmdOnline, 0.4, validReportIds, reportId, null, debug, maxLength);
+
+            // data[5] is the mouse's own reachability and data[9] falls back to
+            // zero once the receiver has finished talking to it.
+            if (response is not null && response.Length > 10 && response[6] == 0x01 && response[10] == 0x00)
+            {
+                return true;
+            }
+
+            System.Threading.Thread.Sleep(20);
+        }
+
+        if (debug)
+        {
+            System.Diagnostics.Debug.WriteLine("legacy17 waitUntilOnline timed out");
+        }
+
+        return false;
     }
 
     /// <summary>

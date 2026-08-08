@@ -165,7 +165,7 @@
                                     <TextBlock Text="{x:Bind ViewModel.ModelName, Mode=OneWay}" 
                                                Style="{ThemeResource TitleTextBlockStyle}"
                                                TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{x:Bind ViewModel.ChargingStateText, Mode=OneWay}" 
+                                    <TextBlock Text="{x:Bind ViewModel.BatteryDetailText, Mode=OneWay}"
                                                Style="{ThemeResource CaptionTextBlockStyle}"
                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                     <TextBlock Text="{x:Bind ViewModel.LastUpdatedText, Mode=OneWay}" 
@@ -253,13 +253,20 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
 
-                        <Border x:Name="ConnectionTile" Grid.Column="0" Style="{StaticResource PulsarCardStyle}" Padding="16">
+                        <Border x:Name="ConnectionTile" Grid.Column="0" Style="{StaticResource PulsarCardStyle}" Padding="16"
+                                ToolTipService.ToolTip="{x:Bind ViewModel.ConnectionToolTip, Mode=OneWay}">
                             <StackPanel Spacing="4">
                                 <controls:TranslatedTextBlock Text="Connection"
                                                               TextStyle="{ThemeResource CaptionTextBlockStyle}"
                                                               Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 <TextBlock Text="{x:Bind ViewModel.ConnectionText, Mode=OneWay}"
                                            Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                           TextWrapping="NoWrap"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{x:Bind ViewModel.ConnectionDetailText, Mode=OneWay}"
+                                           Visibility="{x:Bind ViewModel.ConnectionDetailVisibility, Mode=OneWay}"
+                                           Style="{ThemeResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
                                            TextWrapping="NoWrap"
                                            TextTrimming="CharacterEllipsis" />
                             </StackPanel>

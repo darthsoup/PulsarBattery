@@ -20,6 +20,14 @@ public sealed class X2V1Backend : IHidBackend
     private static readonly byte[] Cmd03Packet = Legacy17Protocol.BuildPacket(OutputReportId, 0x03);
     private static readonly byte[] Cmd04Packet = Legacy17Protocol.BuildPacket(OutputReportId, Legacy17Protocol.CmdBattery);
     private static readonly byte[] Cmd0EPacket = Legacy17Protocol.BuildPacket(OutputReportId, 0x0E);
+    private static readonly byte[] VersionPacket = Legacy17Protocol.BuildPacket(OutputReportId, Legacy17Protocol.CmdVersion);
+    private static readonly byte[] DongleVersionPacket = Legacy17Protocol.BuildPacket(OutputReportId, Legacy17Protocol.CmdDongleVersion);
+    private static readonly byte[] RssiPacket = Legacy17Protocol.BuildPacket(OutputReportId, Legacy17Protocol.CmdRssi);
+
+    // Firmware is stable while connected and this path also serves the 5-second
+    // BatteryMonitor loop, so successful answers are kept.
+    private string? _cachedFirmware;
+    private string? _cachedDongleFirmware;
 
     public DeviceStatus? ReadBatteryStatus(bool debug)
     {
@@ -97,23 +105,37 @@ public sealed class X2V1Backend : IHidBackend
 
             // The device's own connection code beats guessing from the PID, and
             // it is the only source of the link rate on this protocol.
-            var connection = info?.ConnectionCode switch
-            {
-                Legacy17Protocol.ConnectionWired => ConnectionKind.Wired,
-                Legacy17Protocol.Connection1K or Legacy17Protocol.Connection4K => ConnectionKind.Dongle,
-                _ => writerDevice.ProductID == PidWired ? ConnectionKind.Wired : ConnectionKind.Dongle,
-            };
-            var linkRateHz = info?.ConnectionCode switch
-            {
-                Legacy17Protocol.Connection1K => 1000,
-                Legacy17Protocol.Connection4K => 4000,
-                _ => (int?)null,
-            };
+            var decoded = info is null ? null : Legacy17Protocol.DecodeConnection(info.Value.ConnectionCode);
+            var connection = decoded?.Kind
+                ?? (writerDevice.ProductID == PidWired ? ConnectionKind.Wired : ConnectionKind.Dongle);
+            var linkRateHz = decoded?.LinkRateHz;
             var connectionName = connection == ConnectionKind.Dongle ? HidHelpers.GetProductName(writerDevice) : null;
-            // No known firmware command in the legacy protocol; wired bcdDevice
-            // is the mouse's own version, the dongle's would be the dongle's.
-            var firmware = connection == ConnectionKind.Wired ? HidHelpers.GetFirmwareFromBcd(writerDevice) : null;
-            return ReadBatteryCmd04(writer!, reader ?? writer!, debug, transportForInfo, connection, connectionName, firmware, linkRateHz);
+
+            // CmdVersion answers over the dongle too; the wired bcdDevice is
+            // only a fallback for when the device does not implement it. (On
+            // this model it is known to NAK, so the fallback is the usual path.)
+            _cachedFirmware ??= ReadVersion(writer!, reader ?? writer!, VersionPacket, Legacy17Protocol.CmdVersion, transportForInfo, debug);
+            var firmware = _cachedFirmware
+                ?? (connection == ConnectionKind.Wired ? HidHelpers.GetFirmwareFromBcd(writerDevice) : null);
+
+            // Radio-only values; the EEPROM lives on the mouse, so gate on the
+            // same online check the settings read uses.
+            int? signal = null;
+            string? dongleFirmware = null;
+            if (connection == ConnectionKind.Dongle)
+            {
+                var online = Exchange(writer!, reader ?? writer!, Cmd03Packet, Legacy17Protocol.CmdOnline, transportForInfo, debug);
+                if (online is not null && online.Length > 6 && online[2] == 0x00 && online[6] == 0x01)
+                {
+                    var rssi = Exchange(writer!, reader ?? writer!, RssiPacket, Legacy17Protocol.CmdRssi, transportForInfo, debug);
+                    signal = rssi is null ? null : Legacy17Protocol.ParseSignalPayload(rssi);
+
+                    _cachedDongleFirmware ??= ReadVersion(writer!, reader ?? writer!, DongleVersionPacket, Legacy17Protocol.CmdDongleVersion, transportForInfo, debug);
+                    dongleFirmware = _cachedDongleFirmware;
+                }
+            }
+
+            return ReadBatteryCmd04(writer!, reader ?? writer!, debug, transportForInfo, connection, connectionName, firmware, linkRateHz, signal, dongleFirmware);
         }
         catch
         {
@@ -135,7 +157,23 @@ public sealed class X2V1Backend : IHidBackend
     private const ushort AddrSysConfig = 0x0000;   // rate, stage count, active stage
     private const ushort AddrLod = 0x000A;
     private const ushort AddrDpiPair1 = 0x000C;    // stages 1+2; +8 per further pair
-    private const ushort AddrAdvParams = 0x00A9;   // debounce, msync, led, snap, ripple
+
+    /// <summary>
+    /// DPI step for this model's sensor: stage values are stored as
+    /// <c>(raw + 1) x step</c>. Verified live on an X2 V1 — 07 07 00 47 is
+    /// 400 DPI and 0F 0F 00 37 is 800 DPI.
+    /// </summary>
+    private const int DpiBaseStep = 50;
+    // 0xA9 debounce, 0xAB motion sync, 0xAD sleep delay, 0xAF angle snap,
+    // 0xB1 ripple control.
+    //
+    // Index 2 (0x00AD) was previously labelled "led" here and dropped. The
+    // Pulsar cMouse notes name it SleepTime, in units of 10 seconds, and list
+    // the light-related fields separately (0x00A0 Light, 0x00B3 MovingOffLight)
+    // — so it is surfaced as the sleep delay. An earlier probe of this device
+    // guessed "LED-off timer" for the same address; both readings agree on the
+    // decasecond unit, and only hardware can settle which label is right.
+    private const ushort AddrAdvParams = 0x00A9;
 
     // Stored polling code -> Hz. The low nibble is inverted relative to the
     // high one; the X2 V1 tops out at 1000 Hz, so only 0x01..0x08 occur here.
@@ -208,7 +246,7 @@ public sealed class X2V1Backend : IHidBackend
                     var response = Exchange(writer, reader, Legacy17Protocol.BuildEepromReadPacket(OutputReportId, block, 8), Legacy17Protocol.CmdGetEeprom, transport, debug);
                     if (response is not null)
                     {
-                        dpi = Legacy17Protocol.ParseDpiStage(response, (stage - 1) % 2);
+                        dpi = Legacy17Protocol.ParseDpiStage(response, (stage - 1) % 2, DpiBaseStep);
                     }
                 }
             }
@@ -221,7 +259,8 @@ public sealed class X2V1Backend : IHidBackend
                 DpiStage: sys?[2],
                 LodMm10: lod?[0] switch { 1 => 10, 2 => 20, _ => null },
                 AngleSnap: adv is null ? null : adv[3] == 0x01,
-                RippleControl: adv is null ? null : adv[4] == 0x01);
+                RippleControl: adv is null ? null : adv[4] == 0x01,
+                SleepSeconds: adv?[2] is > 0 and byte sleepUnits ? sleepUnits * 10 : null);
 
             if (debug)
             {
@@ -290,7 +329,7 @@ public sealed class X2V1Backend : IHidBackend
     /// Returns null when the device does not answer or the response fails its
     /// own cross-check, so callers fall back to PID-based guessing.
     /// </summary>
-    private static (int ModelId, byte ConnectionCode)? ReadDeviceInfo(
+    private static (int ModelId, byte ConnectionCode, byte DongleType)? ReadDeviceInfo(
         HidStream writer,
         HidStream reader,
         string transport,
@@ -345,7 +384,9 @@ public sealed class X2V1Backend : IHidBackend
         ConnectionKind connection,
         string? connectionName,
         string? firmware,
-        int? linkRateHz)
+        int? linkRateHz,
+        int? signal,
+        string? dongleFirmware)
     {
         var maxLen = Math.Max(writer.Device.GetMaxInputReportLength(), reader.Device.GetMaxInputReportLength());
         HidHelpers.DrainInput(reader, 6, maxLen);
@@ -409,13 +450,31 @@ public sealed class X2V1Backend : IHidBackend
             return null;
         }
 
-        var (battery, charging) = parsed.Value;
+        var (battery, charging, voltageMv) = parsed.Value;
         if (debug)
         {
-            System.Diagnostics.Debug.WriteLine($"cmd04 raw={battery} charging={charging} data={Convert.ToHexString(payload)}");
+            System.Diagnostics.Debug.WriteLine($"cmd04 raw={battery} charging={charging} mV={voltageMv} signal={signal} data={Convert.ToHexString(payload)}");
         }
 
-        return new DeviceStatus(battery, charging, Name, connection, connectionName, firmware, linkRateHz);
+        return new DeviceStatus(battery, charging, Name, connection, connectionName, firmware, linkRateHz, voltageMv, signal, dongleFirmware);
+    }
+
+    /// <summary>
+    /// Reads a firmware version over the wire. Unlike the bcdDevice fallback
+    /// this also answers behind the dongle, where the descriptor would only
+    /// expose the receiver's own version.
+    /// </summary>
+    private static string? ReadVersion(HidStream writer, HidStream reader, byte[] packet, byte expectedCmd, string transport, bool debug)
+    {
+        try
+        {
+            var response = Exchange(writer, reader, packet, expectedCmd, transport, debug);
+            return response is null ? null : Legacy17Protocol.ParseVersionPayload(response);
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private static byte[]? ReadCmd04Response(HidStream reader, double timeoutSeconds, bool debug, int maxLen)

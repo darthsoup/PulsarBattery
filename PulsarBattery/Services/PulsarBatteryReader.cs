@@ -12,7 +12,10 @@ public sealed class PulsarBatteryReader
         ConnectionKind Connection = ConnectionKind.Unknown,
         string? ConnectionName = null,
         string? FirmwareVersion = null,
-        int? LinkRateHz = null);
+        int? LinkRateHz = null,
+        int? VoltageMv = null,
+        int? SignalStrength = null,
+        string? DongleFirmwareVersion = null);
 
     private static readonly object GlobalReadLock = new();
 
@@ -27,7 +30,7 @@ public sealed class PulsarBatteryReader
                 var status = backend.ReadBatteryStatus(debug);
                 if (status is not null)
                 {
-                    return new BatteryStatus(status.Percentage, status.IsCharging, status.Model, status.Connection, status.ConnectionName, status.FirmwareVersion, status.LinkRateHz);
+                    return new BatteryStatus(status.Percentage, status.IsCharging, status.Model, status.Connection, status.ConnectionName, status.FirmwareVersion, status.LinkRateHz, status.VoltageMv, status.SignalStrength, status.DongleFirmwareVersion);
                 }
             }
 

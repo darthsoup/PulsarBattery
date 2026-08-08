@@ -20,6 +20,17 @@ public enum ConnectionKind
 /// Live link rate of the current connection in Hz (wireless: 1000/2000/4000/
 /// 8000, wired: 1000/8000); null when the protocol doesn't expose it.
 /// </param>
+/// <param name="VoltageMv">
+/// Battery pack voltage in millivolts; null when the device doesn't report it.
+/// </param>
+/// <param name="SignalStrength">
+/// Radio signal strength as a small bar count (roughly 0-4, higher is better),
+/// not a percentage. Null when wired, unsupported, or unreadable.
+/// </param>
+/// <param name="DongleFirmwareVersion">
+/// Firmware version of the receiver, distinct from the mouse's own; null when
+/// wired or unsupported.
+/// </param>
 public sealed record DeviceStatus(
     int Percentage,
     bool IsCharging,
@@ -27,4 +38,7 @@ public sealed record DeviceStatus(
     ConnectionKind Connection = ConnectionKind.Unknown,
     string? ConnectionName = null,
     string? FirmwareVersion = null,
-    int? LinkRateHz = null);
+    int? LinkRateHz = null,
+    int? VoltageMv = null,
+    int? SignalStrength = null,
+    string? DongleFirmwareVersion = null);
