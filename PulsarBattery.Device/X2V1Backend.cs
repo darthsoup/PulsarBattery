@@ -244,7 +244,13 @@ public sealed class X2V1Backend : IHidBackend
                     // Stages are stored two per block, four bytes each.
                     var block = (ushort)(AddrDpiPair1 + (((stage - 1) / 2) * 8));
                     var response = Exchange(writer, reader, Legacy17Protocol.BuildEepromReadPacket(OutputReportId, block, 8), Legacy17Protocol.CmdGetEeprom, transport, debug);
-                    if (response is not null)
+                    if (response is not null
+                        && Legacy17Protocol.TryParseEepromResponse(
+                            response,
+                            Legacy17Protocol.CmdGetEeprom,
+                            block,
+                            8,
+                            out _))
                     {
                         dpi = Legacy17Protocol.ParseDpiStage(response, (stage - 1) % 2, DpiBaseStep);
                     }
@@ -286,8 +292,39 @@ public sealed class X2V1Backend : IHidBackend
 
     private static byte[]? ReadEepromPairs(HidStream writer, HidStream reader, string transport, ushort address, int pairs, bool debug)
     {
-        var response = Exchange(writer, reader, Legacy17Protocol.BuildEepromReadPacket(OutputReportId, address, (byte)(pairs * 2)), Legacy17Protocol.CmdGetEeprom, transport, debug);
-        return response is null ? null : Legacy17Protocol.ParseEepromPairs(response, pairs);
+        var length = pairs * 2;
+        var response = Exchange(
+            writer,
+            reader,
+            Legacy17Protocol.BuildEepromReadPacket(OutputReportId, address, (byte)length),
+            Legacy17Protocol.CmdGetEeprom,
+            transport,
+            debug);
+        if (response is null
+            || !Legacy17Protocol.TryParseEepromResponse(
+                response,
+                Legacy17Protocol.CmdGetEeprom,
+                address,
+                length,
+                out var data))
+        {
+            return null;
+        }
+
+        var values = new byte[pairs];
+        for (var i = 0; i < pairs; i++)
+        {
+            var value = data[i * 2];
+            var check = data[(i * 2) + 1];
+            if (((value + check) & 0xFF) != 0x55)
+            {
+                return null;
+            }
+
+            values[i] = value;
+        }
+
+        return values;
     }
 
     private static byte[]? Exchange(HidStream writer, HidStream reader, byte[] packet, byte expectedCmd, string transport, bool debug)
@@ -299,7 +336,7 @@ public sealed class X2V1Backend : IHidBackend
             HidHelpers.SendReport(writer, packet, transport);
             System.Threading.Thread.Sleep(15);
 
-            return Legacy17Protocol.ReadResponse(
+            var response = Legacy17Protocol.ReadResponse(
                 reader,
                 expectedCmd,
                 timeoutSeconds: 0.6,
@@ -309,6 +346,9 @@ public sealed class X2V1Backend : IHidBackend
                 debug,
                 maxLength,
                 idleSleepMs: 10);
+            return response is not null && Legacy17Protocol.HasValidChecksum(response)
+                ? response
+                : null;
         }
         catch
         {
@@ -356,7 +396,7 @@ public sealed class X2V1Backend : IHidBackend
                 maxLength,
                 idleSleepMs: 10);
 
-            if (payload is null)
+            if (payload is null || !Legacy17Protocol.HasValidChecksum(payload))
             {
                 return null;
             }

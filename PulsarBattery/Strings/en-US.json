@@ -144,5 +144,8 @@
   "Auto (system language)": "Auto (system language)",
   "Default (Windows low battery sound)": "Default (Windows low battery sound)",
   "Clear history?": "Clear history?",
-  "All recorded battery readings will be permanently deleted.": "All recorded battery readings will be permanently deleted."
+  "All recorded battery readings will be permanently deleted.": "All recorded battery readings will be permanently deleted.",
+  "Settings are read-only for this model until writes have been verified on matching hardware.": "Settings are read-only for this model until writes have been verified on matching hardware.",
+  "Unverified write support": "Unverified write support",
+  "Writes for this model are derived from Pulsar cMouse but have not been verified on matching hardware. Affected values are backed up for rollback and every write is checked by readback.": "Writes for this model are derived from Pulsar cMouse but have not been verified on matching hardware. Before the first write, the complete core settings and, on PAW3955 models, the extended DPI region are saved persistently. Individual writes are still verified by readback and rolled back on failure."
 }

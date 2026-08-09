@@ -15,11 +15,13 @@ public sealed class PulsarBatteryReader
         int? LinkRateHz = null,
         int? VoltageMv = null,
         int? SignalStrength = null,
-        string? DongleFirmwareVersion = null);
+        string? DongleFirmwareVersion = null,
+        int? ProtocolModelId = null);
 
     private static readonly object GlobalReadLock = new();
 
     private readonly IReadOnlyList<IHidBackend> _backends = DeviceRegistry.CreateBackends();
+    private IHidBackend? _activeBackend;
 
     public BatteryStatus? ReadBatteryStatus(bool debug = false)
     {
@@ -30,10 +32,12 @@ public sealed class PulsarBatteryReader
                 var status = backend.ReadBatteryStatus(debug);
                 if (status is not null)
                 {
-                    return new BatteryStatus(status.Percentage, status.IsCharging, status.Model, status.Connection, status.ConnectionName, status.FirmwareVersion, status.LinkRateHz, status.VoltageMv, status.SignalStrength, status.DongleFirmwareVersion);
+                    _activeBackend = backend;
+                    return new BatteryStatus(status.Percentage, status.IsCharging, status.Model, status.Connection, status.ConnectionName, status.FirmwareVersion, status.LinkRateHz, status.VoltageMv, status.SignalStrength, status.DongleFirmwareVersion, status.ProtocolModelId);
                 }
             }
 
+            _activeBackend = null;
             return null;
         }
     }
@@ -47,11 +51,16 @@ public sealed class PulsarBatteryReader
     {
         lock (GlobalReadLock)
         {
-            // Route to the backend whose device actually answered, not merely
-            // the first one in the registry that can write: with only a
-            // read-only device attached (e.g. an X2 V1) the old scan handed
-            // every write to the Sonix backend, which then failed against
-            // hardware that was not even present.
+            // Status, settings and writes must stay on the same backend. Shared
+            // dongle PIDs make an independent rescan unsafe when two Pulsar
+            // devices are connected.
+            if (_activeBackend is not null)
+            {
+                return _activeBackend.SupportsSettingsWrite
+                    ? _activeBackend.ApplySettings(changes, debug)
+                    : null;
+            }
+
             foreach (var backend in _backends)
             {
                 if (backend.ReadBatteryStatus(debug) is null)
@@ -59,6 +68,7 @@ public sealed class PulsarBatteryReader
                     continue;
                 }
 
+                _activeBackend = backend;
                 return backend.SupportsSettingsWrite
                     ? backend.ApplySettings(changes, debug)
                     : null;
@@ -69,15 +79,24 @@ public sealed class PulsarBatteryReader
     }
 
     public DeviceSettings? ReadDeviceSettings(bool debug = false)
+        => ReadDeviceSettingsSnapshot(debug)?.Values;
+
+    public DeviceSettingsSnapshot? ReadDeviceSettingsSnapshot(bool debug = false)
     {
         lock (GlobalReadLock)
         {
+            if (_activeBackend is not null)
+            {
+                return _activeBackend.ReadSettingsSnapshot(debug);
+            }
+
             foreach (var backend in _backends)
             {
-                var settings = backend.ReadSettings(debug);
-                if (settings is not null)
+                var snapshot = backend.ReadSettingsSnapshot(debug);
+                if (snapshot is not null)
                 {
-                    return settings;
+                    _activeBackend = backend;
+                    return snapshot;
                 }
             }
 

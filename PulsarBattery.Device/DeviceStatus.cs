@@ -31,6 +31,11 @@ public enum ConnectionKind
 /// Firmware version of the receiver, distinct from the mouse's own; null when
 /// wired or unsupported.
 /// </param>
+/// <param name="ProtocolModelId">
+/// Protocol-level model identity when the device reports one. For the cMouse
+/// family this is CID in the high byte and MID in the low byte; it is kept
+/// separate from the display name because several editions share that name.
+/// </param>
 public sealed record DeviceStatus(
     int Percentage,
     bool IsCharging,
@@ -41,4 +46,5 @@ public sealed record DeviceStatus(
     int? LinkRateHz = null,
     int? VoltageMv = null,
     int? SignalStrength = null,
-    string? DongleFirmwareVersion = null);
+    string? DongleFirmwareVersion = null,
+    int? ProtocolModelId = null);

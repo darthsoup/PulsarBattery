@@ -4,12 +4,13 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project
 
-Battery level indicator for Pulsar wireless mice (X2 CrazyLight, X2 V1). WinUI 3 unpackaged desktop app with a tray icon; reads battery state over HID.
+Battery indicator and settings tool for Pulsar wireless mice. WinUI 3 unpackaged desktop app with a tray icon; reads status and supported settings over HID.
 
 ## Build & Run
 
 ```
 dotnet build .\PulsarBattery\PulsarBattery.csproj -c Debug -p:Platform=x64
+dotnet test .\PulsarBattery.Device.Tests\PulsarBattery.Device.Tests.csproj -c Debug
 dotnet publish .\PulsarBattery\PulsarBattery.csproj -c Release -p:Platform=x64 -p:PublishProfile=win-x64
 ```
 
@@ -17,15 +18,17 @@ Publish output: `PulsarBattery\bin\Publish\win-x64\PulsarBattery.exe` (single fi
 
 `PulsarBattery.exe --background` (or `--tray`) starts without showing the window.
 
-There are **no automated tests** in this repository — verify changes by building and running the app. CI (`.github/workflows/build.yml`) only runs `dotnet publish`; `release.yml` fires on `v*` tags and rewrites the version in `app.manifest` and `Package.appxmanifest` from the tag.
+Protocol, catalog, checksum and DPI-codec tests live in `PulsarBattery.Device.Tests`. CI (`.github/workflows/build.yml`) runs them before publishing; `release.yml` fires on `v*` tags and rewrites the version in `app.manifest` and `Package.appxmanifest` from the tag.
 
 ## Architecture
 
-Two projects (`PulsarBattery.slnx`):
+Three projects (`PulsarBattery.slnx`):
 
-**`PulsarBattery.Device`** — platform-agnostic class library, HID via [HidSharp](https://github.com/IntergatedCircuits/HidSharp). `IHidBackend` (per-model backend), `X2ClBackend` / `X2V1Backend`, `HidHelpers` (shared read/write/parse), `DeviceBatteryStatus` (immutable record: `Percentage`, `IsCharging`, `Model`).
+**`PulsarBattery.Device`** — platform-agnostic class library, HID via [HidSharp](https://github.com/IntergatedCircuits/HidSharp). `IHidBackend` (per-protocol backend), `CmouseLegacyBackend` / `X2V1Backend` / `Sonix64Backend`, `HidHelpers` (shared read/write/parse), `DeviceStatus` (immutable status record).
 
 **`PulsarBattery`** — WinUI 3 app, x64 only. No DI container; services are instantiated directly.
+
+**`PulsarBattery.Device.Tests`** — xUnit golden-frame, strict-parser, catalog and DPI round-trip tests. It never opens HID hardware.
 
 - `PulsarBatteryReader` — tries each `IHidBackend` in `_backends` order, returns first success. All reads serialized through the static `GlobalReadLock`.
 - `BatteryMonitor` — background `Task.Run` loop (5s tick). Owns its own reader, caches the last good status for 10 min, and only raises notifications. Never touches UI. Uses `GetForegroundWindow() == 0` as a workstation-lock heuristic, with a separate alert threshold while locked.

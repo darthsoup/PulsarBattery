@@ -12,7 +12,7 @@ public static class DeviceRegistry
     // family; the first Sonix descriptor that matches it wins.
     public static IReadOnlyList<IHidBackend> CreateBackends() =>
     [
-        new X2ClBackend(),
+        new CmouseLegacyBackend(),
         new X2V1Backend(),
         new Sonix64Backend(new DeviceDescriptor("X2 V3 eS", VendorId: 0x3710, ProductIds: [0x3406, 0x5403])),
     ];

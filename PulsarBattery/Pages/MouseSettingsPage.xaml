@@ -57,8 +57,19 @@
                              CloseButtonClick="ApplyInfoBar_CloseButtonClick"
                              IsClosable="True" />
 
+                    <InfoBar Severity="Informational"
+                             IsOpen="{x:Bind ViewModel.MouseSettingsReadOnly, Mode=OneWay}"
+                             Message="{x:Bind ViewModel.MouseSettingsReadOnlyText, Mode=OneWay}"
+                             IsClosable="False" />
+
+                    <InfoBar Severity="Warning"
+                             IsOpen="{x:Bind ViewModel.MouseSettingsWriteUnverified, Mode=OneWay}"
+                             Title="{x:Bind ViewModel.MouseSettingsWriteUnverifiedTitle, Mode=OneWay}"
+                             Message="{x:Bind ViewModel.MouseSettingsWriteUnverifiedText, Mode=OneWay}"
+                             IsClosable="False" />
+
                     <!-- Performance Section -->
-                    <StackPanel Spacing="4">
+                    <StackPanel x:Name="PerformanceSection" Spacing="4">
                         <controls:TranslatedTextBlock Text="Performance"
                                                       TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
                                                       Margin="0,0,0,4" />
@@ -70,7 +81,8 @@
                         </settingscontrols:SettingsCard>
 
                         <settingscontrols:SettingsCard x:Name="DpiCard">
-                            <NumberBox Minimum="50"
+                            <NumberBox x:Name="DpiNumberBox"
+                                       Minimum="50"
                                        Maximum="26000"
                                        SmallChange="50"
                                        LargeChange="400"
@@ -87,7 +99,8 @@
 
                         <settingscontrols:SettingsCard x:Name="DebounceCard">
                             <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
-                                <NumberBox Minimum="0"
+                                <NumberBox x:Name="DebounceNumberBox"
+                                           Minimum="0"
                                            Maximum="30"
                                            SmallChange="1"
                                            SpinButtonPlacementMode="Compact"
@@ -102,7 +115,7 @@
                     </StackPanel>
 
                     <!-- Sensor Section -->
-                    <StackPanel Spacing="4">
+                    <StackPanel x:Name="SensorSection" Spacing="4">
                         <controls:TranslatedTextBlock Text="Sensor"
                                                       TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
                                                       Margin="0,0,0,4" />
@@ -130,16 +143,15 @@
                     </StackPanel>
 
                     <!-- Power Section -->
-                    <StackPanel Spacing="4">
+                    <StackPanel x:Name="PowerSection" Spacing="4">
                         <controls:TranslatedTextBlock Text="Power"
                                                       TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
                                                       Margin="0,0,0,4" />
 
                         <settingscontrols:SettingsCard x:Name="SleepCard">
-                            <TextBlock Text="{x:Bind ViewModel.SleepText, Mode=OneWay}"
-                                       Style="{ThemeResource BodyTextBlockStyle}"
-                                       Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                       VerticalAlignment="Center" />
+                            <ComboBox x:Name="SleepComboBox"
+                                      MinWidth="140"
+                                      SelectionChanged="SleepComboBox_SelectionChanged" />
                         </settingscontrols:SettingsCard>
                     </StackPanel>
 

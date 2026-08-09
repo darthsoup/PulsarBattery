@@ -20,6 +20,9 @@ namespace PulsarBattery.Device;
 /// </remarks>
 internal static class Legacy17Protocol
 {
+    private const int FrameLength = 17;
+    private const int MaxDataLength = 10;
+
     public const byte OutputReportId = 0x08;
     public const byte CmdBattery = 0x04;
 
@@ -41,9 +44,10 @@ internal static class Legacy17Protocol
     /// <summary>
     /// Device-identification command. Unlike the other legacy commands this one
     /// carries an 8-byte payload: four caller-chosen challenge bytes followed by
-    /// four zero placeholders. The device answers with the challenge mixed into
-    /// its own device info at bytes 6..9, and repeats that info in the clear at
-    /// bytes 10..13.
+    /// four zero placeholders. The device answers with CID/MID mixed into the
+    /// challenge at bytes 6..7, and returns CID, MID, connection type and
+    /// dongle type in the clear at bytes 10..13. Some firmware also mixes the
+    /// latter two fields into bytes 8..9; CrazyLight V3.04 leaves them zero.
     /// </summary>
     public const byte CmdInfo = 0x01;
 
@@ -90,11 +94,192 @@ internal static class Legacy17Protocol
     /// </summary>
     public const byte CmdGetEeprom = 0x08;
 
+    /// <summary>Writes at most ten bytes to the mouse's settings EEPROM.</summary>
+    public const byte CmdSetEeprom = 0x07;
+
     /// <summary>Reports whether the wireless side is currently reachable.</summary>
     public const byte CmdOnline = 0x03;
 
     public static byte[] BuildEepromReadPacket(byte reportId, ushort address, byte length)
         => BuildPacket(reportId, CmdGetEeprom, [0x00, (byte)(address >> 8), (byte)(address & 0xFF), length]);
+
+    /// <summary>
+    /// Builds a non-flash command in the structured 17-byte cMouse frame format.
+    /// Status and address are zero, the length is written without routing flags,
+    /// and <paramref name="data"/> starts at byte 6.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="data"/> exceeds the ten-byte frame capacity.
+    /// </exception>
+    public static byte[] BuildCommandPacket(byte reportId, byte cmd, ReadOnlySpan<byte> data = default)
+    {
+        if (data.Length > MaxDataLength)
+        {
+            throw new ArgumentOutOfRangeException(nameof(data), "A legacy 17-byte frame carries at most 10 data bytes.");
+        }
+
+        var packet = new byte[FrameLength];
+        packet[0] = reportId;
+        packet[1] = cmd;
+        packet[5] = (byte)data.Length;
+        data.CopyTo(packet.AsSpan(6, data.Length));
+        packet[16] = Checksum(packet.AsSpan(0, 16));
+        return packet;
+    }
+
+    /// <summary>
+    /// Builds <see cref="CmdDriverStatus"/> with the required one-byte payload.
+    /// Passing <see langword="true"/> announces an active configuration driver;
+    /// <see langword="false"/> releases that state during shutdown.
+    /// </summary>
+    public static byte[] BuildDriverStatusPacket(byte reportId, bool online)
+        => BuildCommandPacket(reportId, CmdDriverStatus, [online ? (byte)0x01 : (byte)0x00]);
+
+    /// <summary>
+    /// Builds a <see cref="CmdOnline"/> query or hold operation. A null
+    /// <paramref name="hold"/> emits a zero-length reachability query; true and
+    /// false emit the one-byte acquire and release forms respectively.
+    /// </summary>
+    public static byte[] BuildOnlinePacket(byte reportId, bool? hold = null)
+        => hold.HasValue
+            ? BuildCommandPacket(reportId, CmdOnline, [hold.Value ? (byte)0x01 : (byte)0x00])
+            : BuildCommandPacket(reportId, CmdOnline);
+
+    /// <summary>
+    /// Builds one EEPROM write frame using a big-endian address and at most ten
+    /// data bytes. The length is always the plain byte count; the keyboard-mode
+    /// routing bit is deliberately never set for mouse traffic.
+    /// </summary>
+    /// <exception cref="ArgumentOutOfRangeException">
+    /// Thrown when <paramref name="data"/> exceeds the ten-byte frame capacity.
+    /// </exception>
+    public static byte[] BuildEepromWritePacket(byte reportId, ushort address, ReadOnlySpan<byte> data)
+    {
+        if (data.Length > MaxDataLength)
+        {
+            throw new ArgumentOutOfRangeException(nameof(data), "An EEPROM write carries at most 10 data bytes.");
+        }
+
+        var packet = new byte[FrameLength];
+        packet[0] = reportId;
+        packet[1] = CmdSetEeprom;
+        packet[3] = (byte)(address >> 8);
+        packet[4] = (byte)(address & 0xFF);
+        packet[5] = (byte)data.Length;
+        data.CopyTo(packet.AsSpan(6, data.Length));
+        packet[16] = Checksum(packet.AsSpan(0, 16));
+        return packet;
+    }
+
+    /// <summary>
+    /// Encodes a scalar EEPROM value together with its internal complement, so
+    /// the two bytes sum to <c>0x55</c> modulo 256.
+    /// </summary>
+    public static byte[] EncodeCheckedValue(byte value)
+        => [value, unchecked((byte)(0x55 - value))];
+
+    /// <summary>
+    /// Validates the checksum of the first complete 17-byte report. Additional
+    /// bytes advertised by a larger HID collection are intentionally ignored.
+    /// </summary>
+    public static bool HasValidChecksum(IReadOnlyList<byte> frame)
+    {
+        if (frame is null || frame.Count < FrameLength)
+        {
+            return false;
+        }
+
+        var sum = 0;
+        for (var i = 0; i < FrameLength; i++)
+        {
+            sum += frame[i];
+        }
+
+        return (sum & 0xFF) == 0x55;
+    }
+
+    /// <summary>
+    /// Parses a data-bearing EEPROM response only when its checksum, status,
+    /// command, big-endian address, and declared length all match the request.
+    /// A status-only acknowledgement is rejected because it contains no data.
+    /// </summary>
+    public static bool TryParseEepromResponse(
+        IReadOnlyList<byte> frame,
+        byte expectedCmd,
+        ushort address,
+        int length,
+        out byte[] data)
+    {
+        data = Array.Empty<byte>();
+        if (length is < 0 or > MaxDataLength
+            || frame is null
+            || frame.Count < FrameLength
+            || !HasValidChecksum(frame)
+            || frame[1] != expectedCmd
+            || frame[2] != 0x00
+            || frame[3] != (byte)(address >> 8)
+            || frame[4] != (byte)(address & 0xFF)
+            || frame[5] != (byte)length)
+        {
+            return false;
+        }
+
+        data = new byte[length];
+        for (var i = 0; i < length; i++)
+        {
+            data[i] = frame[6 + i];
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Returns true only for the exact 17-byte echo that the official cMouse
+    /// driver requires as acknowledgement of <see cref="CmdSetEeprom"/>.
+    /// </summary>
+    public static bool MatchesWriteAck(IReadOnlyList<byte> response, IReadOnlyList<byte> request)
+    {
+        if (response is null
+            || request is null
+            || response.Count < FrameLength
+            || request.Count < FrameLength
+            || request[1] != CmdSetEeprom
+            || request[2] != 0x00
+            || request[5] > MaxDataLength
+            || !HasValidChecksum(request)
+            || !HasValidChecksum(response))
+        {
+            return false;
+        }
+
+        for (var i = 0; i < FrameLength; i++)
+        {
+            if (response[i] != request[i])
+            {
+                return false;
+            }
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Validates a write acknowledgement against the requested address and
+    /// data by reconstructing the exact frame that the device must echo.
+    /// </summary>
+    public static bool MatchesWriteAck(
+        IReadOnlyList<byte> response,
+        ushort address,
+        ReadOnlySpan<byte> data)
+    {
+        if (response is null || response.Count < FrameLength || data.Length > MaxDataLength)
+        {
+            return false;
+        }
+
+        var request = BuildEepromWritePacket(response[0], address, data);
+        return MatchesWriteAck(response, request);
+    }
 
     /// <summary>
     /// Settings are stored as value/check pairs where <c>value + check == 0x55</c>,
@@ -217,22 +402,22 @@ internal static class Legacy17Protocol
     /// <summary>
     /// Recovers the device info from a <see cref="CmdInfo"/> response. The
     /// firmware computes <c>resp[6+i] = challenge[i]*(i+1) + challenge[(i+1)%4]
-    /// + info[i]</c>, so the transform inverts directly. The result is
-    /// cross-checked against the cleartext copy at bytes 10..13 and rejected
+    /// + info[i]</c>, so the transform inverts directly. CID/MID are
+    /// cross-checked against the cleartext copy at bytes 10..11 and rejected
     /// unless both agree — which makes a garbled or stale frame fail closed.
     /// Verified live on an X2 V1: three different challenges all decoded to
     /// 06 04 00 00, matching bytes 10..13 exactly.
     /// </summary>
     /// <remarks>
-    /// The four info bytes are cid, mid, connection type and dongle type. The
-    /// dongle type gates receiver-side lighting and button features we do not
-    /// implement; it is returned for logging so the value is not silently lost.
+    /// Connection and dongle type are taken from the checksummed clear bytes.
+    /// The dongle type gates receiver-side lighting and button features we do
+    /// not implement; it is returned for logging so it is not silently lost.
     /// </remarks>
     public static (int ModelId, byte ConnectionCode, byte DongleType)? ParseInfoPayload(
         IReadOnlyList<byte> payload,
         ReadOnlySpan<byte> challenge)
     {
-        if (payload.Count < 14 || payload[2] != 0x00)
+        if (payload.Count < 14 || challenge.Length < 4 || payload[2] != 0x00)
         {
             return null;
         }
@@ -243,7 +428,10 @@ internal static class Legacy17Protocol
             decoded[i] = (byte)((payload[6 + i] - (challenge[i] * (i + 1)) - challenge[(i + 1) % 4]) & 0xFF);
         }
 
-        for (var i = 0; i < 4; i++)
+        // V3.04 encodes zero for connection/dongle in the mixed copy while the
+        // clear fields contain the live link values, so only CID/MID are a
+        // portable cross-check across the legacy firmware family.
+        for (var i = 0; i < 2; i++)
         {
             if (decoded[i] != payload[10 + i])
             {
@@ -251,7 +439,7 @@ internal static class Legacy17Protocol
             }
         }
 
-        return ((decoded[0] << 8) | decoded[1], decoded[2], decoded[3]);
+        return ((decoded[0] << 8) | decoded[1], payload[12], payload[13]);
     }
 
     public static byte[] BuildPacket(byte reportId, byte cmd, ReadOnlySpan<byte> payload = default)

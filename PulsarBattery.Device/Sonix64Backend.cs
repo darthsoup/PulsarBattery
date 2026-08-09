@@ -1,4 +1,5 @@
 using System;
+using System.Collections.Generic;
 using System.Linq;
 using HidSharp;
 
@@ -11,12 +12,20 @@ namespace PulsarBattery.Device;
 /// </summary>
 public sealed class Sonix64Backend : IHidBackend
 {
+    private static readonly IReadOnlyList<int> PollingRates =
+        Sonix64Protocol.SupportedPollingRates.OrderBy(rate => rate).ToArray();
+    private static readonly IReadOnlyList<int> LodValues = [7, 10, 20];
+    private static readonly IReadOnlyList<DeviceValueRange> DpiRanges =
+        [new DeviceValueRange(50, 26_000, 1)];
+
     private readonly DeviceDescriptor _descriptor;
 
     // Firmware never changes while the app runs, and a failed Query costs up
     // to ~900ms — read it once and stop retrying after a few misses so the
     // 5s poll loops don't pay that penalty every tick.
     private string? _firmwareVersion;
+    private string? _firmwareDevicePath;
+    private string? _lastDevicePath;
     private int _firmwareAttemptsLeft = 3;
 
     public Sonix64Backend(DeviceDescriptor descriptor)
@@ -28,7 +37,7 @@ public sealed class Sonix64Backend : IHidBackend
 
     public DeviceStatus? ReadBatteryStatus(bool debug)
     {
-        return WithConfigInterface(debug, (stream, dbg) =>
+        return WithConfigInterface(debug, allowDeviceSwitch: true, (stream, dbg) =>
         {
             var percentage = Sonix64Protocol.ReadBatteryPercent(stream, dbg);
             if (percentage is null)
@@ -57,9 +66,11 @@ public sealed class Sonix64Backend : IHidBackend
         });
     }
 
-    public DeviceSettings? ReadSettings(bool debug)
+    public DeviceSettings? ReadSettings(bool debug) => ReadSettingsSnapshot(debug)?.Values;
+
+    public DeviceSettingsSnapshot? ReadSettingsSnapshot(bool debug)
     {
-        return WithConfigInterface(debug, (stream, dbg) =>
+        return WithConfigInterface(debug, allowDeviceSwitch: false, (stream, dbg) =>
         {
             var settings = new DeviceSettings(
                 PollingRateHz: Sonix64Protocol.ReadPollingRateHz(stream, dbg),
@@ -72,7 +83,34 @@ public sealed class Sonix64Backend : IHidBackend
                 RippleControl: Sonix64Protocol.ReadRippleControl(stream, dbg));
 
             // All-null means the device never answered; treat as not found.
-            return settings == new DeviceSettings() ? null : settings;
+            if (settings == new DeviceSettings())
+            {
+                return null;
+            }
+
+            var fields = DeviceSettingField.None;
+            if (settings.PollingRateHz is not null) fields |= DeviceSettingField.PollingRate;
+            if (settings.DebounceMs is not null) fields |= DeviceSettingField.Debounce;
+            if (settings.MotionSync is not null) fields |= DeviceSettingField.MotionSync;
+            if (settings.Dpi is not null) fields |= DeviceSettingField.Dpi;
+            if (settings.DpiStage is not null) fields |= DeviceSettingField.DpiStage;
+            if (settings.LodMm10 is not null) fields |= DeviceSettingField.Lod;
+            if (settings.AngleSnap is not null) fields |= DeviceSettingField.AngleSnap;
+            if (settings.RippleControl is not null) fields |= DeviceSettingField.RippleControl;
+
+            return new DeviceSettingsSnapshot(
+                settings,
+                new DeviceSettingsCapabilities(
+                    fields,
+                    fields,
+                    PollingRates,
+                    LodValues,
+                    DpiRanges,
+                    DpiStageCount: 8,
+                    DebounceMinimumMs: 0,
+                    DebounceMaximumMs: 30,
+                    SleepValuesSeconds: [],
+                    WriteTrust: DeviceSettingsWriteTrust.HardwareVerified));
         });
     }
 
@@ -80,7 +118,12 @@ public sealed class Sonix64Backend : IHidBackend
 
     public bool ApplySettings(DeviceSettings changes, bool debug)
     {
-        var result = WithConfigInterface(debug, (stream, dbg) =>
+        if (_lastDevicePath is null || changes.SleepSeconds is not null)
+        {
+            return false;
+        }
+
+        var result = WithConfigInterface(debug, allowDeviceSwitch: false, (stream, dbg) =>
         {
             var allApplied = true;
 
@@ -135,6 +178,16 @@ public sealed class Sonix64Backend : IHidBackend
 
     private string? ReadFirmwareVersionCached(HidStream stream, bool debug)
     {
+        if (!string.Equals(
+                _firmwareDevicePath,
+                stream.Device.DevicePath,
+                StringComparison.OrdinalIgnoreCase))
+        {
+            _firmwareDevicePath = stream.Device.DevicePath;
+            _firmwareVersion = null;
+            _firmwareAttemptsLeft = 3;
+        }
+
         if (_firmwareVersion is null && _firmwareAttemptsLeft > 0)
         {
             _firmwareVersion = Sonix64Protocol.ReadFirmwareVersion(stream, debug);
@@ -147,11 +200,24 @@ public sealed class Sonix64Backend : IHidBackend
         return _firmwareVersion;
     }
 
-    private T? WithConfigInterface<T>(bool debug, Func<HidStream, bool, T?> read)
+    private T? WithConfigInterface<T>(
+        bool debug,
+        bool allowDeviceSwitch,
+        Func<HidStream, bool, T?> read)
         where T : class
     {
         var candidates = HidHelpers.EnumerateDevices(_descriptor.VendorId, IsCandidate)
-            .OrderByDescending(d => d.DevicePath) // mi_03 is the config interface; probe it before mi_02
+            .Where(device => allowDeviceSwitch
+                             || _lastDevicePath is null
+                             || string.Equals(
+                                 device.DevicePath,
+                                 _lastDevicePath,
+                                 StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(device => string.Equals(
+                device.DevicePath,
+                _lastDevicePath,
+                StringComparison.OrdinalIgnoreCase))
+            .ThenByDescending(d => d.DevicePath) // mi_03 is the config interface; probe it before mi_02
             .ToList();
 
         foreach (var device in candidates)
@@ -170,6 +236,7 @@ public sealed class Sonix64Backend : IHidBackend
                 var result = read(stream, debug);
                 if (result is not null)
                 {
+                    _lastDevicePath = device.DevicePath;
                     return result;
                 }
             }

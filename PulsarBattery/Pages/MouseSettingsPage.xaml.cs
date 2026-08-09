@@ -5,15 +5,17 @@ using Microsoft.UI.Xaml.Controls.Primitives;
 using Microsoft.UI.Xaml.Input;
 using Microsoft.UI.Xaml.Media;
 using PulsarBattery.Tools;
+using System;
 using System.ComponentModel;
 
 namespace PulsarBattery.Pages;
 
 public sealed partial class MouseSettingsPage : Page
 {
-    private static readonly int[] PollingRates = [125, 250, 500, 1000, 2000, 4000, 8000];
-    private static readonly (int Mm10, string Label)[] LodOptions = [(7, "0.7 mm"), (10, "1.0 mm"), (20, "2.0 mm")];
-    private const int DpiStageCount = 8; // X2 V3 eS: stages 1-8, verified live
+    private static readonly int[] DefaultPollingRates = [125, 250, 500, 1000, 2000, 4000, 8000];
+    private static readonly int[] DefaultLodValues = [7, 10, 20];
+    private static readonly int[] DefaultSleepValues = [10, 30, 60, 300, 600, 1800];
+    private const int DefaultDpiStageCount = 8;
 
     private ViewModels.MainViewModel? ViewModel => DataContext as ViewModels.MainViewModel;
 
@@ -34,6 +36,8 @@ public sealed partial class MouseSettingsPage : Page
         if (ViewModel is { } viewModel)
         {
             viewModel.PropertyChanged += ViewModel_PropertyChanged;
+            InitializeComboBoxes();
+            SyncCapabilityState();
             SyncComboSelections();
             _ = viewModel.RefreshDeviceSettingsAsync();
         }
@@ -51,9 +55,23 @@ public sealed partial class MouseSettingsPage : Page
     {
         if (e.PropertyName is nameof(ViewModels.MainViewModel.PollingRateHz)
             or nameof(ViewModels.MainViewModel.LodMm10)
-            or nameof(ViewModels.MainViewModel.DpiStage))
+            or nameof(ViewModels.MainViewModel.DpiStage)
+            or nameof(ViewModels.MainViewModel.SleepSeconds))
         {
             SyncComboSelections();
+        }
+
+        if (e.PropertyName is nameof(ViewModels.MainViewModel.SettingsCapabilities))
+        {
+            InitializeComboBoxes();
+            SyncCapabilityState();
+            SyncComboSelections();
+        }
+
+        if (e.PropertyName is nameof(ViewModels.MainViewModel.IsApplyingDeviceSetting)
+            or nameof(ViewModels.MainViewModel.IsLoading))
+        {
+            SyncCapabilityState();
         }
     }
 
@@ -63,24 +81,50 @@ public sealed partial class MouseSettingsPage : Page
         try
         {
             PollingRateComboBox.Items.Clear();
-            foreach (var rate in PollingRates)
+            var pollingRates = ViewModel?.SupportedPollingRates.Count > 0
+                ? ViewModel.SupportedPollingRates
+                : DefaultPollingRates;
+            foreach (var rate in pollingRates)
             {
                 PollingRateComboBox.Items.Add(new ComboBoxItem { Content = $"{rate} Hz", Tag = rate });
             }
 
             LodComboBox.Items.Clear();
-            foreach (var (mm10, label) in LodOptions)
+            var lodValues = ViewModel?.SupportedLodValues.Count > 0
+                ? ViewModel.SupportedLodValues
+                : DefaultLodValues;
+            foreach (var mm10 in lodValues)
             {
-                LodComboBox.Items.Add(new ComboBoxItem { Content = label, Tag = mm10 });
+                LodComboBox.Items.Add(new ComboBoxItem
+                {
+                    Content = $"{mm10 / 10.0:0.0} mm",
+                    Tag = mm10,
+                });
             }
 
             DpiStageComboBox.Items.Clear();
-            for (var stage = 1; stage <= DpiStageCount; stage++)
+            var stageCount = ViewModel?.SupportedDpiStageCount > 0
+                ? ViewModel.SupportedDpiStageCount
+                : DefaultDpiStageCount;
+            for (var stage = 1; stage <= stageCount; stage++)
             {
                 DpiStageComboBox.Items.Add(new ComboBoxItem
                 {
                     Content = string.Format(Loc.T("Stage {0}"), stage),
                     Tag = stage,
+                });
+            }
+
+            SleepComboBox.Items.Clear();
+            var sleepValues = ViewModel?.SupportedSleepValues.Count > 0
+                ? ViewModel.SupportedSleepValues
+                : DefaultSleepValues;
+            foreach (var seconds in sleepValues)
+            {
+                SleepComboBox.Items.Add(new ComboBoxItem
+                {
+                    Content = seconds < 60 ? $"{seconds} s" : $"{seconds / 60} min",
+                    Tag = seconds,
                 });
             }
         }
@@ -90,6 +134,54 @@ public sealed partial class MouseSettingsPage : Page
         }
     }
 
+    private void SyncCapabilityState()
+    {
+        if (ViewModel is not { } viewModel)
+        {
+            return;
+        }
+
+        PollingRateComboBox.IsEnabled = viewModel.CanWritePollingRate;
+        DpiNumberBox.IsEnabled = viewModel.CanWriteDpi;
+        DpiNumberBox.Minimum = viewModel.DpiMinimum;
+        DpiNumberBox.Maximum = viewModel.DpiMaximum;
+        DpiNumberBox.SmallChange = viewModel.DpiSmallChange;
+        DpiStageComboBox.IsEnabled = viewModel.CanWriteDpiStage;
+        DebounceNumberBox.IsEnabled = viewModel.CanWriteDebounce;
+        DebounceNumberBox.Minimum = viewModel.DebounceMinimum;
+        DebounceNumberBox.Maximum = viewModel.DebounceMaximum;
+        LodComboBox.IsEnabled = viewModel.CanWriteLod;
+        MotionSyncToggle.IsEnabled = viewModel.CanWriteMotionSync;
+        AngleSnapToggle.IsEnabled = viewModel.CanWriteAngleSnap;
+        RippleControlToggle.IsEnabled = viewModel.CanWriteRippleControl;
+        SleepComboBox.IsEnabled = viewModel.CanWriteSleep;
+
+        PollingRateCard.Visibility = ToVisibility(viewModel.CanReadPollingRate);
+        DpiCard.Visibility = ToVisibility(viewModel.CanReadDpi);
+        DpiStageCard.Visibility = ToVisibility(viewModel.CanReadDpiStage);
+        DebounceCard.Visibility = ToVisibility(viewModel.CanReadDebounce);
+        LodCard.Visibility = ToVisibility(viewModel.CanReadLod);
+        MotionSyncCard.Visibility = ToVisibility(viewModel.CanReadMotionSync);
+        AngleSnapCard.Visibility = ToVisibility(viewModel.CanReadAngleSnap);
+        RippleControlCard.Visibility = ToVisibility(viewModel.CanReadRippleControl);
+        SleepCard.Visibility = ToVisibility(viewModel.CanReadSleep);
+
+        PerformanceSection.Visibility = ToVisibility(
+            viewModel.CanReadPollingRate
+            || viewModel.CanReadDpi
+            || viewModel.CanReadDpiStage
+            || viewModel.CanReadDebounce);
+        SensorSection.Visibility = ToVisibility(
+            viewModel.CanReadLod
+            || viewModel.CanReadMotionSync
+            || viewModel.CanReadAngleSnap
+            || viewModel.CanReadRippleControl);
+        PowerSection.Visibility = ToVisibility(viewModel.CanReadSleep);
+    }
+
+    private static Visibility ToVisibility(bool visible) =>
+        visible ? Visibility.Visible : Visibility.Collapsed;
+
     private void SyncComboSelections()
     {
         _isUpdatingSelection = true;
@@ -98,6 +190,7 @@ public sealed partial class MouseSettingsPage : Page
             SelectByTag(PollingRateComboBox, ViewModel?.PollingRateHz);
             SelectByTag(LodComboBox, ViewModel?.LodMm10);
             SelectByTag(DpiStageComboBox, ViewModel?.DpiStage);
+            SelectByTag(SleepComboBox, ViewModel?.SleepSeconds);
         }
         finally
         {
@@ -162,6 +255,19 @@ public sealed partial class MouseSettingsPage : Page
         if ((DpiStageComboBox.SelectedItem as ComboBoxItem)?.Tag is int stage)
         {
             ViewModel?.ApplyDpiStage(stage);
+        }
+    }
+
+    private void SleepComboBox_SelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (_isUpdatingSelection)
+        {
+            return;
+        }
+
+        if ((SleepComboBox.SelectedItem as ComboBoxItem)?.Tag is int seconds)
+        {
+            ViewModel?.ApplySleep(seconds);
         }
     }
 
