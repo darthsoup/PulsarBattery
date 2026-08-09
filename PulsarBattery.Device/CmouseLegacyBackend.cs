@@ -63,6 +63,8 @@ public sealed class CmouseLegacyBackend : IHidBackend
 
     private CmouseDeviceProfile? _lastProfile;
     private string? _lastDevicePath;
+    private CmouseDeviceProfile? _lastSettingsProfile;
+    private string? _lastSettingsDevicePath;
     private string? _cachedFirmware;
     private string? _cachedDongleFirmware;
     private readonly CmouseSettingsBackupStore _settingsBackupStore;
@@ -170,7 +172,7 @@ public sealed class CmouseLegacyBackend : IHidBackend
 
     public DeviceSettingsSnapshot? ReadSettingsSnapshot(bool debug)
     {
-        return WithSession(
+        var snapshot = WithSession(
             debug,
             requireOnline: true,
             announceDriverOnline: true,
@@ -274,15 +276,27 @@ public sealed class CmouseLegacyBackend : IHidBackend
                     $"cmouse settings model={context.Profile.Model} mid={context.Profile.Mid} rate={values.PollingRateHz} dpi={values.Dpi} stage={values.DpiStage} lod={values.LodMm10} debounce={values.DebounceMs}");
             }
 
+            _lastSettingsDevicePath = context.Device.DevicePath;
+            _lastSettingsProfile = context.Profile;
             return new DeviceSettingsSnapshot(values, capabilities);
         });
+
+        if (snapshot is null)
+        {
+            _lastSettingsDevicePath = null;
+            _lastSettingsProfile = null;
+        }
+
+        return snapshot;
     }
 
-    public bool SupportsSettingsWrite => _lastProfile?.WriteEnabled == true;
+    public bool SupportsSettingsWrite => _lastSettingsProfile?.WriteEnabled == true;
 
     public bool ApplySettings(DeviceSettings changes, bool debug)
     {
-        if (_lastDevicePath is null || _lastProfile is null)
+        var targetPath = _lastSettingsDevicePath;
+        var targetProfile = _lastSettingsProfile;
+        if (targetPath is null || targetProfile is null)
         {
             return false;
         }
@@ -299,13 +313,17 @@ public sealed class CmouseLegacyBackend : IHidBackend
                 return BoolResult.False;
             }
 
-            if (!SetHold(context, acquire: true, debug))
-            {
-                return BoolResult.False;
-            }
-
+            var applied = new List<WriteOperation>();
+            WriteOperation? attempted = null;
+            var holdAttempted = false;
             try
             {
+                holdAttempted = true;
+                if (!SetHold(context, acquire: true, debug))
+                {
+                    return BoolResult.False;
+                }
+
                 if (!EnsurePersistentSettingsBackup(context, debug))
                 {
                     return BoolResult.False;
@@ -317,8 +335,6 @@ public sealed class CmouseLegacyBackend : IHidBackend
                     return BoolResult.False;
                 }
 
-                var applied = new List<WriteOperation>();
-                WriteOperation? attempted = null;
                 foreach (var operation in operations)
                 {
                     attempted = operation;
@@ -340,11 +356,41 @@ public sealed class CmouseLegacyBackend : IHidBackend
 
                 return BoolResult.True;
             }
+            catch (Exception ex)
+            {
+                if (debug)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"cmouse write failed; attempting rollback error={ex.Message}");
+                }
+
+                RollBack(context, attempted, applied, debug);
+                return BoolResult.False;
+            }
             finally
             {
-                SetHold(context, acquire: false, debug);
+                if (holdAttempted)
+                {
+                    try
+                    {
+                        if (!SetHold(context, acquire: false, debug) && debug)
+                        {
+                            System.Diagnostics.Debug.WriteLine("cmouse hold release was not acknowledged");
+                        }
+                    }
+                    catch (Exception ex)
+                    {
+                        if (debug)
+                        {
+                            System.Diagnostics.Debug.WriteLine(
+                                $"cmouse hold release failed error={ex.Message}");
+                        }
+                    }
+                }
             }
-        });
+        },
+            requiredDevicePath: targetPath,
+            requiredProfile: targetProfile);
 
         return result?.Value == true;
     }
@@ -453,11 +499,13 @@ public sealed class CmouseLegacyBackend : IHidBackend
         bool requireOnline,
         bool announceDriverOnline,
         bool allowDeviceSwitch,
-        Func<SessionContext, T?> action)
+        Func<SessionContext, T?> action,
+        string? requiredDevicePath = null,
+        CmouseDeviceProfile? requiredProfile = null)
         where T : class
     {
-        var expectedProfile = allowDeviceSwitch ? null : _lastProfile;
-        foreach (var device in EnumerateCandidates(allowDeviceSwitch))
+        var expectedProfile = requiredProfile ?? (allowDeviceSwitch ? null : _lastProfile);
+        foreach (var device in EnumerateCandidates(allowDeviceSwitch, requiredDevicePath))
         {
             HidStream? stream = null;
             SessionContext? context = null;
@@ -501,11 +549,11 @@ public sealed class CmouseLegacyBackend : IHidBackend
                     _cachedDongleFirmware = null;
                 }
 
-                _lastDevicePath = device.DevicePath;
-                _lastProfile = context.Profile;
                 var result = action(context);
                 if (result is not null)
                 {
+                    _lastDevicePath = device.DevicePath;
+                    _lastProfile = context.Profile;
                     return result;
                 }
             }
@@ -520,18 +568,32 @@ public sealed class CmouseLegacyBackend : IHidBackend
             {
                 if (context?.DriverOnline == true)
                 {
-                    TrySetDriverOnline(context, online: false, debug);
+                    TrySetDriverOffline(context, debug);
                 }
 
-                stream?.Dispose();
+                try
+                {
+                    stream?.Dispose();
+                }
+                catch (Exception ex)
+                {
+                    if (debug)
+                    {
+                        System.Diagnostics.Debug.WriteLine(
+                            $"cmouse stream cleanup failed error={ex.Message}");
+                    }
+                }
             }
         }
 
         return null;
     }
 
-    private IEnumerable<HidDevice> EnumerateCandidates(bool allowDeviceSwitch)
+    private IEnumerable<HidDevice> EnumerateCandidates(
+        bool allowDeviceSwitch,
+        string? requiredDevicePath = null)
     {
+        var preferredPath = requiredDevicePath ?? _lastDevicePath;
         var candidates = HidHelpers.EnumerateDevices(
                 CmouseDeviceCatalog.VendorId,
                 device => CmouseDeviceCatalog.ProductIds.Contains(device.ProductID)
@@ -539,7 +601,7 @@ public sealed class CmouseLegacyBackend : IHidBackend
                           && SafeLength(device.GetMaxInputReportLength) >= PacketLength)
             .OrderByDescending(device => string.Equals(
                 device.DevicePath,
-                _lastDevicePath,
+                preferredPath,
                 StringComparison.OrdinalIgnoreCase))
             .ThenByDescending(device => PreferredPath(device.DevicePath))
             .ThenBy(device => device.DevicePath);
@@ -548,10 +610,11 @@ public sealed class CmouseLegacyBackend : IHidBackend
         // Settings reads and especially writes must stay on the exact HID path
         // whose status was shown to the user; silently falling through to a
         // second CID-87 mouse would configure the wrong physical device.
-        return !allowDeviceSwitch && _lastDevicePath is not null
+        var pinnedPath = requiredDevicePath ?? (!allowDeviceSwitch ? _lastDevicePath : null);
+        return pinnedPath is not null
             ? candidates.Where(device => string.Equals(
                 device.DevicePath,
-                _lastDevicePath,
+                pinnedPath,
                 StringComparison.OrdinalIgnoreCase))
             : candidates;
     }
@@ -614,11 +677,28 @@ public sealed class CmouseLegacyBackend : IHidBackend
             return null;
         }
 
-        if (announceDriverOnline && !TrySetDriverOnline(context, online: true, debug))
+        if (announceDriverOnline)
         {
-            if (debug) System.Diagnostics.Debug.WriteLine($"cmouse {profile.Model}: driver-online ACK failed");
-            TrySetDriverOnline(context, online: false, debug);
-            return null;
+            try
+            {
+                if (!TrySetDriverOnline(context, online: true, debug))
+                {
+                    if (debug) System.Diagnostics.Debug.WriteLine($"cmouse {profile.Model}: driver-online ACK failed");
+                    TrySetDriverOffline(context, debug);
+                    return null;
+                }
+            }
+            catch (Exception ex)
+            {
+                if (debug)
+                {
+                    System.Diagnostics.Debug.WriteLine(
+                        $"cmouse {profile.Model}: driver-online transition failed error={ex.Message}");
+                }
+
+                TrySetDriverOffline(context, debug);
+                return null;
+            }
         }
 
         return announceDriverOnline ? context with { DriverOnline = true } : context;
@@ -672,6 +752,24 @@ public sealed class CmouseLegacyBackend : IHidBackend
             debug,
             attempts: online ? 5 : 1);
         return response is not null || !online;
+    }
+
+    private static bool TrySetDriverOffline(SessionContext context, bool debug)
+    {
+        try
+        {
+            return TrySetDriverOnline(context, online: false, debug);
+        }
+        catch (Exception ex)
+        {
+            if (debug)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"cmouse driver-offline cleanup failed error={ex.Message}");
+            }
+
+            return false;
+        }
     }
 
     private static bool SetHold(SessionContext context, bool acquire, bool debug)
@@ -1010,20 +1108,51 @@ public sealed class CmouseLegacyBackend : IHidBackend
             ? checked((byte)(mm10 - 6))
             : DiscreteLodCodeByMm10[mm10];
 
-    private static void RollBack(
+    private static bool RollBack(
         SessionContext context,
         WriteOperation? attempted,
         IReadOnlyList<WriteOperation> applied,
         bool debug)
     {
+        var restored = true;
         if (attempted is not null)
         {
-            WriteAndVerify(context, attempted.Address, attempted.Original, debug);
+            restored &= TryRestore(context, attempted, debug);
         }
 
         for (var i = applied.Count - 1; i >= 0; i--)
         {
-            WriteAndVerify(context, applied[i].Address, applied[i].Original, debug);
+            restored &= TryRestore(context, applied[i], debug);
+        }
+
+        return restored;
+    }
+
+    private static bool TryRestore(
+        SessionContext context,
+        WriteOperation operation,
+        bool debug)
+    {
+        try
+        {
+            var restored = WriteAndVerify(context, operation.Address, operation.Original, debug);
+            if (!restored && debug)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"cmouse rollback verification failed address=0x{operation.Address:X4}");
+            }
+
+            return restored;
+        }
+        catch (Exception ex)
+        {
+            if (debug)
+            {
+                System.Diagnostics.Debug.WriteLine(
+                    $"cmouse rollback failed address=0x{operation.Address:X4} error={ex.Message}");
+            }
+
+            return false;
         }
     }
 

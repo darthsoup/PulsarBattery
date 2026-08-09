@@ -76,6 +76,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private string? _dongleFirmwareVersion;
     private ImageSource? _deviceImage;
     private CancellationTokenSource? _deviceImageLoadCancellation;
+    private string? _deviceImageModel;
+    private int? _deviceImageProtocolModelId;
+    private bool _hasDeviceImageIdentity;
+    private bool _deviceImageLoadInProgress;
+    private bool _deviceImageLoadFailed;
+    private string? _deviceSettingsModel;
+    private int? _deviceSettingsProtocolModelId;
+    private bool _hasDeviceSettingsIdentity;
+    private bool _hasAttemptedDeviceSettingsForCurrentIdentity;
+    private bool _isMouseSettingsPageActive;
+    private bool _isWindowActive;
+    private bool _isReadingDeviceSettings;
+    private int _deviceSettingsReadCount;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -252,6 +265,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public bool IsApplyingDeviceSetting => _isApplyingDeviceSetting;
 
+    public bool IsReadingDeviceSettings => _isReadingDeviceSettings;
+
     public bool MouseSettingsReadOnly =>
         _deviceSettingsCapabilities is { Readable: not DeviceSettingField.None, Writable: DeviceSettingField.None };
 
@@ -268,7 +283,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string MouseSettingsWriteUnverifiedTitle => Loc.T("Unverified write support");
 
     public string MouseSettingsWriteUnverifiedText =>
-        Loc.T("Writes for this model are derived from Pulsar cMouse but have not been verified on matching hardware. Affected values are backed up for rollback and every write is checked by readback.");
+        Loc.T("Writes for this model are derived from Pulsar cMouse but have not been verified on matching hardware. Before the first write, the complete core settings and, on PAW3955 models, the extended DPI region are saved persistently. Individual writes are still verified by readback and rolled back on failure.");
 
     public IReadOnlyList<int> SupportedPollingRates =>
         _deviceSettingsCapabilities?.PollingRatesHz ?? Array.Empty<int>();
@@ -482,6 +497,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private bool CanWrite(DeviceSettingField field) =>
         !_isApplyingDeviceSetting
+        && !_isReadingDeviceSettings
         && !IsLoading
         && _deviceSettingsCapabilities?.CanWrite(field) == true;
 
@@ -586,7 +602,27 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public async Task RefreshDeviceSettingsAsync()
     {
-        UpdateDeviceSettings(await ReadDeviceSettingsAsync());
+        BeginDeviceSettingsRead();
+        try
+        {
+            _hasAttemptedDeviceSettingsForCurrentIdentity = true;
+            var snapshot = await ReadDeviceSettingsAsync();
+            UpdateDeviceSettings(snapshot);
+        }
+        finally
+        {
+            EndDeviceSettingsRead();
+        }
+    }
+
+    public void SetMouseSettingsPageActive(bool active)
+    {
+        _isMouseSettingsPageActive = active;
+    }
+
+    public void SetWindowActive(bool active)
+    {
+        _isWindowActive = active;
     }
 
     public string LastUpdatedText => _lastUpdated.HasValue
@@ -823,11 +859,34 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void BeginDeviceImageUpdate(string model, int? protocolModelId = null)
     {
+        var sameIdentity = _hasDeviceImageIdentity
+            && string.Equals(_deviceImageModel, model, StringComparison.Ordinal)
+            && _deviceImageProtocolModelId == protocolModelId;
+        if (sameIdentity)
+        {
+            if (_deviceImageLoadInProgress || !_deviceImageLoadFailed)
+            {
+                return;
+            }
+
+            StartOfficialDeviceImageLoad(model, protocolModelId);
+            return;
+        }
+
         _deviceImageLoadCancellation?.Cancel();
-        _deviceImageLoadCancellation?.Dispose();
         _deviceImageLoadCancellation = null;
+        _deviceImageModel = model;
+        _deviceImageProtocolModelId = protocolModelId;
+        _hasDeviceImageIdentity = true;
+        _deviceImageLoadInProgress = false;
+        _deviceImageLoadFailed = false;
 
         SetDeviceImage(DeviceImageService.GetPackagedImage(model));
+        StartOfficialDeviceImageLoad(model, protocolModelId);
+    }
+
+    private void StartOfficialDeviceImageLoad(string model, int? protocolModelId)
+    {
         if (DeviceImageService.GetOfficialImage(model, protocolModelId) is null)
         {
             return;
@@ -835,27 +894,58 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         var cancellation = new CancellationTokenSource();
         _deviceImageLoadCancellation = cancellation;
-        _ = LoadOfficialDeviceImageAsync(model, protocolModelId, cancellation.Token);
+        _deviceImageLoadInProgress = true;
+        _deviceImageLoadFailed = false;
+        _ = LoadOfficialDeviceImageAsync(model, protocolModelId, cancellation);
     }
 
     private async Task LoadOfficialDeviceImageAsync(
         string model,
         int? protocolModelId,
-        CancellationToken cancellationToken)
+        CancellationTokenSource cancellation)
     {
+        var cancellationToken = cancellation.Token;
         try
         {
             var imageUri = await DeviceImageService.GetCachedOfficialImageAsync(model, protocolModelId, cancellationToken);
-            if (imageUri is null || cancellationToken.IsCancellationRequested || !string.Equals(ModelName, model, StringComparison.Ordinal))
+            if (cancellationToken.IsCancellationRequested
+                || !_hasDeviceImageIdentity
+                || !string.Equals(_deviceImageModel, model, StringComparison.Ordinal)
+                || _deviceImageProtocolModelId != protocolModelId)
             {
+                return;
+            }
+
+            if (imageUri is null)
+            {
+                _deviceImageLoadFailed = true;
                 return;
             }
 
             SetDeviceImage(imageUri);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
         catch (Exception ex)
         {
             Log.Error(nameof(MainViewModel), ex);
+            if (!cancellationToken.IsCancellationRequested
+                && string.Equals(_deviceImageModel, model, StringComparison.Ordinal)
+                && _deviceImageProtocolModelId == protocolModelId)
+            {
+                _deviceImageLoadFailed = true;
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_deviceImageLoadCancellation, cancellation))
+            {
+                _deviceImageLoadCancellation = null;
+                _deviceImageLoadInProgress = false;
+            }
+
+            cancellation.Dispose();
         }
     }
 
@@ -1108,6 +1198,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
             if (batteryStatus is null)
             {
+                ResetDeviceSettingsIdentity();
                 UpdateDeviceSettings(null);
                 StatusText = Loc.T("No Pulsar mouse detected");
                 NoDeviceFound = true;
@@ -1115,8 +1206,26 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 return;
             }
 
+            var settingsIdentityChanged = DeviceSettingsIdentityChanged(batteryStatus);
             UpdateBatteryProperties(batteryStatus);
-            UpdateDeviceSettings(await ReadDeviceSettingsAsync());
+            if (settingsIdentityChanged)
+            {
+                _deviceSettingsModel = batteryStatus.Model;
+                _deviceSettingsProtocolModelId = batteryStatus.ProtocolModelId;
+                _hasDeviceSettingsIdentity = true;
+                _hasAttemptedDeviceSettingsForCurrentIdentity = false;
+            }
+
+            var shouldReadSettings = _isWindowActive
+                && (_isMouseSettingsPageActive
+                    || !_hasAttemptedDeviceSettingsForCurrentIdentity);
+            if (shouldReadSettings)
+            {
+                _hasAttemptedDeviceSettingsForCurrentIdentity = true;
+                var snapshot = await ReadDeviceSettingsAsync();
+                UpdateDeviceSettings(snapshot);
+            }
+
             StatusText = Loc.T("Updated");
             HasInitialData = true;
             NoDeviceFound = false;
@@ -1127,10 +1236,28 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 LogBatteryReading(batteryStatus);
             }
         }
+        catch (Exception ex)
+        {
+            Log.Error(nameof(MainViewModel), ex);
+        }
         finally
         {
+            IsLoading = false;
             _batteryUpdateLock.Release();
         }
+    }
+
+    private bool DeviceSettingsIdentityChanged(PulsarBatteryReader.BatteryStatus status) =>
+        !_hasDeviceSettingsIdentity
+        || !string.Equals(_deviceSettingsModel, status.Model, StringComparison.Ordinal)
+        || _deviceSettingsProtocolModelId != status.ProtocolModelId;
+
+    private void ResetDeviceSettingsIdentity()
+    {
+        _deviceSettingsModel = null;
+        _deviceSettingsProtocolModelId = null;
+        _hasDeviceSettingsIdentity = false;
+        _hasAttemptedDeviceSettingsForCurrentIdentity = false;
     }
 
     private Task<PulsarBatteryReader.BatteryStatus?> ReadBatteryStatusAsync()
@@ -1227,6 +1354,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             var applied = await Task.Run(() => _batteryReader.ApplyDeviceSettings(changes));
             var snapshot = await ReadDeviceSettingsAsync();
             UpdateDeviceSettings(snapshot);
+            _hasAttemptedDeviceSettingsForCurrentIdentity = true;
 
             if (applied != true)
             {
@@ -1262,6 +1390,42 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
         _isApplyingDeviceSetting = value;
         OnPropertyChanged(nameof(IsApplyingDeviceSetting));
+        NotifyCanWriteProperties();
+    }
+
+    private void BeginDeviceSettingsRead()
+    {
+        _deviceSettingsReadCount++;
+        if (_deviceSettingsReadCount != 1)
+        {
+            return;
+        }
+
+        _isReadingDeviceSettings = true;
+        OnPropertyChanged(nameof(IsReadingDeviceSettings));
+        NotifyCanWriteProperties();
+    }
+
+    private void EndDeviceSettingsRead()
+    {
+        if (_deviceSettingsReadCount == 0)
+        {
+            return;
+        }
+
+        _deviceSettingsReadCount--;
+        if (_deviceSettingsReadCount != 0)
+        {
+            return;
+        }
+
+        _isReadingDeviceSettings = false;
+        OnPropertyChanged(nameof(IsReadingDeviceSettings));
+        NotifyCanWriteProperties();
+    }
+
+    private void NotifyCanWriteProperties()
+    {
         OnPropertyChanged(nameof(CanWritePollingRate));
         OnPropertyChanged(nameof(CanWriteDebounce));
         OnPropertyChanged(nameof(CanWriteMotionSync));

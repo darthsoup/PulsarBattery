@@ -73,7 +73,9 @@ public sealed partial class MainWindow : Window
 
     private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
     {
-        if (args.WindowActivationState != WindowActivationState.Deactivated)
+        var isActive = args.WindowActivationState != WindowActivationState.Deactivated;
+        _viewModel.SetWindowActive(isActive);
+        if (isActive)
         {
             EnsureAppWindowInitialized();
             _viewModel.RefreshNow();
@@ -206,6 +208,7 @@ public sealed partial class MainWindow : Window
 
             try
             {
+                _viewModel.SetWindowActive(false);
                 sender.Hide();
                 EfficiencyMode.Set(true);
             }

@@ -45,19 +45,37 @@ public sealed class BatteryMonitor : IDisposable
 
         while (!cancellationToken.IsCancellationRequested)
         {
-            var isWorkstationLocked = await ConfirmWorkstationIsLockedAsync(cancellationToken);
-
-            if (isWorkstationLocked)
+            try
             {
-                HandleLockedWorkstation(lastUnlockedTime);
+                var isWorkstationLocked = await ConfirmWorkstationIsLockedAsync(cancellationToken);
+
+                if (isWorkstationLocked)
+                {
+                    HandleLockedWorkstation(lastUnlockedTime);
+                }
+                else
+                {
+                    lastUnlockedTime = DateTimeOffset.UtcNow;
+                    lastCheckTime = HandleUnlockedWorkstation(lastCheckTime);
+                }
             }
-            else
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                lastUnlockedTime = DateTimeOffset.UtcNow;
-                lastCheckTime = HandleUnlockedWorkstation(lastCheckTime);
+                break;
+            }
+            catch (Exception ex)
+            {
+                Debug.WriteLine($"Battery monitor iteration failed: {ex}");
             }
 
-            await Task.Delay(TimeSpan.FromSeconds(MonitoringLoopDelaySeconds), cancellationToken);
+            try
+            {
+                await Task.Delay(TimeSpan.FromSeconds(MonitoringLoopDelaySeconds), cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                break;
+            }
         }
     }
 

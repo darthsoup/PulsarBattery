@@ -12,7 +12,7 @@ namespace PulsarBattery.Services;
 /// <summary>
 /// Resolves product artwork without depending on Pulsar's cMouse installation.
 /// The curated URLs point at Pulsar's public storefront CDN; downloaded files
-/// are cached locally and the packaged CrazyLight artwork remains the offline
+/// are cached locally and matching packaged artwork remains the offline
 /// fallback.
 /// </summary>
 internal static class DeviceImageService
@@ -32,12 +32,14 @@ internal static class DeviceImageService
 
     public static Uri? GetPackagedImage(string model)
     {
-        return model switch
+        var value = model.Trim();
+        return value switch
         {
             "X2 CrazyLight" => new Uri(CrazyLightFallback),
             "X2 V1" => new Uri("ms-appx:///Assets/Devices/X2v1.png"),
             "X2 V3 eS" => new Uri("ms-appx:///Assets/Devices/X2v3-eS.png"),
-            _ when !string.IsNullOrWhiteSpace(model) && model != "-" => new Uri(CrazyLightFallback),
+            _ when value.StartsWith("X2 CL", StringComparison.OrdinalIgnoreCase)
+                || value.Contains("X2 CrazyLight", StringComparison.OrdinalIgnoreCase) => new Uri(CrazyLightFallback),
             _ => null,
         };
     }

@@ -1,4 +1,6 @@
 using PulsarBattery.Device;
+using PulsarBattery.Tools;
+using System;
 using System.Collections.Generic;
 
 namespace PulsarBattery.Services;
@@ -29,11 +31,18 @@ public sealed class PulsarBatteryReader
         {
             foreach (var backend in _backends)
             {
-                var status = backend.ReadBatteryStatus(debug);
-                if (status is not null)
+                try
                 {
-                    _activeBackend = backend;
-                    return new BatteryStatus(status.Percentage, status.IsCharging, status.Model, status.Connection, status.ConnectionName, status.FirmwareVersion, status.LinkRateHz, status.VoltageMv, status.SignalStrength, status.DongleFirmwareVersion, status.ProtocolModelId);
+                    var status = backend.ReadBatteryStatus(debug);
+                    if (status is not null)
+                    {
+                        _activeBackend = backend;
+                        return new BatteryStatus(status.Percentage, status.IsCharging, status.Model, status.Connection, status.ConnectionName, status.FirmwareVersion, status.LinkRateHz, status.VoltageMv, status.SignalStrength, status.DongleFirmwareVersion, status.ProtocolModelId);
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogBackendFailure(backend, "battery read", ex);
                 }
             }
 
@@ -56,22 +65,49 @@ public sealed class PulsarBatteryReader
             // devices are connected.
             if (_activeBackend is not null)
             {
-                return _activeBackend.SupportsSettingsWrite
-                    ? _activeBackend.ApplySettings(changes, debug)
-                    : null;
+                try
+                {
+                    return _activeBackend.SupportsSettingsWrite
+                        ? _activeBackend.ApplySettings(changes, debug)
+                        : null;
+                }
+                catch (Exception ex)
+                {
+                    LogBackendFailure(_activeBackend, "settings write", ex);
+                    return false;
+                }
             }
 
             foreach (var backend in _backends)
             {
-                if (backend.ReadBatteryStatus(debug) is null)
+                DeviceStatus? status;
+                try
+                {
+                    status = backend.ReadBatteryStatus(debug);
+                }
+                catch (Exception ex)
+                {
+                    LogBackendFailure(backend, "settings discovery", ex);
+                    continue;
+                }
+
+                if (status is null)
                 {
                     continue;
                 }
 
                 _activeBackend = backend;
-                return backend.SupportsSettingsWrite
-                    ? backend.ApplySettings(changes, debug)
-                    : null;
+                try
+                {
+                    return backend.SupportsSettingsWrite
+                        ? backend.ApplySettings(changes, debug)
+                        : null;
+                }
+                catch (Exception ex)
+                {
+                    LogBackendFailure(backend, "settings write", ex);
+                    return false;
+                }
             }
 
             return null;
@@ -87,20 +123,42 @@ public sealed class PulsarBatteryReader
         {
             if (_activeBackend is not null)
             {
-                return _activeBackend.ReadSettingsSnapshot(debug);
+                try
+                {
+                    return _activeBackend.ReadSettingsSnapshot(debug);
+                }
+                catch (Exception ex)
+                {
+                    LogBackendFailure(_activeBackend, "settings read", ex);
+                    return null;
+                }
             }
 
             foreach (var backend in _backends)
             {
-                var snapshot = backend.ReadSettingsSnapshot(debug);
-                if (snapshot is not null)
+                try
                 {
-                    _activeBackend = backend;
-                    return snapshot;
+                    var snapshot = backend.ReadSettingsSnapshot(debug);
+                    if (snapshot is not null)
+                    {
+                        _activeBackend = backend;
+                        return snapshot;
+                    }
+                }
+                catch (Exception ex)
+                {
+                    LogBackendFailure(backend, "settings discovery/read", ex);
                 }
             }
 
             return null;
         }
+    }
+
+    private static void LogBackendFailure(IHidBackend backend, string operation, Exception exception)
+    {
+        Log.Error(
+            nameof(PulsarBatteryReader),
+            $"{operation} failed in {backend.GetType().Name}: {exception}");
     }
 }

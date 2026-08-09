@@ -36,6 +36,7 @@ public sealed partial class MouseSettingsPage : Page
         if (ViewModel is { } viewModel)
         {
             viewModel.PropertyChanged += ViewModel_PropertyChanged;
+            viewModel.SetMouseSettingsPageActive(true);
             InitializeComboBoxes();
             SyncCapabilityState();
             SyncComboSelections();
@@ -47,6 +48,7 @@ public sealed partial class MouseSettingsPage : Page
     {
         if (ViewModel is { } viewModel)
         {
+            viewModel.SetMouseSettingsPageActive(false);
             viewModel.PropertyChanged -= ViewModel_PropertyChanged;
         }
     }
@@ -69,6 +71,7 @@ public sealed partial class MouseSettingsPage : Page
         }
 
         if (e.PropertyName is nameof(ViewModels.MainViewModel.IsApplyingDeviceSetting)
+            or nameof(ViewModels.MainViewModel.IsReadingDeviceSettings)
             or nameof(ViewModels.MainViewModel.IsLoading))
         {
             SyncCapabilityState();
