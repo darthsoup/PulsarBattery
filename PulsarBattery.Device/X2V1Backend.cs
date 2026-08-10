@@ -188,14 +188,50 @@ public sealed class X2V1Backend : IHidBackend
         [0x40] = 8000,
     };
 
+    // Only the rates this model actually reaches (see PollingRateHzByCode) are
+    // offered for writing; 2000/4000/8000 decode on paper but are unreachable
+    // on real X2 V1 hardware per the protocol notes.
+    private static readonly IReadOnlyDictionary<int, byte> PollingRateCodeByHz = new Dictionary<int, byte>
+    {
+        [1000] = 0x01,
+        [500] = 0x02,
+        [250] = 0x04,
+        [125] = 0x08,
+    };
+
+    private static readonly IReadOnlyList<int> WritablePollingRatesHz = [125, 250, 500, 1000];
+
+    // Only the two LOD codes this backend already decodes round-trip safely
+    // (see the switch in ReadSettingsSnapshot); code 0 is left unmapped.
+    private static readonly IReadOnlyDictionary<int, byte> LodCodeByMm10 = new Dictionary<int, byte>
+    {
+        [10] = 0x01,
+        [20] = 0x02,
+    };
+
+    private static readonly IReadOnlyList<int> WritableLodValuesMm10 = [10, 20];
+
+    // Same decasecond delay register as the Pulsar cMouse V1.31 driver at the
+    // identical address (0x00AD) -- reusing its hardware-verified value set.
+    private static readonly IReadOnlyList<int> WritableSleepValuesSeconds = [10, 30, 60, 300, 600, 1800];
+
+    // Conservative write range: only the plain low-byte DPI encoding (no
+    // exponent bits) that ParseDpiStage already accepts on read. Actual
+    // stored DPIs using the exponent bits still read back fine; this just
+    // limits what new values can be written until the exponent scaling for
+    // this sensor family is confirmed (see Legacy17Protocol.ParseDpiStage).
+    private static readonly DeviceValueRange WritableDpiRange = new(50, 12_800, 50);
+
+    public DeviceSettings? ReadSettings(bool debug) => ReadSettingsSnapshot(debug)?.Values;
+
     /// <summary>
-    /// Reads the on-device settings out of the mouse's EEPROM. The EEPROM lives
-    /// on the mouse rather than the dongle, so this only answers while the
-    /// wireless side is awake — an idle X2 V1 sleeps within seconds and every
-    /// block then times out, which is reported as "no settings" rather than
-    /// partial data.
+    /// Reads the on-device settings out of the mouse's EEPROM together with the
+    /// capabilities needed to render a safe editor. The EEPROM lives on the
+    /// mouse rather than the dongle, so this only answers while the wireless
+    /// side is awake — an idle X2 V1 sleeps within seconds and every block then
+    /// times out, which is reported as "no settings" rather than partial data.
     /// </summary>
-    public DeviceSettings? ReadSettings(bool debug)
+    public DeviceSettingsSnapshot? ReadSettingsSnapshot(bool debug)
     {
         var devices = HidHelpers.EnumerateDevices(Vid, d => d.ProductID is PidWireless or PidWired).ToList();
         var writerDevice = devices.FirstOrDefault(d => SafeLength(d.GetMaxFeatureReportLength) == PacketLength);
@@ -273,7 +309,64 @@ public sealed class X2V1Backend : IHidBackend
                 System.Diagnostics.Debug.WriteLine($"x2v1 settings: rate={settings.PollingRateHz} dpi={settings.Dpi} stage={settings.DpiStage} lod={settings.LodMm10} debounce={settings.DebounceMs} msync={settings.MotionSync} snap={settings.AngleSnap} ripple={settings.RippleControl}");
             }
 
-            return settings == new DeviceSettings() ? null : settings;
+            if (settings == new DeviceSettings())
+            {
+                return null;
+            }
+
+            var readable = DeviceSettingField.None;
+            if (settings.PollingRateHz is not null) readable |= DeviceSettingField.PollingRate;
+            if (settings.DebounceMs is not null) readable |= DeviceSettingField.Debounce;
+            if (settings.MotionSync is not null) readable |= DeviceSettingField.MotionSync;
+            if (settings.Dpi is not null) readable |= DeviceSettingField.Dpi;
+            if (settings.DpiStage is not null) readable |= DeviceSettingField.DpiStage;
+            if (settings.LodMm10 is not null) readable |= DeviceSettingField.Lod;
+            if (settings.AngleSnap is not null) readable |= DeviceSettingField.AngleSnap;
+            if (settings.RippleControl is not null) readable |= DeviceSettingField.RippleControl;
+            if (settings.SleepSeconds is not null) readable |= DeviceSettingField.Sleep;
+
+            // Writable is gated per EEPROM sub-block rather than mirroring
+            // Readable outright: a field is only ever offered for writing when
+            // the block that a rollback would restore it from was itself just
+            // read successfully.
+            var writable = DeviceSettingField.None;
+            if (sys is not null)
+            {
+                writable |= DeviceSettingField.PollingRate | DeviceSettingField.DpiStage;
+                if (settings.Dpi is not null)
+                {
+                    writable |= DeviceSettingField.Dpi;
+                }
+            }
+
+            if (adv is not null)
+            {
+                writable |= DeviceSettingField.Debounce
+                    | DeviceSettingField.MotionSync
+                    | DeviceSettingField.AngleSnap
+                    | DeviceSettingField.RippleControl
+                    | DeviceSettingField.Sleep;
+            }
+
+            if (lod is not null)
+            {
+                writable |= DeviceSettingField.Lod;
+            }
+
+            var capabilities = new DeviceSettingsCapabilities(
+                readable,
+                writable,
+                WritablePollingRatesHz,
+                WritableLodValuesMm10,
+                [WritableDpiRange],
+                DpiStageCount: sys?[1] ?? 0,
+                DebounceMinimumMs: 0,
+                DebounceMaximumMs: 15,
+                SleepValuesSeconds: WritableSleepValuesSeconds,
+                WriteTrust: DeviceSettingsWriteTrust.VendorDerived,
+                HasPersistentBackup: false);
+
+            return new DeviceSettingsSnapshot(settings, capabilities);
         }
         catch
         {
@@ -289,6 +382,360 @@ public sealed class X2V1Backend : IHidBackend
             writer?.Dispose();
         }
     }
+
+    public bool SupportsSettingsWrite => true;
+
+    /// <summary>
+    /// Writes the requested EEPROM fields and verifies each by reading it back,
+    /// rolling back to the previous value if any step fails. Uses the same
+    /// value/check-pair addresses as <see cref="ReadSettingsSnapshot"/> --
+    /// <see cref="CmouseLegacyBackend"/> write-verifies the identical
+    /// 0x00A9..0x00B1 register block on the sibling cMouse protocol, but this
+    /// has not been exercised on X2 V1 hardware yet, hence
+    /// <see cref="DeviceSettingsWriteTrust.VendorDerived"/> above.
+    /// </summary>
+    public bool ApplySettings(DeviceSettings changes, bool debug)
+    {
+        if (!ValidateChanges(changes))
+        {
+            return false;
+        }
+
+        var devices = HidHelpers.EnumerateDevices(Vid, d => d.ProductID is PidWireless or PidWired).ToList();
+        var writerDevice = devices.FirstOrDefault(d => SafeLength(d.GetMaxFeatureReportLength) == PacketLength);
+        var readerDevice = devices.FirstOrDefault(d => SafeLength(d.GetMaxInputReportLength) == PacketLength);
+        if (writerDevice is null || readerDevice is null)
+        {
+            return false;
+        }
+
+        HidStream? writer = null;
+        HidStream? reader = null;
+        try
+        {
+            if (!writerDevice.TryOpen(out writer) || !readerDevice.TryOpen(out reader))
+            {
+                return false;
+            }
+
+            writer.WriteTimeout = 500;
+            reader.ReadTimeout = 250;
+            var transport = writerDevice.GetMaxFeatureReportLength() > 0 ? "feature" : "output";
+
+            var online = Exchange(writer, reader, Legacy17Protocol.BuildPacket(OutputReportId, Legacy17Protocol.CmdOnline), Legacy17Protocol.CmdOnline, transport, debug);
+            if (online is null || online[2] != 0x00 || online[6] != 0x01)
+            {
+                if (debug)
+                {
+                    System.Diagnostics.Debug.WriteLine("x2v1 settings: mouse offline, refusing write");
+                }
+
+                return false;
+            }
+
+            var sys = ReadEepromPairs(writer, reader, transport, AddrSysConfig, 3, debug);
+            var adv = ReadEepromPairs(writer, reader, transport, AddrAdvParams, 5, debug);
+            var lod = ReadEepromPairs(writer, reader, transport, AddrLod, 1, debug);
+
+            var operations = BuildOperations(writer, reader, transport, sys, adv, lod, changes, debug);
+            if (operations is null)
+            {
+                return false;
+            }
+
+            var applied = new List<WriteOperation>();
+            WriteOperation? attempted = null;
+            foreach (var operation in operations)
+            {
+                if (operation.Desired.SequenceEqual(operation.Original))
+                {
+                    continue;
+                }
+
+                attempted = operation;
+                if (!WriteRawBlock(writer, reader, transport, operation.Address, operation.Desired, debug))
+                {
+                    RollBack(writer, reader, transport, attempted, applied, debug);
+                    return false;
+                }
+
+                applied.Add(operation);
+                attempted = null;
+            }
+
+            return true;
+        }
+        catch
+        {
+            return false;
+        }
+        finally
+        {
+            if (reader is not null && !ReferenceEquals(reader, writer))
+            {
+                reader.Dispose();
+            }
+
+            writer?.Dispose();
+        }
+    }
+
+    private static bool ValidateChanges(DeviceSettings changes)
+    {
+        if (changes.PollingRateHz is int rate && !PollingRateCodeByHz.ContainsKey(rate))
+        {
+            return false;
+        }
+
+        if (changes.DebounceMs is < 0 or > 15)
+        {
+            return false;
+        }
+
+        if (changes.LodMm10 is int lod && !LodCodeByMm10.ContainsKey(lod))
+        {
+            return false;
+        }
+
+        if (changes.SleepSeconds is int sleep && !WritableSleepValuesSeconds.Contains(sleep))
+        {
+            return false;
+        }
+
+        if (changes.Dpi is int dpi && !WritableDpiRange.Contains(dpi))
+        {
+            return false;
+        }
+
+        if (changes.DpiStage is < 1)
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    /// <summary>
+    /// Reads the current value of every requested field's pair/block so each
+    /// write can be verified and, on failure partway through, rolled back to
+    /// exactly what was on the mouse before this call.
+    /// </summary>
+    private static List<WriteOperation>? BuildOperations(
+        HidStream writer,
+        HidStream reader,
+        string transport,
+        byte[]? sys,
+        byte[]? adv,
+        byte[]? lod,
+        DeviceSettings changes,
+        bool debug)
+    {
+        var operations = new List<WriteOperation>();
+
+        if (changes.PollingRateHz is int rate)
+        {
+            if (sys is null)
+            {
+                return null;
+            }
+
+            operations.Add(new WriteOperation(
+                AddrSysConfig,
+                Legacy17Protocol.EncodeCheckedValue(PollingRateCodeByHz[rate]),
+                Legacy17Protocol.EncodeCheckedValue(sys[0])));
+        }
+
+        if (changes.DebounceMs is int debounce)
+        {
+            if (adv is null)
+            {
+                return null;
+            }
+
+            operations.Add(new WriteOperation(
+                AddrAdvParams,
+                Legacy17Protocol.EncodeCheckedValue((byte)debounce),
+                Legacy17Protocol.EncodeCheckedValue(adv[0])));
+        }
+
+        if (changes.MotionSync is bool motionSync)
+        {
+            if (adv is null)
+            {
+                return null;
+            }
+
+            operations.Add(new WriteOperation(
+                (ushort)(AddrAdvParams + 2),
+                Legacy17Protocol.EncodeCheckedValue((byte)(motionSync ? 1 : 0)),
+                Legacy17Protocol.EncodeCheckedValue(adv[1])));
+        }
+
+        if (changes.SleepSeconds is int sleep)
+        {
+            if (adv is null)
+            {
+                return null;
+            }
+
+            operations.Add(new WriteOperation(
+                (ushort)(AddrAdvParams + 4),
+                Legacy17Protocol.EncodeCheckedValue((byte)(sleep / 10)),
+                Legacy17Protocol.EncodeCheckedValue(adv[2])));
+        }
+
+        if (changes.AngleSnap is bool angleSnap)
+        {
+            if (adv is null)
+            {
+                return null;
+            }
+
+            operations.Add(new WriteOperation(
+                (ushort)(AddrAdvParams + 6),
+                Legacy17Protocol.EncodeCheckedValue((byte)(angleSnap ? 1 : 0)),
+                Legacy17Protocol.EncodeCheckedValue(adv[3])));
+        }
+
+        if (changes.RippleControl is bool ripple)
+        {
+            if (adv is null)
+            {
+                return null;
+            }
+
+            operations.Add(new WriteOperation(
+                (ushort)(AddrAdvParams + 8),
+                Legacy17Protocol.EncodeCheckedValue((byte)(ripple ? 1 : 0)),
+                Legacy17Protocol.EncodeCheckedValue(adv[4])));
+        }
+
+        if (changes.LodMm10 is int lodMm10)
+        {
+            if (lod is null)
+            {
+                return null;
+            }
+
+            operations.Add(new WriteOperation(
+                AddrLod,
+                Legacy17Protocol.EncodeCheckedValue(LodCodeByMm10[lodMm10]),
+                Legacy17Protocol.EncodeCheckedValue(lod[0])));
+        }
+
+        int? targetStage = changes.DpiStage;
+        if (targetStage is null && changes.Dpi is not null && sys is not null)
+        {
+            targetStage = sys[2];
+        }
+
+        if (changes.DpiStage is int stage)
+        {
+            if (sys is null || stage > sys[1])
+            {
+                return null;
+            }
+
+            operations.Add(new WriteOperation(
+                (ushort)(AddrSysConfig + 4),
+                Legacy17Protocol.EncodeCheckedValue((byte)stage),
+                Legacy17Protocol.EncodeCheckedValue(sys[2])));
+        }
+
+        if (changes.Dpi is int dpi)
+        {
+            if (sys is null || targetStage is not int validStage || validStage < 1 || validStage > sys[1])
+            {
+                return null;
+            }
+
+            var stageIndex = validStage - 1;
+            var blockAddress = (ushort)(AddrDpiPair1 + ((stageIndex / 2) * 8) + ((stageIndex % 2) * 4));
+            var original = ReadRawBlock(writer, reader, transport, blockAddress, 4, debug);
+            if (original is null)
+            {
+                return null;
+            }
+
+            // Plain low-byte encoding only -- matches WritableDpiRange, which
+            // is capped to the values ParseDpiStage decodes without needing
+            // the exponent bits (see DpiExponentScaling.Unknown there).
+            var raw = (byte)((dpi / DpiBaseStep) - 1);
+            var desired = new byte[4];
+            desired[0] = raw;
+            desired[1] = raw;
+            desired[2] = 0x00;
+            desired[3] = Legacy17Protocol.Checksum(desired.AsSpan(0, 3));
+            operations.Add(new WriteOperation(blockAddress, desired, original));
+        }
+
+        return operations;
+    }
+
+    private static byte[]? ReadRawBlock(HidStream writer, HidStream reader, string transport, ushort address, int length, bool debug)
+    {
+        var response = Exchange(
+            writer,
+            reader,
+            Legacy17Protocol.BuildEepromReadPacket(OutputReportId, address, (byte)length),
+            Legacy17Protocol.CmdGetEeprom,
+            transport,
+            debug);
+        return response is not null
+            && Legacy17Protocol.TryParseEepromResponse(response, Legacy17Protocol.CmdGetEeprom, address, length, out var data)
+            ? data
+            : null;
+    }
+
+    private static bool WriteRawBlock(HidStream writer, HidStream reader, string transport, ushort address, byte[] desired, bool debug)
+    {
+        var packet = Legacy17Protocol.BuildEepromWritePacket(OutputReportId, address, desired);
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            var response = Exchange(writer, reader, packet, Legacy17Protocol.CmdSetEeprom, transport, debug);
+            if (response is null || !Legacy17Protocol.MatchesWriteAck(response, address, desired))
+            {
+                continue;
+            }
+
+            var readBack = ReadRawBlock(writer, reader, transport, address, desired.Length, debug);
+            if (readBack is not null && readBack.SequenceEqual(desired))
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    private static void RollBack(
+        HidStream writer,
+        HidStream reader,
+        string transport,
+        WriteOperation? attempted,
+        IReadOnlyList<WriteOperation> applied,
+        bool debug)
+    {
+        if (attempted is not null)
+        {
+            TryRestore(writer, reader, transport, attempted, debug);
+        }
+
+        for (var i = applied.Count - 1; i >= 0; i--)
+        {
+            TryRestore(writer, reader, transport, applied[i], debug);
+        }
+    }
+
+    private static void TryRestore(HidStream writer, HidStream reader, string transport, WriteOperation operation, bool debug)
+    {
+        if (!WriteRawBlock(writer, reader, transport, operation.Address, operation.Original, debug) && debug)
+        {
+            System.Diagnostics.Debug.WriteLine($"x2v1 rollback verification failed address=0x{operation.Address:X4}");
+        }
+    }
+
+    private sealed record WriteOperation(ushort Address, byte[] Desired, byte[] Original);
 
     private static byte[]? ReadEepromPairs(HidStream writer, HidStream reader, string transport, ushort address, int pairs, bool debug)
     {

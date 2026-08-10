@@ -268,7 +268,8 @@ public sealed class CmouseLegacyBackend : IHidBackend
                 DebounceMinimumMs: 0,
                 DebounceMaximumMs: 15,
                 SleepValuesSeconds: SupportedSleepSeconds,
-                WriteTrust: context.Profile.WriteTrust);
+                WriteTrust: context.Profile.WriteTrust,
+                HasPersistentBackup: true);
 
             if (debug)
             {

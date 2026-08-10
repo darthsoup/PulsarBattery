@@ -283,7 +283,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string MouseSettingsWriteUnverifiedTitle => Loc.T("Unverified write support");
 
     public string MouseSettingsWriteUnverifiedText =>
-        Loc.T("Writes for this model are derived from Pulsar cMouse but have not been verified on matching hardware. Before the first write, the complete core settings and, on PAW3955 models, the extended DPI region are saved persistently. Individual writes are still verified by readback and rolled back on failure.");
+        _deviceSettingsCapabilities?.HasPersistentBackup == true
+            ? Loc.T("Writes for this model are derived from Pulsar cMouse but have not been verified on matching hardware. Before the first write, the complete core settings and, on PAW3955 models, the extended DPI region are saved persistently. Individual writes are still verified by readback and rolled back on failure.")
+            : Loc.T("Writes for this model are derived from a related Pulsar protocol but have not been verified on matching hardware. Each write is verified by reading the value back afterward and rolled back automatically if that check fails.");
 
     public IReadOnlyList<int> SupportedPollingRates =>
         _deviceSettingsCapabilities?.PollingRatesHz ?? Array.Empty<int>();

@@ -50,7 +50,8 @@ public sealed record DeviceSettingsCapabilities(
     int DebounceMinimumMs,
     int DebounceMaximumMs,
     IReadOnlyList<int> SleepValuesSeconds,
-    DeviceSettingsWriteTrust WriteTrust = DeviceSettingsWriteTrust.Unavailable)
+    DeviceSettingsWriteTrust WriteTrust = DeviceSettingsWriteTrust.Unavailable,
+    bool HasPersistentBackup = false)
 {
     public bool CanRead(DeviceSettingField field) =>
         field != DeviceSettingField.None && (Readable & field) == field;
