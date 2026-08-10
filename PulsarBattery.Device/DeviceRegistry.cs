@@ -14,6 +14,6 @@ public static class DeviceRegistry
     [
         new CmouseLegacyBackend(),
         new X2V1Backend(),
-        new Sonix64Backend(new DeviceDescriptor("X2 V3 eS", VendorId: 0x3710, ProductIds: [0x3406, 0x5403])),
+        new Sonix64Backend(new DeviceDescriptor("X2 V3 eS", VendorId: 0x3710, ProductIds: [0x3406, 0x5403], DongleProductIds: [0x5403])),
     ];
 }

@@ -19,9 +19,11 @@
               Padding="32,24,32,32"
               Background="Transparent"
               PointerPressed="RootGrid_PointerPressed">
-            <StackPanel Spacing="24" MaxWidth="1000">
+            <StackPanel Spacing="12" MaxWidth="1000">
 
                 <controls:TranslatedTextBlock Text="Settings" TextStyle="{ThemeResource TitleTextBlockStyle}" />
+
+                <StackPanel Spacing="24">
 
                 <!-- Monitoring Section -->
                 <StackPanel Spacing="4">
@@ -221,6 +223,8 @@
                             </settingscontrols:SettingsCard>
                         </settingscontrols:SettingsExpander.Items>
                     </settingscontrols:SettingsExpander>
+                </StackPanel>
+
                 </StackPanel>
 
             </StackPanel>

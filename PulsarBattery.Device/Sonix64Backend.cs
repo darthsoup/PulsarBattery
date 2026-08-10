@@ -45,15 +45,25 @@ public sealed class Sonix64Backend : IHidBackend
                 return null;
             }
 
-            var (connection, connRateHz) = Sonix64Protocol.ReadConnection(stream, dbg);
+            // Which device answered is ground truth for wired-vs-dongle. The
+            // connection-type register itself was live-probed reporting
+            // "Dongle @ 4000Hz" the entire time on a mouse that was genuinely
+            // wired with no dongle enumerated anywhere on the bus — it
+            // reflects the mouse's last-established radio link, not live
+            // cable state, and doesn't update just because a charge cable
+            // went in.
+            var connection = _descriptor.DongleProductIds.Contains(stream.Device.ProductID)
+                ? ConnectionKind.Dongle
+                : ConnectionKind.Wired;
+            var connRateHz = Sonix64Protocol.ReadConnection(stream, dbg);
             // The live register tracks on-mouse rate switching; the connection
             // register only knows the rate the link was established with.
             var linkRateHz = Sonix64Protocol.ReadLivePollingRateHz(stream, dbg) ?? connRateHz;
-            // The charge register is the source of truth when wired (a full
-            // battery on the cable is not charging); fall back to the old
-            // "cable = charging" heuristic if it doesn't answer.
-            var charging = connection == ConnectionKind.Wired
-                && (Sonix64Protocol.ReadChargingState(stream, dbg) ?? true);
+            // Register 08 82 01 was assumed to be "actively charging" (b6:
+            // 1/0), but live-probed on a wired eS at 95-99% it stayed 0 the
+            // entire time the percentage was visibly climbing, so it doesn't
+            // track charge current either. Cable-attached is the reliable signal.
+            var charging = connection == ConnectionKind.Wired;
             var connectionName = connection == ConnectionKind.Dongle ? HidHelpers.GetProductName(stream.Device) : null;
             var firmware = ReadFirmwareVersionCached(stream, dbg);
 

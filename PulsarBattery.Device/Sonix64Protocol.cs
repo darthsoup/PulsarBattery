@@ -113,34 +113,39 @@ internal static class Sonix64Protocol
     }
 
     /// <summary>
-    /// Connection type register: 2/3 = wired 1k/8k (mouse is on the charging
-    /// cable), 0/1/4/5 = wireless via dongle at 1k/4k/2k/8k. The value thus
-    /// also carries the live link rate.
+    /// Connection type register: 2/3 = wired 1k/8k, 0/1/4/5 = wireless at
+    /// 1k/4k/2k/8k, carrying a fallback link rate. Not used for wired-vs-
+    /// dongle classification: it reflects the mouse's last-established radio
+    /// link rather than live cable state (live-probed staying "wireless 4k"
+    /// on a genuinely wired eS with no dongle on the bus at all) — callers
+    /// must derive that from which physical device answered instead.
     /// </summary>
-    public static (ConnectionKind Kind, int? LinkRateHz) ReadConnection(HidStream stream, bool debug)
+    public static int? ReadConnection(HidStream stream, bool debug)
     {
         var wire = Query(stream, ConnectionTypeQuery, debug);
         if (wire is null)
         {
-            return (ConnectionKind.Unknown, null);
+            return null;
         }
 
         return wire[6] switch
         {
-            0 => (ConnectionKind.Dongle, 1000),
-            1 => (ConnectionKind.Dongle, 4000),
-            4 => (ConnectionKind.Dongle, 2000),
-            5 => (ConnectionKind.Dongle, 8000),
-            2 => (ConnectionKind.Wired, 1000),
-            3 => (ConnectionKind.Wired, 8000),
-            _ => (ConnectionKind.Dongle, null),
+            0 => 1000,
+            1 => 4000,
+            4 => 2000,
+            5 => 8000,
+            2 => 1000,
+            3 => 8000,
+            _ => null,
         };
     }
 
     /// <summary>
-    /// Charge-state register, b6: 1 = charging, 0 = not charging. Only read
-    /// while wired; null when the device doesn't answer or the value is
-    /// implausible so callers can fall back to a heuristic.
+    /// Not used for charging detection: live-probed on a wired eS at 95-99%
+    /// battery, b6 stayed 0 for the whole ~85s the percentage was visibly
+    /// climbing, so it doesn't track charge current as assumed. Kept for
+    /// future reverse-engineering; null when the device doesn't answer or
+    /// the value is implausible.
     /// </summary>
     public static bool? ReadChargingState(HidStream stream, bool debug)
     {
