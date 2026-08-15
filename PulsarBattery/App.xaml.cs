@@ -61,7 +61,6 @@ public partial class App : Application
         }
         catch
         {
-            // ignore
         }
     }
 
@@ -81,7 +80,6 @@ public partial class App : Application
         }
         catch
         {
-            // ignore
         }
 
         Current?.Exit();
@@ -119,7 +117,6 @@ public partial class App : Application
             }
             catch
             {
-                // ignore
             }
 
             _monitor.Dispose();
@@ -143,10 +140,11 @@ public partial class App : Application
             _trayIcon.Initialize(_window);
         }
 
-        // Some WinUI scenarios require an explicit creation call.
+        // Some WinUI scenarios require an explicit creation call. Only drop
+        // into efficiency mode when starting hidden in the tray.
         try
         {
-            _trayIcon.ForceCreate();
+            _trayIcon.ForceCreate(enablesEfficiencyMode: startInTray);
         }
         catch (Exception ex)
         {
@@ -173,7 +171,6 @@ public partial class App : Application
         }
         catch
         {
-            // ignore
         }
 
         try
@@ -201,7 +198,6 @@ public partial class App : Application
         }
         catch
         {
-            // ignore
         }
 
         for (var attempt = 0; attempt < 60; attempt++)
@@ -221,7 +217,6 @@ public partial class App : Application
             }
             catch
             {
-                // retry
             }
 
             try

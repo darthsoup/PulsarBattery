@@ -88,14 +88,17 @@ internal sealed class HistoryStore
 
     private async Task WriteToTemporaryFileAsync(IReadOnlyCollection<BatteryReading> readings, string temporaryFilePath, CancellationToken cancellationToken)
     {
+        // The source-generated type info is for List<BatteryReading>; any other collection binds the
+        // non-generic overload, which casts to List at runtime and throws for arrays.
+        var list = readings as List<BatteryReading> ?? new List<BatteryReading>(readings);
+
         await using var stream = File.Create(temporaryFilePath);
-        await JsonSerializer.SerializeAsync(stream, readings, CompactJsonContext.Default.ListBatteryReading, cancellationToken).ConfigureAwait(false);
+        await JsonSerializer.SerializeAsync(stream, list, CompactJsonContext.Default.ListBatteryReading, cancellationToken).ConfigureAwait(false);
     }
 
     private void ReplaceFileWithTemporary(string temporaryFilePath)
     {
-        // Use File.Move instead of Copy + Delete for better performance
-        // Move is atomic and more efficient
+        // Move is atomic; Copy + Delete could leave a torn history file on crash.
         File.Move(temporaryFilePath, _filePath, overwrite: true);
     }
 

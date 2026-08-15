@@ -21,10 +21,13 @@ jobs:
           dotnet-version: "10.x"
 
       - name: Restore
-        run: dotnet restore .\PulsarBattery\PulsarBattery.csproj
+        run: dotnet restore .\PulsarBattery.slnx
+
+      - name: Test device protocols
+        run: dotnet test .\PulsarBattery.Device.Tests\PulsarBattery.Device.Tests.csproj -c Release --no-restore
 
       - name: Publish
-        run: dotnet publish .\PulsarBattery\PulsarBattery.csproj -c Release -p:Platform=x64 -p:PublishProfile=win-x64
+        run: dotnet publish .\PulsarBattery\PulsarBattery.csproj -c Release -p:Platform=x64 -p:PublishProfile=win-x64 --no-restore
 
       - name: Upload exe artifact
         uses: actions/upload-artifact@v7

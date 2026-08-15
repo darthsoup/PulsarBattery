@@ -9,12 +9,45 @@
     mc:Ignorable="d">
 
     <ScrollViewer HorizontalScrollBarVisibility="Disabled">
-        <Grid Padding="32,24,32,32">
+        <!-- StateTriggers are only evaluated when the VisualStateGroups sit on the
+             Page's first child, so keep them on this ScrollViewer, not a descendant. -->
+        <VisualStateManager.VisualStateGroups>
+            <VisualStateGroup>
+                <VisualState x:Name="WideLayout">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="680" />
+                    </VisualState.StateTriggers>
+                </VisualState>
+                <VisualState x:Name="NarrowLayout">
+                    <VisualState.StateTriggers>
+                        <AdaptiveTrigger MinWindowWidth="0" />
+                    </VisualState.StateTriggers>
+                    <VisualState.Setters>
+                        <Setter Target="ContentRoot.Padding" Value="16,16,16,24" />
+                        <Setter Target="DeviceImageHost.Visibility" Value="Collapsed" />
+                        <Setter Target="PercentageText.FontSize" Value="40" />
+                        <Setter Target="PercentageHost.Margin" Value="12,0,0,0" />
+                        <!-- Stat tiles reflow 4-across → 2×2 (each tile spans two of the four star columns) -->
+                        <Setter Target="ConnectionTile.(Grid.ColumnSpan)" Value="2" />
+                        <Setter Target="FirmwareTile.(Grid.Column)" Value="2" />
+                        <Setter Target="FirmwareTile.(Grid.ColumnSpan)" Value="2" />
+                        <Setter Target="PollingTile.(Grid.Column)" Value="0" />
+                        <Setter Target="PollingTile.(Grid.Row)" Value="1" />
+                        <Setter Target="PollingTile.(Grid.ColumnSpan)" Value="2" />
+                        <Setter Target="PollingTile.Margin" Value="0,8,0,0" />
+                        <Setter Target="DpiTile.(Grid.Column)" Value="2" />
+                        <Setter Target="DpiTile.(Grid.Row)" Value="1" />
+                        <Setter Target="DpiTile.(Grid.ColumnSpan)" Value="2" />
+                        <Setter Target="DpiTile.Margin" Value="8,8,0,0" />
+                    </VisualState.Setters>
+                </VisualState>
+            </VisualStateGroup>
+        </VisualStateManager.VisualStateGroups>
+        <Grid x:Name="ContentRoot" Padding="32,24,32,32">
             <StackPanel Spacing="24" MaxWidth="1000">
 
                 <controls:TranslatedTextBlock Text="Dashboard" TextStyle="{ThemeResource TitleTextBlockStyle}" />
 
-                <!-- Loading indicator (shown when no data is available yet) -->
                 <Border Style="{StaticResource PulsarCardStyle}"
                         Padding="40"
                         MinHeight="200"
@@ -35,7 +68,6 @@
                     </StackPanel>
                 </Border>
 
-                <!-- No Device Found indicator -->
                 <Border Style="{StaticResource PulsarCardStyle}"
                         Padding="40"
                         MinHeight="300"
@@ -62,13 +94,15 @@
                                                           TextAlignment="Center"
                                                           TextWrapping="Wrap"
                                                           HorizontalAlignment="Center" />
-                            <controls:TranslatedTextBlock Text="Supported devices: X2 CrazyLight, X2 V1"
-                                                          TextStyle="{ThemeResource CaptionTextBlockStyle}"
-                                                          Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                                          TextAlignment="Center"
-                                                          TextWrapping="Wrap"
-                                                          HorizontalAlignment="Center"
-                                                          Margin="0,8,0,0" />
+                            <HyperlinkButton NavigateUri="https://github.com/darthsoup/PulsarBattery#supported-devices"
+                                             HorizontalAlignment="Center"
+                                             Margin="0,8,0,0"
+                                             Padding="4,2">
+                                <controls:TranslatedTextBlock Text="See supported devices on GitHub"
+                                                              TextStyle="{ThemeResource CaptionTextBlockStyle}"
+                                                              TextAlignment="Center"
+                                                              TextWrapping="Wrap" />
+                            </HyperlinkButton>
                         </StackPanel>
                         <Button x:Name="RetryButton"
                                 Style="{ThemeResource AccentButtonStyle}"
@@ -78,12 +112,9 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Main content (shown when data is available) -->
-                <StackPanel Spacing="24" Visibility="{x:Bind ViewModel.ContentVisibility, Mode=OneWay}">
+                <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.ContentVisibility, Mode=OneWay}">
 
-                    <!-- Battery Status Card -->
                     <Grid>
-                        <!-- Loading indicator when refreshing with cached data -->
                         <StackPanel Orientation="Horizontal" 
                                     Spacing="8" 
                                     HorizontalAlignment="Right"
@@ -99,7 +130,6 @@
                                                           VerticalAlignment="Center" />
                         </StackPanel>
 
-                        <!-- Main battery card -->
                         <Border Style="{StaticResource PulsarCardStyle}"
                                 Padding="16"
                                 MinHeight="120">
@@ -109,16 +139,26 @@
                                     <RowDefinition Height="Auto" />
                                 </Grid.RowDefinitions>
                                 <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="Auto" />
                                 </Grid.ColumnDefinitions>
 
-                                <!-- Left side - Battery info -->
-                                <StackPanel Grid.Row="0" Grid.Column="0" Spacing="4" VerticalAlignment="Center">
+                                <!-- Device picture (host grid so the narrow visual state can
+                                     collapse it without fighting the view-model binding) -->
+                                <Grid x:Name="DeviceImageHost" Grid.Row="0" Grid.Column="0">
+                                    <Image Height="110"
+                                           Margin="0,0,20,0"
+                                           VerticalAlignment="Center"
+                                           Source="{x:Bind ViewModel.DeviceImage, Mode=OneWay}"
+                                           Visibility="{x:Bind ViewModel.DeviceImageVisibility, Mode=OneWay}" />
+                                </Grid>
+
+                                <StackPanel Grid.Row="0" Grid.Column="1" Spacing="4" VerticalAlignment="Center">
                                     <TextBlock Text="{x:Bind ViewModel.ModelName, Mode=OneWay}" 
                                                Style="{ThemeResource TitleTextBlockStyle}"
                                                TextTrimming="CharacterEllipsis" />
-                                    <TextBlock Text="{x:Bind ViewModel.ChargingStateText, Mode=OneWay}" 
+                                    <TextBlock Text="{x:Bind ViewModel.BatteryDetailText, Mode=OneWay}"
                                                Style="{ThemeResource CaptionTextBlockStyle}"
                                                Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                     <TextBlock Text="{x:Bind ViewModel.LastUpdatedText, Mode=OneWay}" 
@@ -126,19 +166,33 @@
                                                Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
                                 </StackPanel>
 
-                                <!-- Right side - Large percentage -->
-                                <TextBlock Grid.Row="0" Grid.Column="1"
-                                           VerticalAlignment="Center"
-                                           HorizontalAlignment="Right"
-                                           FontSize="56"
-                                           FontWeight="SemiBold"
-                                           Margin="24,0,0,0">
-                                    <Run Text="{x:Bind ViewModel.BatteryPercentage, Mode=OneWay}" /><Run Text="%" FontSize="40" />
-                                </TextBlock>
+                                <!-- Foreground is set from code-behind, not bound: the state
+                                     brushes differ between light and dark and must be re-resolved
+                                     on theme change. -->
+                                <StackPanel x:Name="PercentageHost"
+                                            Grid.Row="0" Grid.Column="2"
+                                            Orientation="Horizontal"
+                                            Spacing="8"
+                                            VerticalAlignment="Center"
+                                            HorizontalAlignment="Right"
+                                            Margin="24,0,0,0">
+                                    <FontIcon Glyph="&#xE945;"
+                                              FontSize="20"
+                                              Foreground="{ThemeResource SystemFillColorSuccessBrush}"
+                                              VerticalAlignment="Center"
+                                              AutomationProperties.AccessibilityView="Raw"
+                                              Visibility="{x:Bind ViewModel.ChargingGlyphVisibility, Mode=OneWay}" />
+                                    <TextBlock x:Name="PercentageText"
+                                               VerticalAlignment="Center"
+                                               FontSize="56"
+                                               FontWeight="SemiBold">
+                                        <Run Text="{x:Bind ViewModel.BatteryPercentage, Mode=OneWay}" /><Run Text="%" FontSize="40" />
+                                    </TextBlock>
+                                </StackPanel>
 
-                                <!-- Progress bar (full width) -->
-                                <ProgressBar Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="2"
-                                             Minimum="0" 
+                                <ProgressBar x:Name="BatteryBar"
+                                             Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
+                                             Minimum="0"
                                              Maximum="100"
                                              Value="{x:Bind ViewModel.BatteryPercentage, Mode=OneWay}"
                                              Height="6"
@@ -147,135 +201,105 @@
                         </Border>
                     </Grid>
 
-                    <!-- Device Information Section -->
-                    <StackPanel Spacing="4">
-                        <controls:TranslatedTextBlock Text="Device information"
-                                                      TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
-                                                      Margin="0,0,0,8" />
+                    <Border Style="{StaticResource PulsarCardStyle}" Padding="16">
+                        <Grid RowSpacing="8">
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
 
-                        <!-- Model -->
-                        <Border Style="{StaticResource PulsarCardStyle}"
-                                Padding="16"
-                                Margin="0,0,0,2">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-
-                                <FontIcon Grid.Column="0"
-                                          Glyph="&#xE962;" 
-                                          FontSize="16"
-                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                          VerticalAlignment="Center" />
-
-                                <controls:TranslatedTextBlock Grid.Column="1"
-                                                              Text="Model"
-                                                              TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
-                                                              VerticalAlignment="Center" />
-
-                                <TextBlock Grid.Column="2" 
-                                           Text="{x:Bind ViewModel.ModelName, Mode=OneWay}" 
-                                           Style="{ThemeResource BodyTextBlockStyle}"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           VerticalAlignment="Center" />
+                            <Grid>
+                                <StackPanel Orientation="Horizontal" Spacing="8">
+                                    <controls:TranslatedTextBlock Text="Battery trend"
+                                                                  TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
+                                                                  VerticalAlignment="Center" />
+                                    <controls:TranslatedTextBlock Text="Last 24 hours"
+                                                                  TextStyle="{ThemeResource CaptionTextBlockStyle}"
+                                                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                                  VerticalAlignment="Center" />
+                                </StackPanel>
+                                <HyperlinkButton HorizontalAlignment="Right"
+                                                 VerticalAlignment="Center"
+                                                 Padding="4,2"
+                                                 Click="ViewHistory_Click">
+                                    <controls:TranslatedTextBlock Text="View history"
+                                                                  TextStyle="{ThemeResource CaptionTextBlockStyle}" />
+                                </HyperlinkButton>
                             </Grid>
+
+                            <controls:SparklineControl Grid.Row="1"
+                                                       Height="120"
+                                                       Readings="{x:Bind ViewModel.History}" />
+                        </Grid>
+                    </Border>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+
+                        <Border x:Name="ConnectionTile" Grid.Column="0" Style="{StaticResource PulsarCardStyle}" Padding="16"
+                                ToolTipService.ToolTip="{x:Bind ViewModel.ConnectionToolTip, Mode=OneWay}">
+                            <StackPanel Spacing="4">
+                                <controls:TranslatedTextBlock Text="Connection"
+                                                              TextStyle="{ThemeResource CaptionTextBlockStyle}"
+                                                              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="{x:Bind ViewModel.ConnectionText, Mode=OneWay}"
+                                           Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                           TextWrapping="NoWrap"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{x:Bind ViewModel.ConnectionDetailText, Mode=OneWay}"
+                                           Visibility="{x:Bind ViewModel.ConnectionDetailVisibility, Mode=OneWay}"
+                                           Style="{ThemeResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorTertiaryBrush}"
+                                           TextWrapping="NoWrap"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
                         </Border>
 
-                        <!-- Battery Level -->
-                        <Border Style="{StaticResource PulsarCardStyle}"
-                                Padding="16"
-                                Margin="0,0,0,2">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-
-                                <FontIcon Grid.Column="0"
-                                          Glyph="&#xECBF;" 
-                                          FontSize="16"
-                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                          VerticalAlignment="Center" />
-
-                                <controls:TranslatedTextBlock Grid.Column="1"
-                                                              Text="Battery level"
-                                                              TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
-                                                              VerticalAlignment="Center" />
-
-                                <TextBlock Grid.Column="2" 
-                                           Style="{ThemeResource BodyTextBlockStyle}"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           VerticalAlignment="Center">
-                                    <Run Text="{x:Bind ViewModel.BatteryPercentage, Mode=OneWay}" /><Run Text="%" />
-                                </TextBlock>
-                            </Grid>
+                        <Border x:Name="FirmwareTile" Grid.Column="1" Style="{StaticResource PulsarCardStyle}" Padding="16" Margin="8,0,0,0">
+                            <StackPanel Spacing="4">
+                                <controls:TranslatedTextBlock Text="Firmware"
+                                                              TextStyle="{ThemeResource CaptionTextBlockStyle}"
+                                                              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="{x:Bind ViewModel.FirmwareText, Mode=OneWay}"
+                                           Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                           TextWrapping="NoWrap"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
                         </Border>
 
-                        <!-- Charging Status -->
-                        <Border Style="{StaticResource PulsarCardStyle}"
-                                Padding="16"
-                                Margin="0,0,0,2">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-
-                                <FontIcon Grid.Column="0"
-                                          Glyph="&#xE7E8;" 
-                                          FontSize="16"
-                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                          VerticalAlignment="Center" />
-
-                                <controls:TranslatedTextBlock Grid.Column="1"
-                                                              Text="Charging status"
-                                                              TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
-                                                              VerticalAlignment="Center" />
-
-                                <TextBlock Grid.Column="2" 
-                                           Text="{x:Bind ViewModel.ChargingStateText, Mode=OneWay}" 
-                                           Style="{ThemeResource BodyTextBlockStyle}"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           VerticalAlignment="Center" />
-                            </Grid>
+                        <Border x:Name="PollingTile" Grid.Column="2" Style="{StaticResource PulsarCardStyle}" Padding="16" Margin="8,0,0,0">
+                            <StackPanel Spacing="4">
+                                <controls:TranslatedTextBlock Text="Polling rate"
+                                                              TextStyle="{ThemeResource CaptionTextBlockStyle}"
+                                                              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="{x:Bind ViewModel.PollingRateText, Mode=OneWay}"
+                                           Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                           TextWrapping="NoWrap"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
                         </Border>
 
-                        <!-- Last Updated -->
-                        <Border Style="{StaticResource PulsarCardStyle}"
-                                Padding="16"
-                                Margin="0,0,0,2">
-                            <Grid ColumnSpacing="12">
-                                <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="Auto" />
-                                    <ColumnDefinition Width="*" />
-                                    <ColumnDefinition Width="Auto" />
-                                </Grid.ColumnDefinitions>
-
-                                <FontIcon Grid.Column="0"
-                                          Glyph="&#xE917;" 
-                                          FontSize="16"
-                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                          VerticalAlignment="Center" />
-
-                                <controls:TranslatedTextBlock Grid.Column="1"
-                                                              Text="Last updated"
-                                                              TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
-                                                              VerticalAlignment="Center" />
-
-                                <TextBlock Grid.Column="2" 
-                                           Text="{x:Bind ViewModel.LastUpdatedText, Mode=OneWay}" 
-                                           Style="{ThemeResource BodyTextBlockStyle}"
-                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                           TextTrimming="CharacterEllipsis"
-                                           VerticalAlignment="Center" />
-                            </Grid>
+                        <Border x:Name="DpiTile" Grid.Column="3" Style="{StaticResource PulsarCardStyle}" Padding="16" Margin="8,0,0,0">
+                            <StackPanel Spacing="4">
+                                <controls:TranslatedTextBlock Text="DPI"
+                                                              TextStyle="{ThemeResource CaptionTextBlockStyle}"
+                                                              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                <TextBlock Text="{x:Bind ViewModel.DpiText, Mode=OneWay}"
+                                           Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                           TextWrapping="NoWrap"
+                                           TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
                         </Border>
-                    </StackPanel>
+                    </Grid>
 
                 </StackPanel>
 

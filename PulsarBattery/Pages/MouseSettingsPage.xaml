@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Page
+    x:Class="PulsarBattery.Pages.MouseSettingsPage"
+    xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+    xmlns:controls="using:PulsarBattery.Controls"
+    xmlns:local="using:PulsarBattery.Pages"
+    xmlns:settingscontrols="using:CommunityToolkit.WinUI.Controls"
+    xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+    xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+    mc:Ignorable="d">
+
+    <ScrollViewer HorizontalScrollBarVisibility="Disabled">
+        <Grid x:Name="RootGrid"
+              Padding="32,24,32,32"
+              Background="Transparent"
+              PointerPressed="RootGrid_PointerPressed">
+            <StackPanel Spacing="24" MaxWidth="1000">
+
+                <!-- Negative bottom margin cancels the ~8px of slack that TitleTextBlockStyle's
+                     36px LineHeight leaves below the glyphs, so the 24px Spacing below the title
+                     reads the same as the 24px between sections. Matches SettingsPage. -->
+                <controls:TranslatedTextBlock Text="Mouse Settings"
+                                              TextStyle="{ThemeResource TitleTextBlockStyle}"
+                                              Margin="0,0,0,-8" />
+
+                <Border Style="{StaticResource PulsarCardStyle}"
+                        Padding="60,80"
+                        MinHeight="300"
+                        Visibility="{x:Bind ViewModel.MouseSettingsUnsupportedVisibility, Mode=OneWay}">
+                    <StackPanel HorizontalAlignment="Center"
+                                VerticalAlignment="Center"
+                                Spacing="16">
+                        <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                CornerRadius="28"
+                                Width="56"
+                                Height="56"
+                                HorizontalAlignment="Center">
+                            <FontIcon Glyph="&#xE962;"
+                                      FontSize="24"
+                                      Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                        </Border>
+                        <controls:TranslatedTextBlock Text="This device cannot be configured"
+                                                      TextStyle="{ThemeResource SubtitleTextBlockStyle}"
+                                                      HorizontalAlignment="Center" />
+                        <controls:TranslatedTextBlock Text="Connect a supported mouse to change its settings"
+                                                      TextStyle="{ThemeResource CaptionTextBlockStyle}"
+                                                      Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                      TextAlignment="Center"
+                                                      TextWrapping="Wrap"
+                                                      HorizontalAlignment="Center" />
+                    </StackPanel>
+                </Border>
+
+                <StackPanel Spacing="24" Visibility="{x:Bind ViewModel.MouseSettingsVisibility, Mode=OneWay}">
+
+                    <!-- Visibility must track IsOpen. A closed InfoBar renders 0px tall but stays
+                         Visibility="Visible", so the parent StackPanel still allots it a 24px
+                         Spacing gap. Three closed bars added 72px of dead space under the title. -->
+                    <InfoBar x:Name="ApplyInfoBar"
+                             Severity="Warning"
+                             IsOpen="{x:Bind ViewModel.MouseSettingsErrorOpen, Mode=OneWay}"
+                             Visibility="{x:Bind local:MouseSettingsPage.BoolToVisibility(ViewModel.MouseSettingsErrorOpen), Mode=OneWay}"
+                             Message="{x:Bind ViewModel.MouseSettingsErrorText, Mode=OneWay}"
+                             CloseButtonClick="ApplyInfoBar_CloseButtonClick"
+                             IsClosable="True" />
+
+                    <InfoBar Severity="Informational"
+                             IsOpen="{x:Bind ViewModel.MouseSettingsReadOnly, Mode=OneWay}"
+                             Visibility="{x:Bind local:MouseSettingsPage.BoolToVisibility(ViewModel.MouseSettingsReadOnly), Mode=OneWay}"
+                             Message="{x:Bind ViewModel.MouseSettingsReadOnlyText, Mode=OneWay}"
+                             IsClosable="False" />
+
+                    <InfoBar Severity="Warning"
+                             IsOpen="{x:Bind ViewModel.MouseSettingsWriteUnverified, Mode=OneWay}"
+                             Visibility="{x:Bind local:MouseSettingsPage.BoolToVisibility(ViewModel.MouseSettingsWriteUnverified), Mode=OneWay}"
+                             Title="{x:Bind ViewModel.MouseSettingsWriteUnverifiedTitle, Mode=OneWay}"
+                             Message="{x:Bind ViewModel.MouseSettingsWriteUnverifiedText, Mode=OneWay}"
+                             IsClosable="False" />
+
+                    <StackPanel x:Name="PerformanceSection" Spacing="4">
+                        <controls:TranslatedTextBlock Text="Performance"
+                                                      TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
+                                                      Margin="0,0,0,4" />
+
+                        <settingscontrols:SettingsCard x:Name="PollingRateCard">
+                            <ComboBox x:Name="PollingRateComboBox"
+                                      MinWidth="140"
+                                      SelectionChanged="PollingRateComboBox_SelectionChanged" />
+                        </settingscontrols:SettingsCard>
+
+                        <settingscontrols:SettingsCard x:Name="DpiCard">
+                            <NumberBox x:Name="DpiNumberBox"
+                                       Minimum="50"
+                                       Maximum="26000"
+                                       SmallChange="50"
+                                       LargeChange="400"
+                                       SpinButtonPlacementMode="Compact"
+                                       Value="{x:Bind ViewModel.DpiValue, Mode=TwoWay}"
+                                       Width="140" />
+                        </settingscontrols:SettingsCard>
+
+                        <settingscontrols:SettingsCard x:Name="DpiStageCard">
+                            <ComboBox x:Name="DpiStageComboBox"
+                                      MinWidth="140"
+                                      SelectionChanged="DpiStageComboBox_SelectionChanged" />
+                        </settingscontrols:SettingsCard>
+
+                        <settingscontrols:SettingsCard x:Name="DebounceCard">
+                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <NumberBox x:Name="DebounceNumberBox"
+                                           Minimum="0"
+                                           Maximum="30"
+                                           SmallChange="1"
+                                           SpinButtonPlacementMode="Compact"
+                                           Value="{x:Bind ViewModel.DebounceMsValue, Mode=TwoWay}"
+                                           Width="120" />
+                                <TextBlock Text="ms"
+                                           Style="{ThemeResource CaptionTextBlockStyle}"
+                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                           VerticalAlignment="Center" />
+                            </StackPanel>
+                        </settingscontrols:SettingsCard>
+                    </StackPanel>
+
+                    <StackPanel x:Name="SensorSection" Spacing="4">
+                        <controls:TranslatedTextBlock Text="Sensor"
+                                                      TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
+                                                      Margin="0,0,0,4" />
+
+                        <settingscontrols:SettingsCard x:Name="LodCard">
+                            <ComboBox x:Name="LodComboBox"
+                                      MinWidth="140"
+                                      SelectionChanged="LodComboBox_SelectionChanged" />
+                        </settingscontrols:SettingsCard>
+
+                        <settingscontrols:SettingsCard x:Name="MotionSyncCard">
+                            <ToggleSwitch x:Name="MotionSyncToggle"
+                                          IsOn="{x:Bind ViewModel.MotionSyncIsOn, Mode=TwoWay}" />
+                        </settingscontrols:SettingsCard>
+
+                        <settingscontrols:SettingsCard x:Name="AngleSnapCard">
+                            <ToggleSwitch x:Name="AngleSnapToggle"
+                                          IsOn="{x:Bind ViewModel.AngleSnapIsOn, Mode=TwoWay}" />
+                        </settingscontrols:SettingsCard>
+
+                        <settingscontrols:SettingsCard x:Name="RippleControlCard">
+                            <ToggleSwitch x:Name="RippleControlToggle"
+                                          IsOn="{x:Bind ViewModel.RippleControlIsOn, Mode=TwoWay}" />
+                        </settingscontrols:SettingsCard>
+                    </StackPanel>
+
+                    <StackPanel x:Name="PowerSection" Spacing="4">
+                        <controls:TranslatedTextBlock Text="Power"
+                                                      TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
+                                                      Margin="0,0,0,4" />
+
+                        <settingscontrols:SettingsCard x:Name="SleepCard">
+                            <ComboBox x:Name="SleepComboBox"
+                                      MinWidth="140"
+                                      SelectionChanged="SleepComboBox_SelectionChanged" />
+                        </settingscontrols:SettingsCard>
+                    </StackPanel>
+
+                </StackPanel>
+
+            </StackPanel>
+            <!-- Invisible focus target: clicking empty page space moves focus here so a
+                 NumberBox being edited loses focus and commits its value (NumberBox only
+                 updates its binding on focus loss). See RootGrid_PointerPressed. -->
+            <Button x:Name="FocusSink"
+                    Width="1"
+                    Height="1"
+                    Opacity="0"
+                    IsHitTestVisible="False"
+                    TabIndex="-1" />
+        </Grid>
+    </ScrollViewer>
+</Page>

@@ -21,6 +21,9 @@ internal sealed record AppSettings
 
     public bool MinimizeToTrayOnClose { get; init; } = true;
 
+    /// <summary>True renders the battery percentage as the tray icon; false shows the app icon.</summary>
+    public bool ShowBatteryInTray { get; init; } = true;
+
     public bool StartWithWindows { get; init; } = false;
 
     /// <summary>Locale override (e.g. "de-DE"); null means follow the system language.</summary>

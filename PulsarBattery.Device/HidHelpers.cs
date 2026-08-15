@@ -7,18 +7,6 @@ namespace PulsarBattery.Device;
 
 internal static class HidHelpers
 {
-    public static (int battery, bool charging)? ParseCmd04Payload(IReadOnlyList<byte> payload)
-    {
-        if (payload.Count < 8)
-        {
-            return null;
-        }
-
-        var battery = payload[6];
-        var charging = payload[7] != 0x00;
-        return (battery, charging);
-    }
-
     public static byte[]? ReadWithTimeout(HidStream stream, int maxLength, int timeoutMs)
     {
         var buffer = new byte[maxLength];
@@ -81,6 +69,36 @@ internal static class HidHelpers
 
         stream.WriteTimeout = 500;
         stream.Write(payload.ToArray());
+    }
+
+    public static string? GetProductName(HidDevice device)
+    {
+        try
+        {
+            var name = device.GetProductName()?.Trim();
+            return string.IsNullOrEmpty(name) ? null : name;
+        }
+        catch
+        {
+            return null;
+        }
+    }
+
+    /// <summary>
+    /// USB bcdDevice formatted "01.25"-style. Meaningful as a firmware version
+    /// only for the device actually on the bus (a dongle reports its own).
+    /// </summary>
+    public static string? GetFirmwareFromBcd(HidDevice device)
+    {
+        try
+        {
+            var bcd = device.ReleaseNumberBcd;
+            return bcd == 0 ? null : $"{(bcd >> 8) & 0xFF:X2}.{bcd & 0xFF:X2}";
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     public static IEnumerable<HidDevice> EnumerateDevices(int vendorId, Func<HidDevice, bool>? filter = null)

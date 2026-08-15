@@ -1,5 +1,9 @@
+using Microsoft.UI;
 using Microsoft.UI.Dispatching;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Media;
+using Microsoft.UI.Xaml.Media.Imaging;
+using PulsarBattery.Device;
 using PulsarBattery.Models;
 using PulsarBattery.Services;
 using PulsarBattery.Tools;
@@ -35,6 +39,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private readonly DispatcherTimer _historySaveTimer;
     private readonly SemaphoreSlim _historySaveLock;
     private readonly SemaphoreSlim _batteryUpdateLock;
+    private readonly SemaphoreSlim _deviceSettingsWriteLock;
 
     private DateTimeOffset _lastLoggedTime;
     private bool _isHistoryLoaded;
@@ -52,10 +57,38 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool _enableBeeps;
     private double _alertCooldownMinutes;
     private bool _minimizeToTrayOnClose;
+    private bool _showBatteryInTray;
     private bool _startWithWindows;
     private string _statusText;
     private string? _lowBatterySoundPath;
     private int _currentHistoryPage;
+    private DeviceSettings? _deviceSettings;
+    private DeviceSettingsCapabilities? _deviceSettingsCapabilities;
+    private bool _isRefreshingDeviceSettings;
+    private bool _isApplyingDeviceSetting;
+    private string _mouseSettingsError = string.Empty;
+    private ConnectionKind _connection;
+    private string? _connectionName;
+    private string? _firmwareVersion;
+    private int? _linkRateHz;
+    private int? _voltageMv;
+    private int? _signalStrength;
+    private string? _dongleFirmwareVersion;
+    private ImageSource? _deviceImage;
+    private CancellationTokenSource? _deviceImageLoadCancellation;
+    private string? _deviceImageModel;
+    private int? _deviceImageProtocolModelId;
+    private bool _hasDeviceImageIdentity;
+    private bool _deviceImageLoadInProgress;
+    private bool _deviceImageLoadFailed;
+    private string? _deviceSettingsModel;
+    private int? _deviceSettingsProtocolModelId;
+    private bool _hasDeviceSettingsIdentity;
+    private bool _hasAttemptedDeviceSettingsForCurrentIdentity;
+    private bool _isMouseSettingsPageActive;
+    private bool _isWindowActive;
+    private bool _isReadingDeviceSettings;
+    private int _deviceSettingsReadCount;
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
@@ -104,10 +137,489 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string ModelName
     {
         get => _modelName;
-        private set => SetProperty(ref _modelName, value);
+        private set
+        {
+            SetProperty(ref _modelName, value);
+        }
     }
 
+    public ImageSource? DeviceImage => _deviceImage;
+
+    public Visibility DeviceImageVisibility => DeviceImage is null ? Visibility.Collapsed : Visibility.Visible;
+
     public string ChargingStateText => IsCharging ? Loc.T("Charging") : Loc.T("Not charging");
+
+    /// <summary>
+    /// Charging state plus pack voltage; separate from <see cref="ChargingStateText"/> to keep the tooltip short.
+    /// </summary>
+    public string BatteryDetailText => _voltageMv is int mv
+        ? $"{ChargingStateText} · {(mv / 1000.0).ToString("0.00", CultureInfo.CurrentCulture)} V"
+        : ChargingStateText;
+
+    public string SleepText => _deviceSettings?.SleepSeconds is int seconds
+        ? seconds < 60
+            ? $"{seconds} s"
+            : string.Format(CultureInfo.CurrentCulture, "{0} min", seconds / 60)
+        : "—";
+
+    public enum BatteryState { Normal, Charging, Low }
+
+    /// <summary>
+    /// Drives the hero card's state colors; Low mirrors <see cref="TrayIconState"/>.IsLow.
+    /// </summary>
+    public BatteryState BatteryVisualState =>
+        IsCharging ? BatteryState.Charging
+        : HasInitialData && BatteryPercentage < AlertThresholdUnlockedPercent ? BatteryState.Low
+        : BatteryState.Normal;
+
+    public Visibility ChargingGlyphVisibility => IsCharging ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>
+    /// Snapshot for <see cref="Services.TrayIconRenderer"/>; the icon itself
+    /// is rendered in code (see TrayIcon.xaml.cs), not via bound properties.
+    /// </summary>
+    public TrayIconState TrayIconState => new(
+        ShowBattery: ShowBatteryInTray,
+        HasData: HasInitialData,
+        Percentage: BatteryPercentage,
+        IsCharging: IsCharging,
+        IsLow: HasInitialData && !IsCharging && BatteryPercentage < AlertThresholdUnlockedPercent);
+
+    public string TrayTooltipText => HasInitialData
+        ? $"{ModelName} — {BatteryPercentage}% · {ChargingStateText}"
+        : "Pulsar Battery";
+
+    private void NotifyTrayProperties()
+    {
+        OnPropertyChanged(nameof(TrayIconState));
+        OnPropertyChanged(nameof(TrayTooltipText));
+    }
+
+    /// <summary>The transport itself: the receiver's name, or the cable.</summary>
+    public string ConnectionText => _connection switch
+    {
+        ConnectionKind.Wired => Loc.T("Wired"),
+        ConnectionKind.Dongle => _connectionName ?? Loc.T("Wireless"),
+        _ => "—",
+    };
+
+    /// <summary>
+    /// The link underneath the transport: radio band, negotiated rate and
+    /// signal quality, in whatever combination the device actually reports.
+    /// </summary>
+    public string ConnectionDetailText
+    {
+        get
+        {
+            var parts = new List<string>(3);
+
+            if (_connection == ConnectionKind.Dongle)
+            {
+                parts.Add("2.4 GHz");
+            }
+
+            if (_linkRateHz is int hz)
+            {
+                parts.Add($"{hz} Hz");
+            }
+
+            if (SignalText.Length > 0)
+            {
+                parts.Add(SignalText);
+            }
+
+            return string.Join(" · ", parts);
+        }
+    }
+
+    public Visibility ConnectionDetailVisibility =>
+        ConnectionDetailText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    /// <summary>
+    /// Signal is a bar count, not a percentage, so it shows as a word: 4+ excellent, 3 good, 2 fair, else weak.
+    /// </summary>
+    public string SignalText => _signalStrength switch
+    {
+        null => string.Empty,
+        >= 4 => Loc.T("Excellent"),
+        3 => Loc.T("Good"),
+        2 => Loc.T("Fair"),
+        _ => Loc.T("Weak"),
+    };
+
+    public string ConnectionToolTip => _dongleFirmwareVersion is { Length: > 0 } version
+        ? string.Format(CultureInfo.CurrentCulture, Loc.T("Receiver firmware {0}"), version)
+        : ConnectionText;
+
+    public string FirmwareText => _firmwareVersion ?? "—";
+
+    public Visibility MouseSettingsVisibility => _deviceSettings is null ? Visibility.Collapsed : Visibility.Visible;
+
+    public Visibility MouseSettingsUnsupportedVisibility => _deviceSettings is null ? Visibility.Visible : Visibility.Collapsed;
+
+    public DeviceSettingsCapabilities? SettingsCapabilities => _deviceSettingsCapabilities;
+
+    public bool IsApplyingDeviceSetting => _isApplyingDeviceSetting;
+
+    public bool IsReadingDeviceSettings => _isReadingDeviceSettings;
+
+    public bool MouseSettingsReadOnly =>
+        _deviceSettingsCapabilities is { Readable: not DeviceSettingField.None, Writable: DeviceSettingField.None };
+
+    public string MouseSettingsReadOnlyText =>
+        Loc.T("Settings are read-only for this model until writes have been verified on matching hardware.");
+
+    public bool MouseSettingsWriteUnverified =>
+        _deviceSettingsCapabilities is
+        {
+            Writable: not DeviceSettingField.None,
+            WriteTrust: DeviceSettingsWriteTrust.VendorDerived,
+        };
+
+    public string MouseSettingsWriteUnverifiedTitle => Loc.T("Unverified write support");
+
+    public string MouseSettingsWriteUnverifiedText =>
+        _deviceSettingsCapabilities?.HasPersistentBackup == true
+            ? Loc.T("Writes for this model are derived from Pulsar cMouse but have not been verified on matching hardware. Before the first write, the complete core settings and, on PAW3955 models, the extended DPI region are saved persistently. Individual writes are still verified by readback and rolled back on failure.")
+            : Loc.T("Writes for this model are derived from a related Pulsar protocol but have not been verified on matching hardware. Each write is verified by reading the value back afterward and rolled back automatically if that check fails.");
+
+    public IReadOnlyList<int> SupportedPollingRates =>
+        _deviceSettingsCapabilities?.PollingRatesHz ?? Array.Empty<int>();
+
+    public IReadOnlyList<int> SupportedLodValues =>
+        _deviceSettingsCapabilities?.LodValuesMm10 ?? Array.Empty<int>();
+
+    public IReadOnlyList<int> SupportedSleepValues =>
+        _deviceSettingsCapabilities?.SleepValuesSeconds ?? Array.Empty<int>();
+
+    public int SupportedDpiStageCount => _deviceSettingsCapabilities?.DpiStageCount ?? 0;
+
+    public double DpiMinimum => _deviceSettingsCapabilities?.DpiRanges.Count > 0
+        ? _deviceSettingsCapabilities.DpiRanges.Min(range => range.Minimum)
+        : 50;
+
+    public double DpiMaximum => _deviceSettingsCapabilities?.DpiRanges.Count > 0
+        ? _deviceSettingsCapabilities.DpiRanges.Max(range => range.Maximum)
+        : 26_000;
+
+    public double DpiSmallChange => _deviceSettingsCapabilities?.DpiRanges.Count > 0
+        ? _deviceSettingsCapabilities.DpiRanges.Min(range => range.Step)
+        : 50;
+
+    public double DebounceMinimum => _deviceSettingsCapabilities?.DebounceMinimumMs ?? 0;
+
+    public double DebounceMaximum => _deviceSettingsCapabilities?.DebounceMaximumMs ?? 30;
+
+    public bool CanReadPollingRate => CanRead(DeviceSettingField.PollingRate);
+    public bool CanReadDebounce => CanRead(DeviceSettingField.Debounce);
+    public bool CanReadMotionSync => CanRead(DeviceSettingField.MotionSync);
+    public bool CanReadDpi => CanRead(DeviceSettingField.Dpi);
+    public bool CanReadDpiStage => CanRead(DeviceSettingField.DpiStage);
+    public bool CanReadLod => CanRead(DeviceSettingField.Lod);
+    public bool CanReadAngleSnap => CanRead(DeviceSettingField.AngleSnap);
+    public bool CanReadRippleControl => CanRead(DeviceSettingField.RippleControl);
+    public bool CanReadSleep => CanRead(DeviceSettingField.Sleep);
+
+    public bool CanWritePollingRate => CanWrite(DeviceSettingField.PollingRate);
+    public bool CanWriteDebounce => CanWrite(DeviceSettingField.Debounce);
+    public bool CanWriteMotionSync => CanWrite(DeviceSettingField.MotionSync);
+    public bool CanWriteDpi => CanWrite(DeviceSettingField.Dpi);
+    public bool CanWriteDpiStage => CanWrite(DeviceSettingField.DpiStage);
+    public bool CanWriteLod => CanWrite(DeviceSettingField.Lod);
+    public bool CanWriteAngleSnap => CanWrite(DeviceSettingField.AngleSnap);
+    public bool CanWriteRippleControl => CanWrite(DeviceSettingField.RippleControl);
+    public bool CanWriteSleep => CanWrite(DeviceSettingField.Sleep);
+
+    public string PollingRateText => _deviceSettings?.PollingRateHz is int hz ? $"{hz} Hz" : "—";
+
+    public string DebounceText => _deviceSettings?.DebounceMs is int ms ? $"{ms} ms" : "—";
+
+    public string MotionSyncText => _deviceSettings?.MotionSync is bool motionSync
+        ? Loc.T(motionSync ? "On" : "Off")
+        : "—";
+
+    public string DpiText => _deviceSettings?.Dpi is int dpi
+        ? _deviceSettings?.DpiStage is int stage
+            ? $"{dpi} ({string.Format(Loc.T("Stage {0}"), stage)})"
+            : dpi.ToString(CultureInfo.CurrentCulture)
+        : "—";
+
+    public string DpiStageText => _deviceSettings?.DpiStage is int stage
+        ? string.Format(Loc.T("Stage {0}"), stage)
+        : string.Empty;
+
+    public int? PollingRateHz => _deviceSettings?.PollingRateHz;
+
+    public int? LodMm10 => _deviceSettings?.LodMm10;
+
+    public int? DpiStage => _deviceSettings?.DpiStage;
+
+    public int? SleepSeconds => _deviceSettings?.SleepSeconds;
+
+    public bool MouseSettingsErrorOpen => _mouseSettingsError.Length > 0;
+
+    public string MouseSettingsErrorText => _mouseSettingsError;
+
+    public bool MotionSyncIsOn
+    {
+        get => _deviceSettings?.MotionSync ?? false;
+        set
+        {
+            if (_isRefreshingDeviceSettings || !CanWriteMotionSync || _deviceSettings?.MotionSync is null || _deviceSettings.MotionSync == value)
+            {
+                return;
+            }
+
+            _ = ApplyDeviceSettingAsync(new DeviceSettings(MotionSync: value));
+        }
+    }
+
+    public bool AngleSnapIsOn
+    {
+        get => _deviceSettings?.AngleSnap ?? false;
+        set
+        {
+            if (_isRefreshingDeviceSettings || !CanWriteAngleSnap || _deviceSettings?.AngleSnap is null || _deviceSettings.AngleSnap == value)
+            {
+                return;
+            }
+
+            _ = ApplyDeviceSettingAsync(new DeviceSettings(AngleSnap: value));
+        }
+    }
+
+    public bool RippleControlIsOn
+    {
+        get => _deviceSettings?.RippleControl ?? false;
+        set
+        {
+            if (_isRefreshingDeviceSettings || !CanWriteRippleControl || _deviceSettings?.RippleControl is null || _deviceSettings.RippleControl == value)
+            {
+                return;
+            }
+
+            _ = ApplyDeviceSettingAsync(new DeviceSettings(RippleControl: value));
+        }
+    }
+
+    public double DebounceMsValue
+    {
+        get => _deviceSettings?.DebounceMs ?? 0;
+        set
+        {
+            if (_isRefreshingDeviceSettings || !CanWriteDebounce || double.IsNaN(value) || _deviceSettings?.DebounceMs is null)
+            {
+                return;
+            }
+
+            var ms = Math.Clamp((int)Math.Round(value), (int)DebounceMinimum, (int)DebounceMaximum);
+            if (_deviceSettings.DebounceMs == ms)
+            {
+                return;
+            }
+
+            _ = ApplyDeviceSettingAsync(new DeviceSettings(DebounceMs: ms));
+        }
+    }
+
+    public double DpiValue
+    {
+        get => _deviceSettings?.Dpi ?? 0;
+        set
+        {
+            if (_isRefreshingDeviceSettings || !CanWriteDpi || double.IsNaN(value) || _deviceSettings?.Dpi is null)
+            {
+                return;
+            }
+
+            var dpi = NormalizeDpi((int)Math.Round(value), _deviceSettings.Dpi.Value);
+            if (dpi is null)
+            {
+                SetMouseSettingsError(Loc.T("Setting could not be applied"));
+                OnPropertyChanged(nameof(DpiValue));
+                return;
+            }
+
+            if (_deviceSettings.Dpi == dpi.Value)
+            {
+                OnPropertyChanged(nameof(DpiValue));
+                return;
+            }
+
+            _ = ApplyDeviceSettingAsync(new DeviceSettings(Dpi: dpi.Value));
+        }
+    }
+
+    public void ApplyPollingRate(int hz)
+    {
+        if (_isRefreshingDeviceSettings || !CanWritePollingRate || _deviceSettings?.PollingRateHz == hz)
+        {
+            return;
+        }
+
+        _ = ApplyDeviceSettingAsync(new DeviceSettings(PollingRateHz: hz));
+    }
+
+    public void ApplyLod(int mm10)
+    {
+        if (_isRefreshingDeviceSettings || !CanWriteLod || _deviceSettings?.LodMm10 == mm10)
+        {
+            return;
+        }
+
+        _ = ApplyDeviceSettingAsync(new DeviceSettings(LodMm10: mm10));
+    }
+
+    public void ApplyDpiStage(int stage)
+    {
+        if (_isRefreshingDeviceSettings || !CanWriteDpiStage || _deviceSettings?.DpiStage == stage)
+        {
+            return;
+        }
+
+        _ = ApplyDeviceSettingAsync(new DeviceSettings(DpiStage: stage));
+    }
+
+    public void ApplySleep(int seconds)
+    {
+        if (_isRefreshingDeviceSettings || !CanWriteSleep || _deviceSettings?.SleepSeconds == seconds)
+        {
+            return;
+        }
+
+        _ = ApplyDeviceSettingAsync(new DeviceSettings(SleepSeconds: seconds));
+    }
+
+    private bool CanRead(DeviceSettingField field) =>
+        _deviceSettingsCapabilities?.CanRead(field) == true;
+
+    private bool CanWrite(DeviceSettingField field) =>
+        !_isApplyingDeviceSetting
+        && !_isReadingDeviceSettings
+        && !IsLoading
+        && _deviceSettingsCapabilities?.CanWrite(field) == true;
+
+    private int? NormalizeDpi(int requested, int current)
+    {
+        var ranges = _deviceSettingsCapabilities?.DpiRanges;
+        if (ranges is null || ranges.Count == 0)
+        {
+            return null;
+        }
+
+        foreach (var range in ranges)
+        {
+            if (range.Contains(requested))
+            {
+                return requested;
+            }
+        }
+
+        // NumberBox has one SmallChange but cMouse profiles use piecewise steps, so a spin crossing a
+        // range boundary advances to the first valid value instead of snapping back to an invalid one.
+        if (requested > current)
+        {
+            var next = ranges
+                .Select(range => FirstValueAtOrAbove(range, requested))
+                .Where(value => value is not null)
+                .Min();
+            if (next is not null)
+            {
+                return next;
+            }
+        }
+        else if (requested < current)
+        {
+            var previous = ranges
+                .Select(range => LastValueAtOrBelow(range, requested))
+                .Where(value => value is not null)
+                .Max();
+            if (previous is not null)
+            {
+                return previous;
+            }
+        }
+
+        int? nearest = null;
+        var nearestDistance = int.MaxValue;
+        foreach (var range in ranges)
+        {
+            var clamped = Math.Clamp(requested, range.Minimum, range.Maximum);
+            var offset = clamped - range.Minimum;
+            var lower = range.Minimum + ((offset / range.Step) * range.Step);
+            var upper = Math.Min(lower + range.Step, range.Maximum);
+            var candidate = Math.Abs(upper - requested) <= Math.Abs(lower - requested) ? upper : lower;
+            var distance = Math.Abs(candidate - requested);
+            if (distance < nearestDistance
+                || (distance == nearestDistance && (nearest is null || candidate > nearest.Value)))
+            {
+                nearest = candidate;
+                nearestDistance = distance;
+            }
+        }
+
+        return nearest;
+    }
+
+    private static int? FirstValueAtOrAbove(DeviceValueRange range, int value)
+    {
+        if (value > range.Maximum)
+        {
+            return null;
+        }
+
+        if (value <= range.Minimum)
+        {
+            return range.Minimum;
+        }
+
+        var offset = value - range.Minimum;
+        var steps = (offset + range.Step - 1) / range.Step;
+        var candidate = range.Minimum + (steps * range.Step);
+        return candidate <= range.Maximum ? candidate : null;
+    }
+
+    private static int? LastValueAtOrBelow(DeviceValueRange range, int value)
+    {
+        if (value < range.Minimum)
+        {
+            return null;
+        }
+
+        var clamped = Math.Min(value, range.Maximum);
+        var steps = (clamped - range.Minimum) / range.Step;
+        return range.Minimum + (steps * range.Step);
+    }
+
+    public void ClearMouseSettingsError()
+    {
+        SetMouseSettingsError(string.Empty);
+    }
+
+    public async Task RefreshDeviceSettingsAsync()
+    {
+        BeginDeviceSettingsRead();
+        try
+        {
+            _hasAttemptedDeviceSettingsForCurrentIdentity = true;
+            var snapshot = await ReadDeviceSettingsAsync();
+            UpdateDeviceSettings(snapshot);
+        }
+        finally
+        {
+            EndDeviceSettingsRead();
+        }
+    }
+
+    public void SetMouseSettingsPageActive(bool active)
+    {
+        _isMouseSettingsPageActive = active;
+    }
+
+    public void SetWindowActive(bool active)
+    {
+        _isWindowActive = active;
+    }
 
     public string LastUpdatedText => _lastUpdated.HasValue
         ? _lastUpdated.Value.ToString("T", CultureInfo.CurrentCulture)
@@ -151,6 +663,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (SetProperty(ref _alertThresholdUnlockedPercent, clamped))
             {
                 AppSettingsService.Update(settings => settings with { AlertThresholdUnlockedPercent = clamped });
+                // The threshold feeds TrayIconState.IsLow and BatteryVisualState, so recolor promptly.
+                NotifyTrayProperties();
+                OnPropertyChanged(nameof(BatteryVisualState));
             }
         }
     }
@@ -201,6 +716,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (SetProperty(ref _minimizeToTrayOnClose, value))
             {
                 AppSettingsService.Update(settings => settings with { MinimizeToTrayOnClose = value });
+            }
+        }
+    }
+
+    public bool ShowBatteryInTray
+    {
+        get => _showBatteryInTray;
+        set
+        {
+            if (SetProperty(ref _showBatteryInTray, value))
+            {
+                AppSettingsService.Update(settings => settings with { ShowBatteryInTray = value });
+                NotifyTrayProperties();
             }
         }
     }
@@ -271,6 +799,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             ?? throw new InvalidOperationException($"{nameof(MainViewModel)} must be constructed on the UI thread.");
         _historySaveLock = new SemaphoreSlim(1, 1);
         _batteryUpdateLock = new SemaphoreSlim(1, 1);
+        _deviceSettingsWriteLock = new SemaphoreSlim(1, 1);
         _lastLoggedTime = DateTimeOffset.MinValue;
         _modelName = DefaultModelName;
 
@@ -282,6 +811,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _enableBeeps = settings.EnableBeeps;
         _alertCooldownMinutes = settings.AlertCooldownMinutes < 0 ? DefaultAlertCooldownMinutes : settings.AlertCooldownMinutes;
         _minimizeToTrayOnClose = settings.MinimizeToTrayOnClose;
+        _showBatteryInTray = settings.ShowBatteryInTray;
         var isRunningFromInstallDirectory = SelfInstallService.IsRunningFromInstallDirectory();
         var isBundledExecutable = SelfInstallService.IsCurrentExecutableBundled();
         var currentExecutablePath = SelfInstallService.GetCurrentExecutablePath();
@@ -319,7 +849,107 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         _pollTimer.Stop();
         _historySaveTimer.Stop();
+        _deviceImageLoadCancellation?.Cancel();
         _ = SaveHistoryAsync();
+    }
+
+    private void BeginDeviceImageUpdate(string model, int? protocolModelId = null)
+    {
+        var sameIdentity = _hasDeviceImageIdentity
+            && string.Equals(_deviceImageModel, model, StringComparison.Ordinal)
+            && _deviceImageProtocolModelId == protocolModelId;
+        if (sameIdentity)
+        {
+            if (_deviceImageLoadInProgress || !_deviceImageLoadFailed)
+            {
+                return;
+            }
+
+            StartOfficialDeviceImageLoad(model, protocolModelId);
+            return;
+        }
+
+        _deviceImageLoadCancellation?.Cancel();
+        _deviceImageLoadCancellation = null;
+        _deviceImageModel = model;
+        _deviceImageProtocolModelId = protocolModelId;
+        _hasDeviceImageIdentity = true;
+        _deviceImageLoadInProgress = false;
+        _deviceImageLoadFailed = false;
+
+        SetDeviceImage(DeviceImageService.GetPackagedImage(model));
+        StartOfficialDeviceImageLoad(model, protocolModelId);
+    }
+
+    private void StartOfficialDeviceImageLoad(string model, int? protocolModelId)
+    {
+        if (DeviceImageService.GetOfficialImage(model, protocolModelId) is null)
+        {
+            return;
+        }
+
+        var cancellation = new CancellationTokenSource();
+        _deviceImageLoadCancellation = cancellation;
+        _deviceImageLoadInProgress = true;
+        _deviceImageLoadFailed = false;
+        _ = LoadOfficialDeviceImageAsync(model, protocolModelId, cancellation);
+    }
+
+    private async Task LoadOfficialDeviceImageAsync(
+        string model,
+        int? protocolModelId,
+        CancellationTokenSource cancellation)
+    {
+        var cancellationToken = cancellation.Token;
+        try
+        {
+            var imageUri = await DeviceImageService.GetCachedOfficialImageAsync(model, protocolModelId, cancellationToken);
+            if (cancellationToken.IsCancellationRequested
+                || !_hasDeviceImageIdentity
+                || !string.Equals(_deviceImageModel, model, StringComparison.Ordinal)
+                || _deviceImageProtocolModelId != protocolModelId)
+            {
+                return;
+            }
+
+            if (imageUri is null)
+            {
+                _deviceImageLoadFailed = true;
+                return;
+            }
+
+            SetDeviceImage(imageUri);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+        }
+        catch (Exception ex)
+        {
+            Log.Error(nameof(MainViewModel), ex);
+            if (!cancellationToken.IsCancellationRequested
+                && string.Equals(_deviceImageModel, model, StringComparison.Ordinal)
+                && _deviceImageProtocolModelId == protocolModelId)
+            {
+                _deviceImageLoadFailed = true;
+            }
+        }
+        finally
+        {
+            if (ReferenceEquals(_deviceImageLoadCancellation, cancellation))
+            {
+                _deviceImageLoadCancellation = null;
+                _deviceImageLoadInProgress = false;
+            }
+
+            cancellation.Dispose();
+        }
+    }
+
+    private void SetDeviceImage(Uri? imageUri)
+    {
+        _deviceImage = imageUri is null ? null : new BitmapImage(imageUri);
+        OnPropertyChanged(nameof(DeviceImage));
+        OnPropertyChanged(nameof(DeviceImageVisibility));
     }
 
     public async Task RetryConnectionAsync()
@@ -429,17 +1059,20 @@ public sealed class MainViewModel : INotifyPropertyChanged
             {
                 await PopulateHistoryCollectionAsync(historicalReadings);
                 
-                // Load cached data from most recent history entry
                 await EnqueueAsync(() =>
                 {
                     var mostRecent = historicalReadings[0];
                     BatteryPercentage = mostRecent.Percentage;
                     IsCharging = mostRecent.IsCharging;
                     ModelName = mostRecent.Model;
+                    BeginDeviceImageUpdate(mostRecent.Model);
                     _lastUpdated = mostRecent.Timestamp;
                     HasInitialData = true;
                     OnPropertyChanged(nameof(ChargingStateText));
+                    OnPropertyChanged(nameof(BatteryDetailText));
                     OnPropertyChanged(nameof(LastUpdatedText));
+                    OnPropertyChanged(nameof(BatteryVisualState));
+                    OnPropertyChanged(nameof(ChargingGlyphVisibility));
                 });
             }
         }
@@ -560,13 +1193,34 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
             if (batteryStatus is null)
             {
+                ResetDeviceSettingsIdentity();
+                UpdateDeviceSettings(null);
                 StatusText = Loc.T("No Pulsar mouse detected");
                 NoDeviceFound = true;
                 IsLoading = false;
                 return;
             }
 
+            var settingsIdentityChanged = DeviceSettingsIdentityChanged(batteryStatus);
             UpdateBatteryProperties(batteryStatus);
+            if (settingsIdentityChanged)
+            {
+                _deviceSettingsModel = batteryStatus.Model;
+                _deviceSettingsProtocolModelId = batteryStatus.ProtocolModelId;
+                _hasDeviceSettingsIdentity = true;
+                _hasAttemptedDeviceSettingsForCurrentIdentity = false;
+            }
+
+            var shouldReadSettings = _isWindowActive
+                && (_isMouseSettingsPageActive
+                    || !_hasAttemptedDeviceSettingsForCurrentIdentity);
+            if (shouldReadSettings)
+            {
+                _hasAttemptedDeviceSettingsForCurrentIdentity = true;
+                var snapshot = await ReadDeviceSettingsAsync();
+                UpdateDeviceSettings(snapshot);
+            }
+
             StatusText = Loc.T("Updated");
             HasInitialData = true;
             NoDeviceFound = false;
@@ -577,10 +1231,28 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 LogBatteryReading(batteryStatus);
             }
         }
+        catch (Exception ex)
+        {
+            Log.Error(nameof(MainViewModel), ex);
+        }
         finally
         {
+            IsLoading = false;
             _batteryUpdateLock.Release();
         }
+    }
+
+    private bool DeviceSettingsIdentityChanged(PulsarBatteryReader.BatteryStatus status) =>
+        !_hasDeviceSettingsIdentity
+        || !string.Equals(_deviceSettingsModel, status.Model, StringComparison.Ordinal)
+        || _deviceSettingsProtocolModelId != status.ProtocolModelId;
+
+    private void ResetDeviceSettingsIdentity()
+    {
+        _deviceSettingsModel = null;
+        _deviceSettingsProtocolModelId = null;
+        _hasDeviceSettingsIdentity = false;
+        _hasAttemptedDeviceSettingsForCurrentIdentity = false;
     }
 
     private Task<PulsarBatteryReader.BatteryStatus?> ReadBatteryStatusAsync()
@@ -588,15 +1260,235 @@ public sealed class MainViewModel : INotifyPropertyChanged
         return Task.Run(() => _batteryReader.ReadBatteryStatus());
     }
 
+    private Task<DeviceSettingsSnapshot?> ReadDeviceSettingsAsync()
+    {
+        return Task.Run(() => _batteryReader.ReadDeviceSettingsSnapshot());
+    }
+
+    private void UpdateDeviceSettings(DeviceSettingsSnapshot? snapshot)
+    {
+        var settings = snapshot?.Values;
+        var capabilities = snapshot?.Capabilities;
+        if (Equals(_deviceSettings, settings) && Equals(_deviceSettingsCapabilities, capabilities))
+        {
+            return;
+        }
+
+        var capabilitiesChanged = !Equals(_deviceSettingsCapabilities, capabilities);
+        _isRefreshingDeviceSettings = true;
+        try
+        {
+            _deviceSettings = settings;
+            _deviceSettingsCapabilities = capabilities;
+            OnPropertyChanged(nameof(MouseSettingsVisibility));
+            OnPropertyChanged(nameof(MouseSettingsUnsupportedVisibility));
+            if (capabilitiesChanged)
+            {
+                OnPropertyChanged(nameof(SettingsCapabilities));
+                OnPropertyChanged(nameof(MouseSettingsReadOnly));
+                OnPropertyChanged(nameof(MouseSettingsReadOnlyText));
+                OnPropertyChanged(nameof(MouseSettingsWriteUnverified));
+                OnPropertyChanged(nameof(MouseSettingsWriteUnverifiedTitle));
+                OnPropertyChanged(nameof(MouseSettingsWriteUnverifiedText));
+                OnPropertyChanged(nameof(SupportedPollingRates));
+                OnPropertyChanged(nameof(SupportedLodValues));
+                OnPropertyChanged(nameof(SupportedSleepValues));
+                OnPropertyChanged(nameof(SupportedDpiStageCount));
+                OnPropertyChanged(nameof(DpiMinimum));
+                OnPropertyChanged(nameof(DpiMaximum));
+                OnPropertyChanged(nameof(DpiSmallChange));
+                OnPropertyChanged(nameof(DebounceMinimum));
+                OnPropertyChanged(nameof(DebounceMaximum));
+                OnPropertyChanged(nameof(CanReadPollingRate));
+                OnPropertyChanged(nameof(CanReadDebounce));
+                OnPropertyChanged(nameof(CanReadMotionSync));
+                OnPropertyChanged(nameof(CanReadDpi));
+                OnPropertyChanged(nameof(CanReadDpiStage));
+                OnPropertyChanged(nameof(CanReadLod));
+                OnPropertyChanged(nameof(CanReadAngleSnap));
+                OnPropertyChanged(nameof(CanReadRippleControl));
+                OnPropertyChanged(nameof(CanReadSleep));
+                OnPropertyChanged(nameof(CanWritePollingRate));
+                OnPropertyChanged(nameof(CanWriteDebounce));
+                OnPropertyChanged(nameof(CanWriteMotionSync));
+                OnPropertyChanged(nameof(CanWriteDpi));
+                OnPropertyChanged(nameof(CanWriteDpiStage));
+                OnPropertyChanged(nameof(CanWriteLod));
+                OnPropertyChanged(nameof(CanWriteAngleSnap));
+                OnPropertyChanged(nameof(CanWriteRippleControl));
+                OnPropertyChanged(nameof(CanWriteSleep));
+            }
+            OnPropertyChanged(nameof(PollingRateText));
+            OnPropertyChanged(nameof(DebounceText));
+            OnPropertyChanged(nameof(MotionSyncText));
+            OnPropertyChanged(nameof(DpiText));
+            OnPropertyChanged(nameof(DpiStageText));
+            OnPropertyChanged(nameof(SleepText));
+            OnPropertyChanged(nameof(PollingRateHz));
+            OnPropertyChanged(nameof(LodMm10));
+            OnPropertyChanged(nameof(DpiStage));
+            OnPropertyChanged(nameof(SleepSeconds));
+            OnPropertyChanged(nameof(MotionSyncIsOn));
+            OnPropertyChanged(nameof(AngleSnapIsOn));
+            OnPropertyChanged(nameof(RippleControlIsOn));
+            OnPropertyChanged(nameof(DebounceMsValue));
+            OnPropertyChanged(nameof(DpiValue));
+        }
+        finally
+        {
+            _isRefreshingDeviceSettings = false;
+        }
+    }
+
+    private async Task ApplyDeviceSettingAsync(DeviceSettings changes)
+    {
+        await _deviceSettingsWriteLock.WaitAsync();
+        SetApplyingDeviceSetting(true);
+        try
+        {
+            var applied = await Task.Run(() => _batteryReader.ApplyDeviceSettings(changes));
+            var snapshot = await ReadDeviceSettingsAsync();
+            UpdateDeviceSettings(snapshot);
+            _hasAttemptedDeviceSettingsForCurrentIdentity = true;
+
+            if (applied != true)
+            {
+                SetMouseSettingsError(Loc.T("Setting could not be applied"));
+            }
+            else if (!RequestedChangesMatch(changes, snapshot?.Values))
+            {
+                SetMouseSettingsError(Loc.T("The mouse reported a different value. It may take effect after reconnecting."));
+            }
+            else
+            {
+                ClearMouseSettingsError();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(nameof(MainViewModel), ex);
+            SetMouseSettingsError(Loc.T("Setting could not be applied"));
+        }
+        finally
+        {
+            SetApplyingDeviceSetting(false);
+            _deviceSettingsWriteLock.Release();
+        }
+    }
+
+    private void SetApplyingDeviceSetting(bool value)
+    {
+        if (_isApplyingDeviceSetting == value)
+        {
+            return;
+        }
+
+        _isApplyingDeviceSetting = value;
+        OnPropertyChanged(nameof(IsApplyingDeviceSetting));
+        NotifyCanWriteProperties();
+    }
+
+    private void BeginDeviceSettingsRead()
+    {
+        _deviceSettingsReadCount++;
+        if (_deviceSettingsReadCount != 1)
+        {
+            return;
+        }
+
+        _isReadingDeviceSettings = true;
+        OnPropertyChanged(nameof(IsReadingDeviceSettings));
+        NotifyCanWriteProperties();
+    }
+
+    private void EndDeviceSettingsRead()
+    {
+        if (_deviceSettingsReadCount == 0)
+        {
+            return;
+        }
+
+        _deviceSettingsReadCount--;
+        if (_deviceSettingsReadCount != 0)
+        {
+            return;
+        }
+
+        _isReadingDeviceSettings = false;
+        OnPropertyChanged(nameof(IsReadingDeviceSettings));
+        NotifyCanWriteProperties();
+    }
+
+    private void NotifyCanWriteProperties()
+    {
+        OnPropertyChanged(nameof(CanWritePollingRate));
+        OnPropertyChanged(nameof(CanWriteDebounce));
+        OnPropertyChanged(nameof(CanWriteMotionSync));
+        OnPropertyChanged(nameof(CanWriteDpi));
+        OnPropertyChanged(nameof(CanWriteDpiStage));
+        OnPropertyChanged(nameof(CanWriteLod));
+        OnPropertyChanged(nameof(CanWriteAngleSnap));
+        OnPropertyChanged(nameof(CanWriteRippleControl));
+        OnPropertyChanged(nameof(CanWriteSleep));
+    }
+
+    private static bool RequestedChangesMatch(DeviceSettings requested, DeviceSettings? current)
+    {
+        if (current is null)
+        {
+            return false;
+        }
+
+        return (requested.PollingRateHz is null || requested.PollingRateHz == current.PollingRateHz)
+            && (requested.DebounceMs is null || requested.DebounceMs == current.DebounceMs)
+            && (requested.MotionSync is null || requested.MotionSync == current.MotionSync)
+            && (requested.Dpi is null || requested.Dpi == current.Dpi)
+            && (requested.DpiStage is null || requested.DpiStage == current.DpiStage)
+            && (requested.LodMm10 is null || requested.LodMm10 == current.LodMm10)
+            && (requested.AngleSnap is null || requested.AngleSnap == current.AngleSnap)
+            && (requested.RippleControl is null || requested.RippleControl == current.RippleControl)
+            && (requested.SleepSeconds is null || requested.SleepSeconds == current.SleepSeconds);
+    }
+
+    private void SetMouseSettingsError(string message)
+    {
+        if (_mouseSettingsError == message)
+        {
+            return;
+        }
+
+        _mouseSettingsError = message;
+        OnPropertyChanged(nameof(MouseSettingsErrorOpen));
+        OnPropertyChanged(nameof(MouseSettingsErrorText));
+    }
+
     private void UpdateBatteryProperties(PulsarBatteryReader.BatteryStatus status)
     {
         BatteryPercentage = status.Percentage;
         IsCharging = status.IsCharging;
         ModelName = status.Model;
+        BeginDeviceImageUpdate(status.Model, status.ProtocolModelId);
+        _connection = status.Connection;
+        _connectionName = status.ConnectionName;
+        _firmwareVersion = status.FirmwareVersion;
+        _linkRateHz = status.LinkRateHz;
+        _voltageMv = status.VoltageMv;
+        _signalStrength = status.SignalStrength;
+        _dongleFirmwareVersion = status.DongleFirmwareVersion;
         _lastUpdated = DateTimeOffset.Now;
-        
+
         OnPropertyChanged(nameof(ChargingStateText));
+        OnPropertyChanged(nameof(BatteryDetailText));
+        OnPropertyChanged(nameof(SignalText));
+        OnPropertyChanged(nameof(ConnectionDetailText));
+        OnPropertyChanged(nameof(ConnectionDetailVisibility));
+        OnPropertyChanged(nameof(ConnectionToolTip));
+        OnPropertyChanged(nameof(BatteryVisualState));
+        OnPropertyChanged(nameof(ChargingGlyphVisibility));
+        OnPropertyChanged(nameof(ConnectionText));
+        OnPropertyChanged(nameof(FirmwareText));
         OnPropertyChanged(nameof(LastUpdatedText));
+        NotifyTrayProperties();
     }
 
     private bool ShouldLogCurrentReading()
@@ -659,13 +1551,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
         storage = value;
         OnPropertyChanged(propertyName);
         
-        // Update visibility properties when loading state changes
         if (propertyName == nameof(IsLoading) || propertyName == nameof(HasInitialData) || propertyName == nameof(NoDeviceFound))
         {
             OnPropertyChanged(nameof(LoadingVisibility));
             OnPropertyChanged(nameof(ContentVisibility));
             OnPropertyChanged(nameof(NoDeviceVisibility));
             OnPropertyChanged(nameof(RefreshingVisibility));
+        }
+
+        if (propertyName == nameof(HasInitialData))
+        {
+            NotifyTrayProperties();
+            OnPropertyChanged(nameof(BatteryVisualState));
         }
         
         return true;

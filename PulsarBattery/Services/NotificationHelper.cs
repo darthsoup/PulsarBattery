@@ -5,7 +5,6 @@ using System.IO;
 using Windows.Media.Core;
 using Windows.Media.Playback;
 using System;
-using System.Diagnostics;
 
 namespace PulsarBattery.Services;
 
@@ -27,7 +26,7 @@ internal static class NotificationHelper
                 // Per quickstart: always hook before Register() so handling stays in this process.
                 manager.NotificationInvoked += (_, args) =>
                 {
-                    Debug.WriteLine($"Notification invoked: {args.Argument}");
+                    Log.Info(nameof(NotificationHelper), $"Notification invoked: {args.Argument}");
                 };
 
                 _initialized = true;
@@ -44,7 +43,7 @@ internal static class NotificationHelper
         catch (Exception ex)
         {
             _registered = false;
-            Debug.WriteLine($"Notification init/register failed: {ex}");
+            Log.Error(nameof(NotificationHelper), $"Notification init/register failed: {ex}");
         }
     }
 
@@ -61,7 +60,7 @@ internal static class NotificationHelper
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Notification unregister failed: {ex}");
+            Log.Error(nameof(NotificationHelper), $"Notification unregister failed: {ex}");
         }
         finally
         {
@@ -82,7 +81,6 @@ internal static class NotificationHelper
         {
             var title = isCharging ? Loc.T("Charging") : Loc.T("Battery Update");
 
-            // Build device info line
             var deviceLine = string.IsNullOrWhiteSpace(model) ?
                 string.Format(Loc.T("Battery: {0}%"), currentPercentage) :
                 $"{model}: {currentPercentage}%";
@@ -103,7 +101,7 @@ internal static class NotificationHelper
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Battery notification failed: {ex}");
+            Log.Error(nameof(NotificationHelper), $"Battery notification failed: {ex}");
         }
     }
 
@@ -155,7 +153,7 @@ internal static class NotificationHelper
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Low-battery notification failed: {ex}");
+            Log.Error(nameof(NotificationHelper), $"Low-battery notification failed: {ex}");
         }
     }
 
@@ -184,7 +182,7 @@ internal static class NotificationHelper
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"Low-battery sound failed: {ex}");
+            Log.Error(nameof(NotificationHelper), $"Low-battery sound failed: {ex}");
         }
     }
 

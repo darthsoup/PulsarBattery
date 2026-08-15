@@ -16,6 +16,13 @@ public sealed partial class MainWindow : Window
 {
     private const string EmbeddedIconResourceName = "PulsarBattery.Assets.icon.ico";
 
+    // Logical (DIP) minimum below which page layouts become unreadable.
+    private const int MinWindowWidthDip = 480;
+    private const int MinWindowHeightDip = 420;
+
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(IntPtr hWnd);
+
     private readonly MainViewModel _viewModel = new();
     private AppWindow? _appWindow;
     private static string? _extractedEmbeddedIconPath;
@@ -42,6 +49,7 @@ public sealed partial class MainWindow : Window
         _viewModel.Start();
 
         DashboardItem.Content = Loc.T("Dashboard");
+        MouseItem.Content = Loc.T("Mouse");
         HistoryItem.Content = Loc.T("History");
         NavView.Loaded += NavView_Loaded;
 
@@ -65,7 +73,9 @@ public sealed partial class MainWindow : Window
 
     private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
     {
-        if (args.WindowActivationState != WindowActivationState.Deactivated)
+        var isActive = args.WindowActivationState != WindowActivationState.Deactivated;
+        _viewModel.SetWindowActive(isActive);
+        if (isActive)
         {
             EnsureAppWindowInitialized();
             _viewModel.RefreshNow();
@@ -85,14 +95,20 @@ public sealed partial class MainWindow : Window
             var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
             _appWindow = AppWindow.GetFromWindowId(windowId);
 
-            // A small utility window: good default.
             _appWindow.Resize(new Windows.Graphics.SizeInt32(900, 820));
+
+            if (_appWindow.Presenter is OverlappedPresenter presenter)
+            {
+                // PreferredMinimum* takes physical pixels.
+                var scale = GetDpiForWindow(hwnd) / 96.0;
+                presenter.PreferredMinimumWidth = (int)(MinWindowWidthDip * scale);
+                presenter.PreferredMinimumHeight = (int)(MinWindowHeightDip * scale);
+            }
 
             _appWindow.Closing += AppWindow_Closing;
         }
         catch
         {
-            // best-effort sizing
         }
     }
 
@@ -125,7 +141,6 @@ public sealed partial class MainWindow : Window
                 }
                 catch
                 {
-                    // fall back to embedded icon resource
                 }
             }
 
@@ -137,7 +152,6 @@ public sealed partial class MainWindow : Window
         }
         catch
         {
-            // best-effort icon setup
         }
     }
 
@@ -181,7 +195,6 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        // Check if minimize to tray on close is enabled
         var shouldMinimizeToTray = Services.AppSettingsService.Current.MinimizeToTrayOnClose;
 
         if (shouldMinimizeToTray)
@@ -190,11 +203,12 @@ public sealed partial class MainWindow : Window
 
             try
             {
+                _viewModel.SetWindowActive(false);
                 sender.Hide();
+                EfficiencyMode.Set(true);
             }
             catch
             {
-                // ignore
             }
         }
     }
@@ -211,10 +225,17 @@ public sealed partial class MainWindow : Window
         NavigateTo(tag);
     }
 
+    /// <summary>
+    /// Selecting the item (rather than navigating directly) keeps the
+    /// NavigationView highlight in sync via NavView_SelectionChanged.
+    /// </summary>
+    internal void SelectHistoryTab() => NavView.SelectedItem = HistoryItem;
+
     private void NavigateTo(string tag)
     {
         var pageType = tag switch
         {
+            "mouse" => typeof(MouseSettingsPage),
             "history" => typeof(HistoryPage),
             "settings" => typeof(SettingsPage),
             _ => typeof(DashboardPage)

@@ -47,7 +47,6 @@ internal static class LocalizationService
 
     private static string ResolveLocale(CultureInfo culture)
     {
-        // Exact match (e.g. "de-DE")
         if (Array.Exists(SupportedLocales, l => string.Equals(l, culture.Name, StringComparison.OrdinalIgnoreCase)))
             return culture.Name;
 

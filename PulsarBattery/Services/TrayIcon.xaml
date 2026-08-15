@@ -7,24 +7,41 @@
     xmlns:converters="using:PulsarBattery.Converters">
 
     <UserControl.Resources>
-        <!-- Converters -->
         <converters:BatteryPercentageConverter x:Key="BatteryPercentageConverter"/>
         <converters:ChargingStatusConverter x:Key="ChargingStatusConverter"/>
-        <converters:BatteryTooltipConverter x:Key="BatteryTooltipConverter"/>
     </UserControl.Resources>
 
-    <!-- TaskbarIcon -->
-    <tb:TaskbarIcon 
+    <tb:TaskbarIcon
         x:Name="TaskbarIcon"
-        ToolTipText="{x:Bind ViewModel.BatteryPercentage, Converter={StaticResource BatteryTooltipConverter}, Mode=OneWay}"
-        IconSource="ms-appx:///Assets/icon.ico"
+        ToolTipText="{x:Bind ViewModel.TrayTooltipText, Mode=OneWay}"
         ContextMenuMode="SecondWindow"
         NoLeftClickDelay="True">
-        
+
+        <!-- The icon is rendered in code (TrayIconRenderer) at the exact
+             physical tray size and assigned to TaskbarIcon.Icon from a single
+             UI-thread path in TrayIcon.xaml.cs. IconSource must NEVER be set:
+             H.NotifyIcon's IconSource change handler races its async icon
+             updates and leaks change subscriptions, and any IconSource would
+             also overwrite the code-assigned Icon on DPI changes. -->
+
         <tb:TaskbarIcon.ContextFlyout>
+            <!-- SecondWindow mode sizes its host window from each item's measured
+                 DesiredSize; items whose x:Bind text changed can momentarily measure
+                 too narrow, clipping the menu. MinWidth on the items is the only
+                 sizing input that reaches that measurement (MenuFlyoutPresenterStyle
+                 is not copied to the second window's flyout). -->
             <MenuFlyout AreOpenCloseAnimationsEnabled="True">
-                <!-- Battery Status -->
-                <MenuFlyoutItem 
+                <MenuFlyoutItem
+                    MinWidth="200"
+                    Text="{x:Bind ViewModel.ModelName, Mode=OneWay}"
+                    IsEnabled="False">
+                    <MenuFlyoutItem.Icon>
+                        <FontIcon Glyph="&#xE962;" FontFamily="Segoe Fluent Icons"/>
+                    </MenuFlyoutItem.Icon>
+                </MenuFlyoutItem>
+
+                <MenuFlyoutItem
+                    MinWidth="200"
                     Text="{x:Bind ViewModel.BatteryPercentage, Converter={StaticResource BatteryPercentageConverter}, Mode=OneWay}"
                     IsEnabled="False">
                     <MenuFlyoutItem.Icon>
@@ -32,8 +49,8 @@
                     </MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
                 
-                <!-- Charging Status -->
-                <MenuFlyoutItem 
+                <MenuFlyoutItem
+                    MinWidth="200"
                     Text="{x:Bind ViewModel.IsCharging, Converter={StaticResource ChargingStatusConverter}, Mode=OneWay}"
                     IsEnabled="False">
                     <MenuFlyoutItem.Icon>
@@ -43,8 +60,8 @@
                 
                 <MenuFlyoutSeparator/>
                 
-                <!-- Open Command -->
-                <MenuFlyoutItem 
+                <MenuFlyoutItem
+                    MinWidth="200"
                     Text="Open"
                     x:Name="OpenMenuItem">
                     <MenuFlyoutItem.Icon>
@@ -52,8 +69,8 @@
                     </MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
 
-                <!-- Exit Command -->
-                <MenuFlyoutItem 
+                <MenuFlyoutItem
+                    MinWidth="200"
                     Text="Exit"
                     x:Name="ExitMenuItem">
                     <MenuFlyoutItem.Icon>
