@@ -23,7 +23,6 @@
 
                 <controls:TranslatedTextBlock Text="History" TextStyle="{ThemeResource TitleTextBlockStyle}" />
 
-                <!-- History Section Header -->
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
@@ -63,7 +62,6 @@
             <Grid Padding="32,0,32,32">
             <StackPanel Spacing="16" MaxWidth="1000">
 
-                <!-- History List -->
                 <ListView ItemsSource="{x:Bind ViewModel.PagedHistory, Mode=OneWay}"
                           SelectionMode="None"
                           IsItemClickEnabled="False"
@@ -91,7 +89,6 @@
                                         <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
 
-                                    <!-- Time icon and timestamp -->
                                     <FontIcon Grid.Column="0"
                                               Glyph="&#xE823;" 
                                               FontSize="16"
@@ -103,7 +100,6 @@
                                                Style="{ThemeResource BodyTextBlockStyle}"
                                                VerticalAlignment="Center" />
 
-                                    <!-- Battery percentage with icon -->
                                     <StackPanel Grid.Column="2" 
                                                 Orientation="Horizontal" 
                                                 Spacing="6"
@@ -117,7 +113,6 @@
                                         </TextBlock>
                                     </StackPanel>
 
-                                    <!-- Charging status badge -->
                                     <Border Grid.Column="3"
                                             Background="{ThemeResource SubtleFillColorSecondaryBrush}"
                                             CornerRadius="4"
@@ -134,7 +129,6 @@
                                         </StackPanel>
                                     </Border>
 
-                                    <!-- Model name -->
                                     <TextBlock Grid.Column="4" 
                                                Text="{x:Bind Model}" 
                                                Style="{ThemeResource CaptionTextBlockStyle}"
@@ -148,8 +142,6 @@
                     </ListView.ItemTemplate>
                 </ListView>
 
-
-                <!-- Empty state -->
                 <Border Style="{StaticResource PulsarCardStyle}"
                         Padding="60,80"
                         MinHeight="300"

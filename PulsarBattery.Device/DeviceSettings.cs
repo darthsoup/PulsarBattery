@@ -2,7 +2,7 @@ namespace PulsarBattery.Device;
 
 /// <summary>
 /// On-device configuration values. Null means the device (or its protocol)
-/// does not expose that value — and in <c>ApplySettings</c> requests, null
+/// does not expose that value, and in <c>ApplySettings</c> requests, null
 /// means "leave unchanged".
 /// </summary>
 /// <param name="SleepSeconds">

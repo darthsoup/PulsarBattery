@@ -199,7 +199,6 @@ public sealed partial class MainWindow : Window
             return;
         }
 
-        // Check if minimize to tray on close is enabled
         var shouldMinimizeToTray = Services.AppSettingsService.Current.MinimizeToTrayOnClose;
 
         if (shouldMinimizeToTray)

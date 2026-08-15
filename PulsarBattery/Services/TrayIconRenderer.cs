@@ -24,7 +24,7 @@ public readonly record struct TrayIconState(
 /// Renders the tray icon in code at the exact physical tray icon size
 /// (system small-icon metric at the primary monitor's DPI), so the shell
 /// never rescales it. Digits are rasterized as GraphicsPath outlines at 4x
-/// and downscaled with bicubic — smoother than grid-fit hinting at native
+/// and downscaled with bicubic, smoother than grid-fit hinting at native
 /// size, and the halo becomes a true geometric stroke instead of a blocky
 /// offset union. The produced Icons are NON-owning wrappers; this class owns
 /// the HICONs and destroys a superseded handle only after the caller

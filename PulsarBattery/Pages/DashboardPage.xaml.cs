@@ -62,7 +62,7 @@ public sealed partial class DashboardPage : Page
 
     /// <summary>
     /// Applied imperatively rather than bound so a runtime theme switch can
-    /// re-resolve the brushes — a binding would keep the stale theme's instances.
+    /// re-resolve the brushes; a binding would keep the stale theme's instances.
     /// </summary>
     private void ApplyBatteryState()
     {

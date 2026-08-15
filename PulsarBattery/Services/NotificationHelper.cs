@@ -81,7 +81,6 @@ internal static class NotificationHelper
         {
             var title = isCharging ? Loc.T("Charging") : Loc.T("Battery Update");
 
-            // Build device info line
             var deviceLine = string.IsNullOrWhiteSpace(model) ?
                 string.Format(Loc.T("Battery: {0}%"), currentPercentage) :
                 $"{model}: {currentPercentage}%";

@@ -197,7 +197,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         OnPropertyChanged(nameof(TrayTooltipText));
     }
 
-    /// <summary>The transport itself — the receiver's name, or the cable.</summary>
+    /// <summary>The transport itself: the receiver's name, or the cable.</summary>
     public string ConnectionText => _connection switch
     {
         ConnectionKind.Wired => Loc.T("Wired"),
@@ -669,7 +669,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (SetProperty(ref _alertThresholdUnlockedPercent, clamped))
             {
                 AppSettingsService.Update(settings => settings with { AlertThresholdUnlockedPercent = clamped });
-                // The threshold feeds TrayIconState.IsLow and BatteryVisualState — recolor promptly.
+                // The threshold feeds TrayIconState.IsLow and BatteryVisualState, so recolor promptly.
                 NotifyTrayProperties();
                 OnPropertyChanged(nameof(BatteryVisualState));
             }
@@ -1065,7 +1065,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
             {
                 await PopulateHistoryCollectionAsync(historicalReadings);
                 
-                // Load cached data from most recent history entry
                 await EnqueueAsync(() =>
                 {
                     var mostRecent = historicalReadings[0];
@@ -1558,7 +1557,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
         storage = value;
         OnPropertyChanged(propertyName);
         
-        // Update visibility properties when loading state changes
         if (propertyName == nameof(IsLoading) || propertyName == nameof(HasInitialData) || propertyName == nameof(NoDeviceFound))
         {
             OnPropertyChanged(nameof(LoadingVisibility));

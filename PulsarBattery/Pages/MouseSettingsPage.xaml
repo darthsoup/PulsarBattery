@@ -24,7 +24,6 @@
                                               TextStyle="{ThemeResource TitleTextBlockStyle}"
                                               Margin="0,0,0,-8" />
 
-                <!-- Unsupported / no device state -->
                 <Border Style="{StaticResource PulsarCardStyle}"
                         Padding="60,80"
                         MinHeight="300"
@@ -53,7 +52,6 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Settings (shown when a configurable device is connected) -->
                 <StackPanel Spacing="24" Visibility="{x:Bind ViewModel.MouseSettingsVisibility, Mode=OneWay}">
 
                     <!-- Visibility must track IsOpen. A closed InfoBar renders 0px tall but stays
@@ -80,7 +78,6 @@
                              Message="{x:Bind ViewModel.MouseSettingsWriteUnverifiedText, Mode=OneWay}"
                              IsClosable="False" />
 
-                    <!-- Performance Section -->
                     <StackPanel x:Name="PerformanceSection" Spacing="4">
                         <controls:TranslatedTextBlock Text="Performance"
                                                       TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
@@ -126,7 +123,6 @@
                         </settingscontrols:SettingsCard>
                     </StackPanel>
 
-                    <!-- Sensor Section -->
                     <StackPanel x:Name="SensorSection" Spacing="4">
                         <controls:TranslatedTextBlock Text="Sensor"
                                                       TextStyle="{ThemeResource BodyStrongTextBlockStyle}"
@@ -154,7 +150,6 @@
                         </settingscontrols:SettingsCard>
                     </StackPanel>
 
-                    <!-- Power Section -->
                     <StackPanel x:Name="PowerSection" Spacing="4">
                         <controls:TranslatedTextBlock Text="Power"
                                                       TextStyle="{ThemeResource BodyStrongTextBlockStyle}"

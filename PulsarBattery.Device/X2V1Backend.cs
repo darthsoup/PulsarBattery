@@ -160,7 +160,7 @@ public sealed class X2V1Backend : IHidBackend
 
     /// <summary>
     /// DPI step for this model's sensor: stage values are stored as
-    /// <c>(raw + 1) x step</c>. Verified live on an X2 V1 — 07 07 00 47 is
+    /// <c>(raw + 1) x step</c>. Verified live on an X2 V1: 07 07 00 47 is
     /// 400 DPI and 0F 0F 00 37 is 800 DPI.
     /// </summary>
     private const int DpiBaseStep = 50;
@@ -169,8 +169,8 @@ public sealed class X2V1Backend : IHidBackend
     //
     // Index 2 (0x00AD) was previously labelled "led" here and dropped. The
     // Pulsar cMouse notes name it SleepTime, in units of 10 seconds, and list
-    // the light-related fields separately (0x00A0 Light, 0x00B3 MovingOffLight)
-    // — so it is surfaced as the sleep delay. An earlier probe of this device
+    // the light-related fields separately (0x00A0 Light, 0x00B3 MovingOffLight),
+    // so it is surfaced as the sleep delay. An earlier probe of this device
     // guessed "LED-off timer" for the same address; both readings agree on the
     // decasecond unit, and only hardware can settle which label is right.
     private const ushort AddrAdvParams = 0x00A9;
@@ -228,7 +228,7 @@ public sealed class X2V1Backend : IHidBackend
     /// Reads the on-device settings out of the mouse's EEPROM together with the
     /// capabilities needed to render a safe editor. The EEPROM lives on the
     /// mouse rather than the dongle, so this only answers while the wireless
-    /// side is awake — an idle X2 V1 sleeps within seconds and every block then
+    /// side is awake: an idle X2 V1 sleeps within seconds and every block then
     /// times out, which is reported as "no settings" rather than partial data.
     /// </summary>
     public DeviceSettingsSnapshot? ReadSettingsSnapshot(bool debug)
@@ -987,7 +987,7 @@ public sealed class X2V1Backend : IHidBackend
 
     private static byte[] BuildCmd01Packet()
     {
-        // Deliberately 16 bytes (not 17 like the other packets) — this
+        // Deliberately 16 bytes (not 17 like the other packets). This
         // preserves the byte-exact captured warmup packet.
         var nonce = (uint)(DateTime.UtcNow.Ticks & 0xFFFFFFFF);
         Span<byte> body = stackalloc byte[15];

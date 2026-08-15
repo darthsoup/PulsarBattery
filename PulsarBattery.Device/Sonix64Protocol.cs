@@ -44,7 +44,7 @@ internal static class Sonix64Protocol
     private static readonly byte[] PollingRateWrite = [0x01, 0x09, 0x02];
 
     // Stored polling register (08 85 03) value ≈ 30000 / Hz, rounded. This
-    // register does NOT track the live rate — it keeps the boot/profile value
+    // register does NOT track the live rate: it keeps the boot/profile value
     // even after on-mouse or software rate switches (verified live).
     private static readonly Dictionary<byte, int> PollingRateByValue = new()
     {
@@ -60,7 +60,7 @@ internal static class Sonix64Protocol
     // Live-rate register (01 89 02) and the write command (01 09 02) share one
     // ascending power-of-two code per rate. Verified live on the X2 V3 eS:
     // writing 0x01 sets 125 Hz and the change applies instantly, also
-    // wireless — the reversed table in older captures is wrong for this
+    // wireless. The reversed table in older captures is wrong for this
     // device.
     private static readonly Dictionary<int, byte> PollingRateCodeByHz = new()
     {
@@ -117,7 +117,7 @@ internal static class Sonix64Protocol
     /// 1k/4k/2k/8k, carrying a fallback link rate. Not used for wired-vs-
     /// dongle classification: it reflects the mouse's last-established radio
     /// link rather than live cable state (live-probed staying "wireless 4k"
-    /// on a genuinely wired eS with no dongle on the bus at all) — callers
+    /// on a genuinely wired eS with no dongle on the bus at all), so callers
     /// must derive that from which physical device answered instead.
     /// </summary>
     public static int? ReadConnection(HidStream stream, bool debug)

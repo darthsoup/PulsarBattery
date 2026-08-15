@@ -42,7 +42,6 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
         OpenMenuItem.Text = Loc.T("Open");
         ExitMenuItem.Text = Loc.T("Exit");
 
-        // Assign commands directly to the auto-generated fields
         TaskbarIcon.LeftClickCommand = new RelayCommand(ShowWindow);
         OpenMenuItem.Command = new RelayCommand(ShowWindow);
         ExitMenuItem.Command = new RelayCommand(ExitApp);
@@ -114,7 +113,7 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
 
     /// <summary>
     /// Re-creates the shell icon if it was lost (failed NIM_ADD at startup or
-    /// during an explorer restart — the library swallows those errors and
+    /// during an explorer restart: the library swallows those errors and
     /// nothing else ever retries Create) and forces a fresh render+assign.
     /// </summary>
     private void HealTrayIcon()

@@ -21,7 +21,7 @@ public sealed class Sonix64Backend : IHidBackend
     private readonly DeviceDescriptor _descriptor;
 
     // Firmware never changes while the app runs, and a failed Query costs up
-    // to ~900ms — read it once and stop retrying after a few misses so the
+    // to ~900ms, so read it once and stop retrying after a few misses so the
     // 5s poll loops don't pay that penalty every tick.
     private string? _firmwareVersion;
     private string? _firmwareDevicePath;
@@ -48,7 +48,7 @@ public sealed class Sonix64Backend : IHidBackend
             // Which device answered is ground truth for wired-vs-dongle. The
             // connection-type register itself was live-probed reporting
             // "Dongle @ 4000Hz" the entire time on a mouse that was genuinely
-            // wired with no dongle enumerated anywhere on the bus — it
+            // wired with no dongle enumerated anywhere on the bus. It
             // reflects the mouse's last-established radio link, not live
             // cable state, and doesn't update just because a charge cable
             // went in.
@@ -252,7 +252,7 @@ public sealed class Sonix64Backend : IHidBackend
             }
             catch
             {
-                // mi_02 rejects SetFeature; other interfaces may be busy — try the next one.
+                // mi_02 rejects SetFeature; other interfaces may be busy, so try the next one.
             }
             finally
             {

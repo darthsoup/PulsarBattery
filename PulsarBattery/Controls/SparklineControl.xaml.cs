@@ -16,7 +16,7 @@ namespace PulsarBattery.Controls;
 /// <summary>
 /// Trend-shape sparkline over the last 24 hours of battery readings.
 /// Mixed-model history draws as one line and disconnected gaps are not
-/// broken — it shows the shape, the History page has the detail.
+/// broken. It shows the shape, the History page has the detail.
 /// </summary>
 public sealed partial class SparklineControl : UserControl
 {
@@ -87,7 +87,7 @@ public sealed partial class SparklineControl : UserControl
 
     private void OnReadingsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        // History seeding adds up to 500 items one by one — coalesce to a single redraw.
+        // History seeding adds up to 500 items one by one, so coalesce to a single redraw.
         if (_redrawQueued)
         {
             return;

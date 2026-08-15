@@ -10,7 +10,7 @@
 
     <ScrollViewer HorizontalScrollBarVisibility="Disabled">
         <!-- StateTriggers are only evaluated when the VisualStateGroups sit on the
-             Page's first child — keep them on this ScrollViewer, not a descendant. -->
+             Page's first child, so keep them on this ScrollViewer, not a descendant. -->
         <VisualStateManager.VisualStateGroups>
             <VisualStateGroup>
                 <VisualState x:Name="WideLayout">
@@ -48,7 +48,6 @@
 
                 <controls:TranslatedTextBlock Text="Dashboard" TextStyle="{ThemeResource TitleTextBlockStyle}" />
 
-                <!-- Loading indicator (shown when no data is available yet) -->
                 <Border Style="{StaticResource PulsarCardStyle}"
                         Padding="40"
                         MinHeight="200"
@@ -69,7 +68,6 @@
                     </StackPanel>
                 </Border>
 
-                <!-- No Device Found indicator -->
                 <Border Style="{StaticResource PulsarCardStyle}"
                         Padding="40"
                         MinHeight="300"
@@ -114,12 +112,9 @@
                     </StackPanel>
                 </Border>
 
-                <!-- Main content (shown when data is available) -->
                 <StackPanel Spacing="16" Visibility="{x:Bind ViewModel.ContentVisibility, Mode=OneWay}">
 
-                    <!-- Battery Status Card -->
                     <Grid>
-                        <!-- Loading indicator when refreshing with cached data -->
                         <StackPanel Orientation="Horizontal" 
                                     Spacing="8" 
                                     HorizontalAlignment="Right"
@@ -135,7 +130,6 @@
                                                           VerticalAlignment="Center" />
                         </StackPanel>
 
-                        <!-- Main battery card -->
                         <Border Style="{StaticResource PulsarCardStyle}"
                                 Padding="16"
                                 MinHeight="120">
@@ -160,7 +154,6 @@
                                            Visibility="{x:Bind ViewModel.DeviceImageVisibility, Mode=OneWay}" />
                                 </Grid>
 
-                                <!-- Left side - Battery info -->
                                 <StackPanel Grid.Row="0" Grid.Column="1" Spacing="4" VerticalAlignment="Center">
                                     <TextBlock Text="{x:Bind ViewModel.ModelName, Mode=OneWay}" 
                                                Style="{ThemeResource TitleTextBlockStyle}"
@@ -173,7 +166,9 @@
                                                Foreground="{ThemeResource TextFillColorTertiaryBrush}" />
                                 </StackPanel>
 
-                                <!-- Right side - Large percentage (state-colored from code-behind) -->
+                                <!-- Foreground is set from code-behind, not bound: the state
+                                     brushes differ between light and dark and must be re-resolved
+                                     on theme change. -->
                                 <StackPanel x:Name="PercentageHost"
                                             Grid.Row="0" Grid.Column="2"
                                             Orientation="Horizontal"
@@ -195,7 +190,6 @@
                                     </TextBlock>
                                 </StackPanel>
 
-                                <!-- Progress bar (full width) -->
                                 <ProgressBar x:Name="BatteryBar"
                                              Grid.Row="1" Grid.Column="0" Grid.ColumnSpan="3"
                                              Minimum="0"
@@ -207,7 +201,6 @@
                         </Border>
                     </Grid>
 
-                    <!-- Battery trend -->
                     <Border Style="{StaticResource PulsarCardStyle}" Padding="16">
                         <Grid RowSpacing="8">
                             <Grid.RowDefinitions>
@@ -240,7 +233,6 @@
                         </Grid>
                     </Border>
 
-                    <!-- At-a-glance stats -->
                     <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />

@@ -7,12 +7,10 @@
     xmlns:converters="using:PulsarBattery.Converters">
 
     <UserControl.Resources>
-        <!-- Converters -->
         <converters:BatteryPercentageConverter x:Key="BatteryPercentageConverter"/>
         <converters:ChargingStatusConverter x:Key="ChargingStatusConverter"/>
     </UserControl.Resources>
 
-    <!-- TaskbarIcon -->
     <tb:TaskbarIcon
         x:Name="TaskbarIcon"
         ToolTipText="{x:Bind ViewModel.TrayTooltipText, Mode=OneWay}"
@@ -33,7 +31,6 @@
                  sizing input that reaches that measurement (MenuFlyoutPresenterStyle
                  is not copied to the second window's flyout). -->
             <MenuFlyout AreOpenCloseAnimationsEnabled="True">
-                <!-- Model -->
                 <MenuFlyoutItem
                     MinWidth="200"
                     Text="{x:Bind ViewModel.ModelName, Mode=OneWay}"
@@ -43,7 +40,6 @@
                     </MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
 
-                <!-- Battery Status -->
                 <MenuFlyoutItem
                     MinWidth="200"
                     Text="{x:Bind ViewModel.BatteryPercentage, Converter={StaticResource BatteryPercentageConverter}, Mode=OneWay}"
@@ -53,7 +49,6 @@
                     </MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
                 
-                <!-- Charging Status -->
                 <MenuFlyoutItem
                     MinWidth="200"
                     Text="{x:Bind ViewModel.IsCharging, Converter={StaticResource ChargingStatusConverter}, Mode=OneWay}"
@@ -65,7 +60,6 @@
                 
                 <MenuFlyoutSeparator/>
                 
-                <!-- Open Command -->
                 <MenuFlyoutItem
                     MinWidth="200"
                     Text="Open"
@@ -75,7 +69,6 @@
                     </MenuFlyoutItem.Icon>
                 </MenuFlyoutItem>
 
-                <!-- Exit Command -->
                 <MenuFlyoutItem
                     MinWidth="200"
                     Text="Exit"

@@ -99,8 +99,7 @@ internal sealed class HistoryStore
 
     private void ReplaceFileWithTemporary(string temporaryFilePath)
     {
-        // Use File.Move instead of Copy + Delete for better performance
-        // Move is atomic and more efficient
+        // Move is atomic; Copy + Delete could leave a torn history file on crash.
         File.Move(temporaryFilePath, _filePath, overwrite: true);
     }
 

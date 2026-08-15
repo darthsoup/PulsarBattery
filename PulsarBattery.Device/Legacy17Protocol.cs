@@ -13,7 +13,7 @@ namespace PulsarBattery.Device;
 /// <remarks>
 /// This is the Pulsar "cMouse" vendor protocol. Command names and field
 /// offsets below follow the reverse-engineering notes published in
-/// amassias/Bibimbap (MIT), docs/protocol.md — a macOS configurator that
+/// amassias/Bibimbap (MIT), docs/protocol.md, a macOS configurator that
 /// documented the same wire format we had been replaying blind. Their frame
 /// indices are relative to the frame; ours include the report ID at [0], so
 /// their data[n] is our payload[n + 1].
@@ -90,7 +90,7 @@ internal static class Legacy17Protocol
     /// <summary>
     /// Reads a block of the mouse's settings EEPROM. The 16-bit address goes at
     /// bytes 3..4 (big-endian) and the byte count at byte 5. Only answered while
-    /// the mouse itself is awake — the dongle cannot serve this on its own.
+    /// the mouse itself is awake: the dongle cannot serve this on its own.
     /// </summary>
     public const byte CmdGetEeprom = 0x08;
 
@@ -284,7 +284,7 @@ internal static class Legacy17Protocol
     /// <summary>
     /// Settings are stored as value/check pairs where <c>value + check == 0x55</c>,
     /// which is why every setting sits on an even address. Returns one byte per
-    /// pair, or null if any pair fails its check — so a torn or stale frame is
+    /// pair, or null if any pair fails its check, so a torn or stale frame is
     /// rejected rather than surfaced as a bogus setting.
     /// </summary>
     public static byte[]? ParseEepromPairs(IReadOnlyList<byte> payload, int expectedPairs)
@@ -318,7 +318,7 @@ internal static class Legacy17Protocol
     /// </summary>
     public enum DpiExponentScaling
     {
-        /// <summary>Sensor family unknown — reject stages that use the high bit.</summary>
+        /// <summary>Sensor family unknown: reject stages that use the high bit.</summary>
         Unknown,
         Doubling,
         PulsarX1,
@@ -326,15 +326,15 @@ internal static class Legacy17Protocol
 
     /// <summary>
     /// Decodes one DPI stage from a <c>DpiPair</c> block. Each stage is four
-    /// bytes — x, y, attributes, check — with <c>check = 0x55 - x - y - attr</c>.
+    /// bytes (x, y, attributes, check) with <c>check = 0x55 - x - y - attr</c>.
     /// </summary>
     /// <remarks>
     /// The attributes byte packs four 2-bit fields, not a plain high byte:
     /// <c>xEx</c> at bits 0-1, x's high bits at 2-3, <c>yEx</c> at 4-5 and y's
     /// high bits at 6-7. Reading it as a high byte (as this did) only agrees
     /// with the real layout while it is zero, which is why the two X2 V1
-    /// samples verified live — 07 07 00 47 = 400 DPI and 0F 0F 00 37 = 800 DPI
-    /// — could not tell the formulas apart. Above 12800 DPI it diverged badly:
+    /// samples verified live (07 07 00 47 = 400 DPI and 0F 0F 00 37 = 800 DPI)
+    /// could not tell the formulas apart. Above 12800 DPI it diverged badly:
     /// a 16000 stage decoded as 54400.
     /// <para>
     /// Cross-checked against the X2 CrazyLight flash dump published in
@@ -404,7 +404,7 @@ internal static class Legacy17Protocol
     /// firmware computes <c>resp[6+i] = challenge[i]*(i+1) + challenge[(i+1)%4]
     /// + info[i]</c>, so the transform inverts directly. CID/MID are
     /// cross-checked against the cleartext copy at bytes 10..11 and rejected
-    /// unless both agree — which makes a garbled or stale frame fail closed.
+    /// unless both agree, which makes a garbled or stale frame fail closed.
     /// Verified live on an X2 V1: three different challenges all decoded to
     /// 06 04 00 00, matching bytes 10..13 exactly.
     /// </summary>
@@ -490,7 +490,7 @@ internal static class Legacy17Protocol
         }
 
         // The dongle answers the battery command even when the mouse itself is
-        // not reachable over RF (asleep, out of range, switched off) — and then
+        // not reachable over RF (asleep, out of range, switched off), and then
         // reports 0%. Verified live on an X2 V1: the live read returned 0 while
         // the dongle's own cached state report still held 100%, and it snapped
         // back to 100% as soon as the mouse became active again. Treating that
@@ -540,7 +540,7 @@ internal static class Legacy17Protocol
     /// The value is a small bar count, not a percentage or a dBm figure. The
     /// Pulsar cMouse notes bucket it as 4+ excellent, 3 good, 2 fair, 0-1 weak.
     /// A status of 1 is the protocol's way of saying "this model has no RSSI",
-    /// not an error — see <see cref="ParseBatteryPayload"/> for the same
+    /// not an error. See <see cref="ParseBatteryPayload"/> for the same
     /// convention. Only call this once <see cref="WaitUntilOnline"/> has
     /// succeeded: a sleeping mouse behind a live receiver still answers, and
     /// its zero must not be shown as a weak signal.
@@ -559,7 +559,7 @@ internal static class Legacy17Protocol
     /// Blocks until the wireless side reports itself reachable, or the timeout
     /// elapses. Behind a dongle the receiver answers the handshake before it
     /// has reached the mouse, and anything read in that window times out with
-    /// no useful explanation — so callers wait for the mouse itself.
+    /// no useful explanation, so callers wait for the mouse itself.
     /// </summary>
     /// <returns>True once the mouse is online and idle.</returns>
     public static bool WaitUntilOnline(

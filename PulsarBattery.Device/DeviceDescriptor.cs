@@ -5,7 +5,7 @@ namespace PulsarBattery.Device;
 /// <summary>
 /// Identity of a supported device: which VID/PIDs belong to it and what the
 /// UI should call it. Protocol behavior lives in the backend the registry
-/// pairs this descriptor with — adding a same-protocol mouse is a new
+/// pairs this descriptor with. Adding a same-protocol mouse is a new
 /// descriptor, not a new backend class.
 /// </summary>
 /// <param name="DongleProductIds">
