@@ -21,6 +21,13 @@ public sealed partial class MouseSettingsPage : Page
 
     private bool _isUpdatingSelection;
 
+    /// <summary>
+    /// Used by x:Bind so an InfoBar's Visibility tracks the same flag as its IsOpen. Derived
+    /// rather than a separate VM property so the two can never drift out of sync.
+    /// </summary>
+    public static Visibility BoolToVisibility(bool value)
+        => value ? Visibility.Visible : Visibility.Collapsed;
+
     public MouseSettingsPage()
     {
         InitializeComponent();

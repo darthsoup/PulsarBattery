@@ -7,6 +7,7 @@ using Microsoft.UI.Xaml.Media;
 using PulsarBattery.Services;
 using PulsarBattery.Tools;
 using System;
+using System.ComponentModel;
 using System.Diagnostics;
 using System.IO;
 using System.Threading.Tasks;
@@ -18,12 +19,33 @@ namespace PulsarBattery.Pages;
 
 public sealed partial class SettingsPage : Page
 {
+    /// <summary>
+    /// UI-only sentinel for the "follow the system language" item. Maps to a null
+    /// <see cref="AppSettings.Language"/> on disk.
+    /// </summary>
+    private const string AutoLanguageTag = "auto";
+
     public string AppVersion { get; } = GetAppVersion();
 
     private ViewModels.MainViewModel? ViewModel => DataContext as ViewModels.MainViewModel;
 
-    private bool _isUpdatingStartWithWindowsToggle;
-    private bool _isUpdatingLanguageSelection;
+    /// <summary>
+    /// Armed from construction until <see cref="SettingsPage_Loaded"/> completes, and re-armed on
+    /// unload. ToggleSwitch.Toggled fires for programmatic changes too, so anything happening
+    /// outside the loaded window must never reach the autostart install flow.
+    /// </summary>
+    private bool _isUpdatingStartWithWindowsToggle = true;
+
+    /// <summary>
+    /// Same latch for the language ComboBox. WinUI raises SelectionChanged both while the
+    /// ComboBox is being realized and again while it is torn down; neither may persist.
+    /// </summary>
+    private bool _isUpdatingLanguageSelection = true;
+
+    /// <summary>
+    /// Cached so Unloaded can always unsubscribe: the inherited DataContext may already be gone.
+    /// </summary>
+    private ViewModels.MainViewModel? _subscribedViewModel;
 
     private static string GetAppVersion()
     {
@@ -42,30 +64,81 @@ public sealed partial class SettingsPage : Page
     {
         InitializeComponent();
         ApplyLocalization();
-        InitializeLanguageSelection();
+
+        Loaded += SettingsPage_Loaded;
+        Unloaded += SettingsPage_Unloaded;
     }
 
-    private void InitializeLanguageSelection()
+    private void SettingsPage_Loaded(object sender, RoutedEventArgs e)
     {
+        if (ViewModel is { } viewModel)
+        {
+            _subscribedViewModel = viewModel;
+            viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+            viewModel.PropertyChanged += ViewModel_PropertyChanged;
+
+            ApplyStartWithWindowsToggleState(viewModel.StartWithWindows);
+        }
+
         _isUpdatingLanguageSelection = true;
         try
         {
-            LanguageComboBox.Items.Clear();
-            LanguageComboBox.Items.Add(new ComboBoxItem { Content = Loc.T("Auto (system language)") });
-            // Language names are endonyms and intentionally not localized.
-            LanguageComboBox.Items.Add(new ComboBoxItem { Content = "English", Tag = "en-US" });
-            LanguageComboBox.Items.Add(new ComboBoxItem { Content = "Deutsch", Tag = "de-DE" });
-
-            LanguageComboBox.SelectedIndex = AppSettingsService.Current.Language switch
-            {
-                "en-US" => 1,
-                "de-DE" => 2,
-                _ => 0,
-            };
+            SyncLanguageSelection();
         }
         finally
         {
             _isUpdatingLanguageSelection = false;
+        }
+
+        // Cleared last: everything above mutates controls that raise change events.
+        _isUpdatingStartWithWindowsToggle = false;
+    }
+
+    private void SettingsPage_Unloaded(object sender, RoutedEventArgs e)
+    {
+        if (_subscribedViewModel is { } viewModel)
+        {
+            viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+            _subscribedViewModel = null;
+        }
+
+        // Re-arm: tearing the page down re-enters ToggleSwitch.Toggled and
+        // ComboBox.SelectionChanged, and neither may persist anything.
+        _isUpdatingStartWithWindowsToggle = true;
+        _isUpdatingLanguageSelection = true;
+    }
+
+    private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(ViewModels.MainViewModel.StartWithWindows)
+            && ViewModel is { } viewModel)
+        {
+            ApplyStartWithWindowsToggleState(viewModel.StartWithWindows);
+        }
+    }
+
+    /// <summary>
+    /// Selects the item whose Tag matches the persisted language, falling back to "auto".
+    /// Callers must hold <see cref="_isUpdatingLanguageSelection"/>.
+    /// </summary>
+    private void SyncLanguageSelection()
+    {
+        var language = AppSettingsService.Current.Language ?? AutoLanguageTag;
+        var index = 0;
+
+        for (var i = 0; i < LanguageComboBox.Items.Count; i++)
+        {
+            if (LanguageComboBox.Items[i] is ComboBoxItem { Tag: string tag }
+                && string.Equals(tag, language, StringComparison.OrdinalIgnoreCase))
+            {
+                index = i;
+                break;
+            }
+        }
+
+        if (LanguageComboBox.SelectedIndex != index)
+        {
+            LanguageComboBox.SelectedIndex = index;
         }
     }
 
@@ -76,7 +149,21 @@ public sealed partial class SettingsPage : Page
             return;
         }
 
-        var language = (LanguageComboBox.SelectedItem as ComboBoxItem)?.Tag as string;
+        // A cleared or untagged selection is never a user intent. WinUI raises
+        // SelectionChanged with SelectedItem == null while the ComboBox is realized and
+        // again while it is torn down; persisting that reset Language to null (= Auto)
+        // and silently discarded the user's choice.
+        if (LanguageComboBox.SelectedItem is not ComboBoxItem { Tag: string tag })
+        {
+            return;
+        }
+
+        var language = string.Equals(tag, AutoLanguageTag, StringComparison.Ordinal) ? null : tag;
+        if (string.Equals(language, AppSettingsService.Current.Language, StringComparison.Ordinal))
+        {
+            return;
+        }
+
         AppSettingsService.Update(s => s with { Language = language });
     }
 
@@ -84,16 +171,23 @@ public sealed partial class SettingsPage : Page
     {
         PollIntervalCard.Header = Loc.T("Battery check interval");
         PollIntervalCard.Description = Loc.T("How often the app polls the device and updates the dashboard");
+        AutomationProperties.SetName(PollIntervalNumberBox, Loc.T("Battery check interval"));
 
         LogIntervalCard.Header = Loc.T("Log interval");
         LogIntervalCard.Description = Loc.T("How often readings are added to history");
+        AutomationProperties.SetName(LogIntervalNumberBox, Loc.T("Log interval"));
 
         LowBatteryExpander.Header = Loc.T("Low battery alerts");
         LowBatteryExpander.Description = Loc.T("Configure thresholds, sound, and cooldown for low-battery notifications");
 
         AlertThresholdUnlockedCard.Header = Loc.T("Alert threshold (unlocked)");
+        AutomationProperties.SetName(AlertThresholdUnlockedNumberBox, Loc.T("Alert threshold (unlocked)"));
+
         AlertThresholdLockedCard.Header = Loc.T("Alert threshold (locked)");
+        AutomationProperties.SetName(AlertThresholdLockedNumberBox, Loc.T("Alert threshold (locked)"));
+
         AlertCooldownCard.Header = Loc.T("Alert cooldown");
+        AutomationProperties.SetName(AlertCooldownNumberBox, Loc.T("Alert cooldown"));
 
         EnableBeepsCard.Header = Loc.T("Enable beeps");
         EnableBeepsToggle.OnContent = Loc.T("On");
@@ -101,6 +195,7 @@ public sealed partial class SettingsPage : Page
         AutomationProperties.SetName(EnableBeepsToggle, Loc.T("Enable beeps"));
 
         AlertSoundCard.Header = Loc.T("Alert sound");
+        AutomationProperties.SetName(AlertSoundPathTextBox, Loc.T("Alert sound"));
 
         ChooseSoundButton.Content = Loc.T("Choose");
         AutomationProperties.SetName(ChooseSoundButton, Loc.T("Choose alert sound file"));
@@ -138,6 +233,7 @@ public sealed partial class SettingsPage : Page
         LanguageCard.Header = Loc.T("App language");
         LanguageCard.Description = Loc.T("Takes effect after the app is restarted.");
         AutomationProperties.SetName(LanguageComboBox, Loc.T("App language"));
+        LanguageAutoItem.Content = Loc.T("Auto (system language)");
 
         ViewOnGitHubCard.Header = Loc.T("View on GitHub");
     }
@@ -429,6 +525,9 @@ public sealed partial class SettingsPage : Page
 
     private void ApplyStartWithWindowsToggleState(bool value)
     {
+        // Save/restore rather than clear: this runs while the page-level latch may already be
+        // armed (during Loaded, or after Unloaded), and must not disarm it.
+        var wasUpdating = _isUpdatingStartWithWindowsToggle;
         _isUpdatingStartWithWindowsToggle = true;
         try
         {
@@ -436,7 +535,7 @@ public sealed partial class SettingsPage : Page
         }
         finally
         {
-            _isUpdatingStartWithWindowsToggle = false;
+            _isUpdatingStartWithWindowsToggle = wasUpdating;
         }
     }
 

@@ -4,6 +4,7 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:PulsarBattery.Controls"
+    xmlns:local="using:PulsarBattery.Pages"
     xmlns:settingscontrols="using:CommunityToolkit.WinUI.Controls"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
@@ -16,7 +17,12 @@
               PointerPressed="RootGrid_PointerPressed">
             <StackPanel Spacing="24" MaxWidth="1000">
 
-                <controls:TranslatedTextBlock Text="Mouse Settings" TextStyle="{ThemeResource TitleTextBlockStyle}" />
+                <!-- Negative bottom margin cancels the ~8px of slack that TitleTextBlockStyle's
+                     36px LineHeight leaves below the glyphs, so the 24px Spacing below the title
+                     reads the same as the 24px between sections. Matches SettingsPage. -->
+                <controls:TranslatedTextBlock Text="Mouse Settings"
+                                              TextStyle="{ThemeResource TitleTextBlockStyle}"
+                                              Margin="0,0,0,-8" />
 
                 <!-- Unsupported / no device state -->
                 <Border Style="{StaticResource PulsarCardStyle}"
@@ -50,20 +56,26 @@
                 <!-- Settings (shown when a configurable device is connected) -->
                 <StackPanel Spacing="24" Visibility="{x:Bind ViewModel.MouseSettingsVisibility, Mode=OneWay}">
 
+                    <!-- Visibility must track IsOpen. A closed InfoBar renders 0px tall but stays
+                         Visibility="Visible", so the parent StackPanel still allots it a 24px
+                         Spacing gap. Three closed bars added 72px of dead space under the title. -->
                     <InfoBar x:Name="ApplyInfoBar"
                              Severity="Warning"
                              IsOpen="{x:Bind ViewModel.MouseSettingsErrorOpen, Mode=OneWay}"
+                             Visibility="{x:Bind local:MouseSettingsPage.BoolToVisibility(ViewModel.MouseSettingsErrorOpen), Mode=OneWay}"
                              Message="{x:Bind ViewModel.MouseSettingsErrorText, Mode=OneWay}"
                              CloseButtonClick="ApplyInfoBar_CloseButtonClick"
                              IsClosable="True" />
 
                     <InfoBar Severity="Informational"
                              IsOpen="{x:Bind ViewModel.MouseSettingsReadOnly, Mode=OneWay}"
+                             Visibility="{x:Bind local:MouseSettingsPage.BoolToVisibility(ViewModel.MouseSettingsReadOnly), Mode=OneWay}"
                              Message="{x:Bind ViewModel.MouseSettingsReadOnlyText, Mode=OneWay}"
                              IsClosable="False" />
 
                     <InfoBar Severity="Warning"
                              IsOpen="{x:Bind ViewModel.MouseSettingsWriteUnverified, Mode=OneWay}"
+                             Visibility="{x:Bind local:MouseSettingsPage.BoolToVisibility(ViewModel.MouseSettingsWriteUnverified), Mode=OneWay}"
                              Title="{x:Bind ViewModel.MouseSettingsWriteUnverifiedTitle, Mode=OneWay}"
                              Message="{x:Bind ViewModel.MouseSettingsWriteUnverifiedText, Mode=OneWay}"
                              IsClosable="False" />
