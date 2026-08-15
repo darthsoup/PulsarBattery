@@ -1,8 +1,12 @@
-# Pulsar Battery
+<p align="center">
+  <img src="PulsarBattery/Assets/icon.png" alt="Pulsar Battery logo" width="128" height="128" />
+</p>
+
+<h1 align="center">Pulsar Battery</h1>
 
 Pulsar Battery is a small Windows app that keeps an eye on the battery of your Pulsar wireless mouse. It sits in the system tray, shows the current charge, and warns you before the battery runs out. For newer mice it can also change the mouse settings, so no extra software is needed.
 
-![alt text](screenshot.jpg)
+![The Pulsar Battery dashboard showing the connected mouse, its charge level, a 24-hour battery trend and device details](screenshot.png)
 
 ## Features
 
