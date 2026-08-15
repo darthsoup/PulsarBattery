@@ -4,9 +4,7 @@ using System.Runtime.InteropServices;
 namespace PulsarBattery.Tools;
 
 /// <summary>
-/// Toggles Windows EcoQoS (efficiency mode) for the current process:
-/// execution-speed power throttling plus idle priority while hidden in the
-/// tray, restored to normal when the window is shown again.
+/// Toggles Windows EcoQoS for this process: power throttling plus idle priority while hidden in the tray.
 /// </summary>
 internal static class EfficiencyMode
 {
@@ -52,7 +50,6 @@ internal static class EfficiencyMode
         }
         catch
         {
-            // best-effort QoS hint
         }
     }
 }

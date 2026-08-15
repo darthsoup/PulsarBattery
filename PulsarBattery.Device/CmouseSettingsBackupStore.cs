@@ -34,9 +34,8 @@ internal sealed record CmouseSettingsBackupManifest(
     CmouseSettingsBackupRegionManifest[] Regions);
 
 /// <summary>
-/// Persists a complete cMouse settings snapshot as an atomically published
-/// directory. Region files and the manifest are written into a private sibling
-/// directory, flushed, verified, and only then made visible with Directory.Move.
+/// Persists a cMouse settings snapshot atomically: regions and manifest are written to a private
+/// sibling directory, flushed and verified, then made visible with Directory.Move.
 /// </summary>
 internal sealed class CmouseSettingsBackupStore
 {

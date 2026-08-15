@@ -4,8 +4,7 @@ using System.Collections.Generic;
 namespace PulsarBattery.Device;
 
 /// <summary>
-/// Encodes the DPI records used by Pulsar's cMouse 17-byte protocol. The
-/// ranges and exponent codes are the three layouts shipped in cMouse V1.31.
+/// DPI records for the cMouse 17-byte protocol; ranges and exponent codes are the three cMouse V1.31 layouts.
 /// </summary>
 internal static class Legacy17DpiCodec
 {
@@ -100,9 +99,8 @@ internal static class Legacy17DpiCodec
             ? block[2] | (block[3] << 8) | (yHigh << 16)
             : block[1] | (yHigh << 8);
 
-        // DeviceSettings currently exposes one DPI value. Preserve an
-        // asymmetric X/Y profile as unknown instead of displaying X and then
-        // silently overwriting Y when the user edits it.
+        // DeviceSettings exposes one DPI value, so report an asymmetric X/Y profile as unknown rather
+        // than showing X and silently overwriting Y on the next edit.
         if (xRaw != yRaw || xExponent != yExponent)
         {
             return null;

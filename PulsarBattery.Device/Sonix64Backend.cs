@@ -6,9 +6,8 @@ using HidSharp;
 namespace PulsarBattery.Device;
 
 /// <summary>
-/// Generic backend for any device speaking the Sonix 64-byte protocol.
-/// Which VID/PIDs it matches comes from the <see cref="DeviceDescriptor"/>,
-/// so supporting another same-protocol mouse is a registry entry, not code.
+/// Backend for any device speaking the Sonix 64-byte protocol. VID/PIDs come from the
+/// <see cref="DeviceDescriptor"/>, so another same-protocol mouse is a registry entry, not code.
 /// </summary>
 public sealed class Sonix64Backend : IHidBackend
 {
@@ -20,9 +19,8 @@ public sealed class Sonix64Backend : IHidBackend
 
     private readonly DeviceDescriptor _descriptor;
 
-    // Firmware never changes while the app runs, and a failed Query costs up
-    // to ~900ms, so read it once and stop retrying after a few misses so the
-    // 5s poll loops don't pay that penalty every tick.
+    // Firmware never changes while the app runs and a failed Query costs ~900ms, so read it once and
+    // stop retrying after a few misses rather than paying that on every 5s poll tick.
     private string? _firmwareVersion;
     private string? _firmwareDevicePath;
     private string? _lastDevicePath;
@@ -45,13 +43,8 @@ public sealed class Sonix64Backend : IHidBackend
                 return null;
             }
 
-            // Which device answered is ground truth for wired-vs-dongle. The
-            // connection-type register itself was live-probed reporting
-            // "Dongle @ 4000Hz" the entire time on a mouse that was genuinely
-            // wired with no dongle enumerated anywhere on the bus. It
-            // reflects the mouse's last-established radio link, not live
-            // cable state, and doesn't update just because a charge cable
-            // went in.
+            // Which device answered is ground truth for wired-vs-dongle. The connection register reported
+            // "Dongle @ 4000Hz" throughout on a genuinely wired mouse with no dongle on the bus.
             var connection = _descriptor.DongleProductIds.Contains(stream.Device.ProductID)
                 ? ConnectionKind.Dongle
                 : ConnectionKind.Wired;
@@ -59,10 +52,8 @@ public sealed class Sonix64Backend : IHidBackend
             // The live register tracks on-mouse rate switching; the connection
             // register only knows the rate the link was established with.
             var linkRateHz = Sonix64Protocol.ReadLivePollingRateHz(stream, dbg) ?? connRateHz;
-            // Register 08 82 01 was assumed to be "actively charging" (b6:
-            // 1/0), but live-probed on a wired eS at 95-99% it stayed 0 the
-            // entire time the percentage was visibly climbing, so it doesn't
-            // track charge current either. Cable-attached is the reliable signal.
+            // Register 08 82 01 is not "actively charging": b6 stayed 0 while the percentage climbed.
+            // Cable-attached is the reliable signal.
             var charging = connection == ConnectionKind.Wired;
             var connectionName = connection == ConnectionKind.Dongle ? HidHelpers.GetProductName(stream.Device) : null;
             var firmware = ReadFirmwareVersionCached(stream, dbg);

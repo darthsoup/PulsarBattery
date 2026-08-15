@@ -14,18 +14,16 @@ using Windows.Foundation;
 namespace PulsarBattery.Controls;
 
 /// <summary>
-/// Trend-shape sparkline over the last 24 hours of battery readings.
-/// Mixed-model history draws as one line and disconnected gaps are not
-/// broken. It shows the shape, the History page has the detail.
+/// Trend sparkline over the last 24 hours. Mixed-model history draws as one line and gaps are not broken;
+/// it shows the shape, the History page has the detail.
 /// </summary>
 public sealed partial class SparklineControl : UserControl
 {
     private const int MaxPlotPoints = 240;
     private static readonly TimeSpan PlotWindow = TimeSpan.FromHours(24);
 
-    // Deliberately non-generic: a BatteryReading-typed DP would make the XAML
-    // compiler emit XamlTypeInfo setters for the record's init-only properties
-    // (CS8852). The dashboard binds MainViewModel.History here.
+    // Deliberately non-generic: a BatteryReading-typed DP makes XamlTypeInfo emit setters for the
+    // record's init-only properties (CS8852).
     public static readonly DependencyProperty ReadingsProperty =
         DependencyProperty.Register(nameof(Readings), typeof(IEnumerable), typeof(SparklineControl), new PropertyMetadata(null, OnReadingsChanged));
 
@@ -62,8 +60,8 @@ public sealed partial class SparklineControl : UserControl
         Redraw();
     }
 
-    // The bound collection outlives this control (pages are rebuilt on every
-    // navigation), so unhooking here is what prevents handler leaks.
+    // The bound collection outlives this control (pages are rebuilt on every navigation), so unhooking
+    // here prevents handler leaks.
     private void OnUnloaded(object sender, RoutedEventArgs e) => Unsubscribe();
 
     private void Subscribe()

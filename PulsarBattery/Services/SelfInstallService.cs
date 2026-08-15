@@ -51,7 +51,6 @@ internal static class SelfInstallService
         }
         catch
         {
-            // fall through to file-based heuristic
         }
 
         var currentExe = GetCurrentExecutablePath();
@@ -145,9 +144,8 @@ internal static class SelfInstallService
                 return null;
             }
 
-            // The cleanup argument exists solely so a freshly installed copy can delete
-            // the source exe it was copied from. Refuse anything whose filename does not
-            // match this executable's, so the argument cannot delete arbitrary files.
+            // Refuse any filename that does not match this executable's, so the cleanup argument
+            // cannot be used to delete arbitrary files.
             var currentExeName = Path.GetFileName(GetCurrentExecutablePath());
             if (string.IsNullOrWhiteSpace(currentExeName) ||
                 !string.Equals(Path.GetFileName(path), currentExeName, StringComparison.OrdinalIgnoreCase))

@@ -6,9 +6,8 @@ using HidSharp;
 namespace PulsarBattery.Device;
 
 /// <summary>
-/// Data-driven backend for the CID-87 mice supported by Pulsar cMouse V1.31.
-/// USB PID only selects candidates; command 0x01 CID/MID identification is
-/// authoritative because several receivers are shared by many models.
+/// Backend for the CID-87 mice in cMouse V1.31. PID only selects candidates; command 0x01 CID/MID is
+/// authoritative because several receivers are shared across many models.
 /// </summary>
 public sealed class CmouseLegacyBackend : IHidBackend
 {
@@ -146,19 +145,16 @@ public sealed class CmouseLegacyBackend : IHidBackend
                 ProtocolModelId: (context.Profile.Cid << 8) | context.Profile.Mid);
         });
 
-        // Battery/status commands usually answer directly through the receiver,
-        // even while the mouse sleeps. Avoid toggling driver mode every poll;
-        // fall back to a full cMouse session only when the passive read fails.
+        // The receiver answers battery/status even while the mouse sleeps, so avoid toggling driver mode
+        // every poll; fall back to a full cMouse session only when the passive read fails.
         return Read(activeSession: false) ?? Read(activeSession: true);
     }
 
     public DeviceSettings? ReadSettings(bool debug) => ReadSettingsSnapshot(debug)?.Values;
 
     /// <summary>
-    /// Reads the cMouse V1.31 core settings region and, for PAW3955 profiles,
-    /// the separate DPI-stage region, in strict ten-byte chunks. Once a device
-    /// has been detected this stays pinned to that exact HID path, so the
-    /// resulting backup belongs to the same mouse that subsequent writes target.
+    /// Reads the core settings region (plus the PAW3955 DPI region) in ten-byte chunks, pinned to the
+    /// detected HID path so the backup belongs to the same mouse that later writes target.
     /// </summary>
     public CmouseSettingsBackup? ReadSettingsBackup(bool debug)
     {
@@ -607,10 +603,8 @@ public sealed class CmouseLegacyBackend : IHidBackend
             .ThenByDescending(device => PreferredPath(device.DevicePath))
             .ThenBy(device => device.DevicePath);
 
-        // Reads used for discovery may move to another device after an unplug.
-        // Settings reads and especially writes must stay on the exact HID path
-        // whose status was shown to the user; silently falling through to a
-        // second CID-87 mouse would configure the wrong physical device.
+        // Settings reads and writes must stay on the exact HID path whose status was shown to the user;
+        // falling through to a second CID-87 mouse would configure the wrong physical device.
         var pinnedPath = requiredDevicePath ?? (!allowDeviceSwitch ? _lastDevicePath : null);
         return pinnedPath is not null
             ? candidates.Where(device => string.Equals(

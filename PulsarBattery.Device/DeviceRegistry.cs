@@ -2,10 +2,7 @@ using System.Collections.Generic;
 
 namespace PulsarBattery.Device;
 
-/// <summary>
-/// The list of supported devices, in probe order. Adding a mouse that speaks
-/// an already-implemented protocol is one entry here.
-/// </summary>
+/// <summary>Supported devices in probe order; a mouse on an existing protocol is one entry here.</summary>
 public static class DeviceRegistry
 {
     // Pulsar's shared "8K Dongle" accessory (0x5403) is also used by the X3

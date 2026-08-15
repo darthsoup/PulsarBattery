@@ -350,7 +350,6 @@ public sealed partial class MouseSettingsPage : Page
         }
         catch
         {
-            // ignore
         }
     }
 

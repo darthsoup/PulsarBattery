@@ -7,34 +7,15 @@ public enum ConnectionKind
     Dongle,
 }
 
-/// <param name="ConnectionName">
-/// HID product string of the transport device (e.g. "8K Dongle"); null when
-/// unavailable or when the mouse is connected directly by cable.
-/// </param>
-/// <param name="FirmwareVersion">
-/// The mouse's firmware version formatted "01.25"-style; null when the device
-/// offers no way to read it (e.g. legacy protocol over the dongle, where only
-/// the dongle's own version is visible).
-/// </param>
-/// <param name="LinkRateHz">
-/// Live link rate of the current connection in Hz (wireless: 1000/2000/4000/
-/// 8000, wired: 1000/8000); null when the protocol doesn't expose it.
-/// </param>
-/// <param name="VoltageMv">
-/// Battery pack voltage in millivolts; null when the device doesn't report it.
-/// </param>
-/// <param name="SignalStrength">
-/// Radio signal strength as a small bar count (roughly 0-4, higher is better),
-/// not a percentage. Null when wired, unsupported, or unreadable.
-/// </param>
-/// <param name="DongleFirmwareVersion">
-/// Firmware version of the receiver, distinct from the mouse's own; null when
-/// wired or unsupported.
-/// </param>
+/// <param name="ConnectionName">HID product string of the transport (e.g. "8K Dongle"); null when wired.</param>
+/// <param name="FirmwareVersion">Mouse firmware, "01.25"-style; null when the protocol cannot read it.</param>
+/// <param name="LinkRateHz">Live link rate in Hz; null when the protocol does not expose it.</param>
+/// <param name="VoltageMv">Battery pack voltage in millivolts; null when not reported.</param>
+/// <param name="SignalStrength">Bar count (roughly 0-4, higher is better), not a percentage.</param>
+/// <param name="DongleFirmwareVersion">Receiver firmware, distinct from the mouse's own.</param>
 /// <param name="ProtocolModelId">
-/// Protocol-level model identity when the device reports one. For the cMouse
-/// family this is CID in the high byte and MID in the low byte; it is kept
-/// separate from the display name because several editions share that name.
+/// Protocol-level model identity; for cMouse this is CID in the high byte and MID in the low byte.
+/// Kept separate from the display name because several editions share that name.
 /// </param>
 public sealed record DeviceStatus(
     int Percentage,

@@ -6,14 +6,9 @@ using HidSharp;
 namespace PulsarBattery.Device;
 
 /// <summary>
-/// The Sonix-chipset 64-byte feature-report protocol used by newer Pulsar
-/// mice (X2 V3 / X2 V3 eS, X3, Xlite V4 generation). Wire packet:
-/// [direction, category, register, sub, 0, 0, values...] with a little-endian
-/// 16-bit sum of bytes 0..61 stored at bytes 62..63, exchanged via
-/// SetFeature/GetFeature with report ID 0. Reads set bit 7 of the register.
-/// Responses are asynchronous: GetFeature returns the last stored response
-/// (direction 0x01, or 0x02 after some writes; 0x05 = still pending), so
-/// exchanges poll until the category/register/sub echo matches.
+/// Sonix 64-byte feature-report protocol (X2 V3/eS, X3, Xlite V4): [direction, category, register, sub, 0, 0,
+/// values...] with a LE 16-bit sum of bytes 0..61 at 62..63. Reads set register bit 7; responses are async
+/// (0x05 = pending), so exchanges poll until the category/register/sub echo matches.
 /// </summary>
 internal static class Sonix64Protocol
 {
@@ -43,9 +38,8 @@ internal static class Sonix64Protocol
     private static readonly byte[] RippleControlWrite = [0x07, 0x03, 0x02];
     private static readonly byte[] PollingRateWrite = [0x01, 0x09, 0x02];
 
-    // Stored polling register (08 85 03) value ≈ 30000 / Hz, rounded. This
-    // register does NOT track the live rate: it keeps the boot/profile value
-    // even after on-mouse or software rate switches (verified live).
+    // Stored polling register (08 85 03) is about 30000 / Hz. It does NOT track the live rate: it keeps
+    // the boot/profile value even after on-mouse or software switches.
     private static readonly Dictionary<byte, int> PollingRateByValue = new()
     {
         [240] = 125,
@@ -57,11 +51,8 @@ internal static class Sonix64Protocol
         [4] = 8000,
     };
 
-    // Live-rate register (01 89 02) and the write command (01 09 02) share one
-    // ascending power-of-two code per rate. Verified live on the X2 V3 eS:
-    // writing 0x01 sets 125 Hz and the change applies instantly, also
-    // wireless. The reversed table in older captures is wrong for this
-    // device.
+    // Live-rate register (01 89 02) and write command (01 09 02) share an ascending power-of-two code per
+    // rate: 0x01 is 125 Hz, applied instantly. The reversed table in older captures is wrong for this device.
     private static readonly Dictionary<int, byte> PollingRateCodeByHz = new()
     {
         [125] = 0x01,
@@ -86,10 +77,7 @@ internal static class Sonix64Protocol
 
     public static IReadOnlyCollection<int> SupportedPollingRates => PollingRateCodeByHz.Keys;
 
-    /// <summary>
-    /// Firmware version register: b6 = minor, b7 = major, hex-formatted
-    /// ("01.25"-style, matching the USB bcdDevice notation).
-    /// </summary>
+    /// <summary>Firmware register: b6 = minor, b7 = major, hex-formatted like bcdDevice ("01.25").</summary>
     public static string? ReadFirmwareVersion(HidStream stream, bool debug)
     {
         var wire = Query(stream, FirmwareQuery, debug);
@@ -113,12 +101,8 @@ internal static class Sonix64Protocol
     }
 
     /// <summary>
-    /// Connection type register: 2/3 = wired 1k/8k, 0/1/4/5 = wireless at
-    /// 1k/4k/2k/8k, carrying a fallback link rate. Not used for wired-vs-
-    /// dongle classification: it reflects the mouse's last-established radio
-    /// link rather than live cable state (live-probed staying "wireless 4k"
-    /// on a genuinely wired eS with no dongle on the bus at all), so callers
-    /// must derive that from which physical device answered instead.
+    /// Connection register: 2/3 = wired 1k/8k, 0/1/4/5 = wireless 1k/4k/2k/8k. Do NOT use for wired-vs-dongle:
+    /// it reports the last-established radio link, staying "wireless 4k" on a genuinely wired eS with no dongle.
     /// </summary>
     public static int? ReadConnection(HidStream stream, bool debug)
     {
@@ -141,11 +125,8 @@ internal static class Sonix64Protocol
     }
 
     /// <summary>
-    /// Not used for charging detection: live-probed on a wired eS at 95-99%
-    /// battery, b6 stayed 0 for the whole ~85s the percentage was visibly
-    /// climbing, so it doesn't track charge current as assumed. Kept for
-    /// future reverse-engineering; null when the device doesn't answer or
-    /// the value is implausible.
+    /// Not usable for charging detection: b6 stayed 0 on a wired eS while the percentage was visibly
+    /// climbing, so it does not track charge current. Kept for future reverse-engineering.
     /// </summary>
     public static bool? ReadChargingState(HidStream stream, bool debug)
     {
@@ -159,8 +140,7 @@ internal static class Sonix64Protocol
     }
 
     /// <summary>
-    /// The actual current polling rate: reads the live register first (which
-    /// tracks on-mouse switching), falling back to the stored profile value.
+    /// Current polling rate: the live register (which tracks on-mouse switching) before the stored profile.
     /// </summary>
     public static int? ReadPollingRateHz(HidStream stream, bool debug)
     {
@@ -330,7 +310,6 @@ internal static class Sonix64Protocol
                 var response = new byte[PacketLength + 1];
                 stream.GetFeature(response);
 
-                // Strip the report ID byte; validate the command echo.
                 var wire = response.Skip(1).ToArray();
                 if (wire[0] == 0x01 && wire[1] == command[0] && wire[2] == command[1] && wire[3] == command[2])
                 {

@@ -38,8 +38,7 @@ public sealed partial class DashboardPage : Page
         ApplyBatteryState();
     }
 
-    // The view model outlives this page (pages are rebuilt on every navigation),
-    // so unhooking here is what prevents handler leaks.
+    // The view model outlives this page (rebuilt on every navigation), so unhooking here prevents leaks.
     private void DashboardPage_Unloaded(object sender, RoutedEventArgs e)
     {
         if (_subscribedViewModel is { } viewModel)

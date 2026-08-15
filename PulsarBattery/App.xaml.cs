@@ -61,7 +61,6 @@ public partial class App : Application
         }
         catch
         {
-            // ignore
         }
     }
 
@@ -81,7 +80,6 @@ public partial class App : Application
         }
         catch
         {
-            // ignore
         }
 
         Current?.Exit();
@@ -119,7 +117,6 @@ public partial class App : Application
             }
             catch
             {
-                // ignore
             }
 
             _monitor.Dispose();
@@ -174,7 +171,6 @@ public partial class App : Application
         }
         catch
         {
-            // ignore
         }
 
         try
@@ -202,7 +198,6 @@ public partial class App : Application
         }
         catch
         {
-            // ignore
         }
 
         for (var attempt = 0; attempt < 60; attempt++)
@@ -222,7 +217,6 @@ public partial class App : Application
             }
             catch
             {
-                // retry
             }
 
             try

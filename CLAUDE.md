@@ -85,8 +85,25 @@ Consequences worth keeping:
 - `App.ExitApplication()` sets `IsExitRequested` before closing, so `Closed` handlers use this flag to tell tray-minimize from a real exit.
 
 ### Code style
-- **Comment only what the code cannot say.** A comment earns its place when it records *why*: a non-obvious constraint, a platform bug being worked around, a decision that looks wrong until explained, or a trap that would otherwise get "cleaned up" (the negative title margin, the unbased NumberBox style, the guard latches above). Do not narrate what the next line already states, restate attribute values, or leave section-divider banners. If a comment would only repeat the identifier, delete it.
 - **No em dashes**, in code, comments, XML docs, commit messages or docs. Use a colon, a full stop, or parentheses instead.
+- Do not HTML-escape inside `//` comments. `List<T>` is written literally; `&lt;` belongs only in `///` XML docs.
+
+### Comments
+**Comment only what the code cannot say, in at most two lines.**
+
+A comment earns its place when it records *why*: a non-obvious constraint, a platform bug being worked around, a measured hardware behaviour, a decision that looks wrong until explained, or a trap that would otherwise get "cleaned up" (the negative title margin, the unbased NumberBox style, the guard latches above).
+
+Delete on sight:
+- Anything a competent developer already knows. `// ignore` on an empty catch, `// retry`, `// best-effort X`, `// fall through to Y`, `// Exact match`.
+- Narration of the next statement. `// Build device info line`, `// Check if minimize to tray is enabled`.
+- Section-divider banners. `<!-- Monitoring Section -->` above a header that already reads "Monitoring".
+- `<exception>` docs that restate a `throw` visible three lines below, and `<param>` docs that only repeat the parameter name.
+
+**Two lines is the cap, including XML docs.** When condensing, keep the finding and drop the narrative: state the behaviour and what the code does about it, not how it was discovered. The 9-line note on the dongle reporting 0% became two lines that still name the behaviour, the consequence (a false low-battery alert) and the exception (0% while charging is real).
+
+Keep, whatever the length pressure: bit and frame layouts, register addresses and quirks, and anything only re-derivable with the hardware in hand. Prefer one line per `<param>` on records.
+
+**Verification data belongs in tests, not comments.** Golden samples such as `07 07 00 47 = 400 DPI` live in `PulsarBattery.Device.Tests`; check they are covered there before removing them from a comment.
 
 ### Platform / project constraints
 - x64 only (`<Platforms>x64</Platforms>`); do not add AnyCPU or x86.

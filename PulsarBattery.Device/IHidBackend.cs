@@ -13,9 +13,8 @@ public interface IHidBackend
     DeviceSettings? ReadSettings(bool debug) => null;
 
     /// <summary>
-    /// Reads settings together with the device-specific ranges and read/write
-    /// capabilities needed to render a safe editor. Older read-only backends
-    /// can keep implementing <see cref="ReadSettings"/> only.
+    /// Reads settings plus the ranges and capabilities needed for a safe editor. Read-only backends
+    /// can implement <see cref="ReadSettings"/> only.
     /// </summary>
     DeviceSettingsSnapshot? ReadSettingsSnapshot(bool debug)
     {
@@ -53,9 +52,7 @@ public interface IHidBackend
     bool SupportsSettingsWrite => false;
 
     /// <summary>
-    /// Applies every non-null field of <paramref name="changes"/> to the
-    /// device and verifies each by reading it back. Returns true only when
-    /// all requested fields were applied and confirmed.
+    /// Applies every non-null field and verifies it by reading back; true only when all were confirmed.
     /// </summary>
     bool ApplySettings(DeviceSettings changes, bool debug) => false;
 }

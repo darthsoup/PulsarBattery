@@ -10,10 +10,8 @@ using System.Threading.Tasks;
 namespace PulsarBattery.Services;
 
 /// <summary>
-/// Resolves product artwork without depending on Pulsar's cMouse installation.
-/// The curated URLs point at Pulsar's public storefront CDN; downloaded files
-/// are cached locally and matching packaged artwork remains the offline
-/// fallback.
+/// Resolves product artwork without depending on a cMouse installation. Curated URLs point at Pulsar's
+/// public storefront CDN, downloads are cached locally, and packaged artwork is the offline fallback.
 /// </summary>
 internal static class DeviceImageService
 {
@@ -83,9 +81,8 @@ internal static class DeviceImageService
         if (Contains(value, "TenZ") || Contains(value, "Tenz")) return Cdn("TenZ.png");
         if (Contains(value, "LA-2")) return Cdn("Pulsar-X2-CrazyLight-LA-Gaming-Mouse-001_183a176e-bf2c-4bb2-8a81-e6d71855f33a.png");
 
-        // Shape/size/color-aware family artwork. Exact special editions which
-        // are no longer in the storefront intentionally fall back to their
-        // matching shell instead of using files from cMouse.
+        // Family artwork. Special editions no longer in the storefront fall back to their matching
+        // shell rather than using files from cMouse.
         if (Contains(value, "X3 LHD"))
         {
             if (Contains(value, "Medium") && Contains(value, "Desert")) return Cdn("Pulsar_X3_CrazyLight_LHD_medium_desert_01.png");
@@ -298,9 +295,8 @@ internal static class DeviceImageService
             87 => Cdn("Pulsar-BlueArchive-Hoshino-X2_01-medium.png"),
             88 => Cdn("Pulsar-BlueArchive-Shiroko-X2_01-medium.png"),
             89 => Cdn("Pulsar-BlueArchive-Nonomi-X2_01-medium.png"),
-            // V1.31 contains a fourth, unnamed Blue Archive rendering for MID
-            // 90 which has no matching public product page. Use the correct
-            // shell rather than mislabelling it as one of the named editions.
+            // V1.31's fourth, unnamed Blue Archive rendering (MID 90) has no public product page, so use
+            // the shell rather than mislabelling it as one of the named editions.
             90 => Cdn("Pulsar-X2-CrazyLight_medium_black_01-medium.png"),
             _ => null,
         };

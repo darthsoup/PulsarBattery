@@ -150,9 +150,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     public string ChargingStateText => IsCharging ? Loc.T("Charging") : Loc.T("Not charging");
 
     /// <summary>
-    /// Charging state plus the pack voltage when the device reports it. Kept
-    /// separate from <see cref="ChargingStateText"/> so the tray tooltip stays
-    /// short.
+    /// Charging state plus pack voltage; separate from <see cref="ChargingStateText"/> to keep the tooltip short.
     /// </summary>
     public string BatteryDetailText => _voltageMv is int mv
         ? $"{ChargingStateText} · {(mv / 1000.0).ToString("0.00", CultureInfo.CurrentCulture)} V"
@@ -238,9 +236,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         ConnectionDetailText.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>
-    /// Signal strength is a small bar count rather than a percentage, so it is
-    /// shown as a word. Thresholds follow the Pulsar cMouse notes: 4+ excellent,
-    /// 3 good, 2 fair, below that weak.
+    /// Signal is a bar count, not a percentage, so it shows as a word: 4+ excellent, 3 good, 2 fair, else weak.
     /// </summary>
     public string SignalText => _signalStrength switch
     {
@@ -519,10 +515,8 @@ public sealed class MainViewModel : INotifyPropertyChanged
             }
         }
 
-        // A NumberBox has only one SmallChange, while cMouse profiles can use
-        // piecewise steps (for example 10, then 50, then 100 DPI). When a spin
-        // crosses a range boundary, advance to the first valid value in that
-        // direction instead of snapping back and leaving an invalid display.
+        // NumberBox has one SmallChange but cMouse profiles use piecewise steps, so a spin crossing a
+        // range boundary advances to the first valid value instead of snapping back to an invalid one.
         if (requested > current)
         {
             var next = ranges

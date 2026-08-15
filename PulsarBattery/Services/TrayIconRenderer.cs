@@ -21,28 +21,18 @@ public readonly record struct TrayIconState(
     bool IsLow);
 
 /// <summary>
-/// Renders the tray icon in code at the exact physical tray icon size
-/// (system small-icon metric at the primary monitor's DPI), so the shell
-/// never rescales it. Digits are rasterized as GraphicsPath outlines at 4x
-/// and downscaled with bicubic, smoother than grid-fit hinting at native
-/// size, and the halo becomes a true geometric stroke instead of a blocky
-/// offset union. The produced Icons are NON-owning wrappers; this class owns
-/// the HICONs and destroys a superseded handle only after the caller
-/// confirms the new one was assigned (the shell and H.NotifyIcon keep the
-/// current handle for explorer-restart re-adds).
+/// Renders the tray icon at the exact physical tray size so the shell never rescales it; digits are
+/// GraphicsPath outlines rasterized at 4x and bicubic-downscaled. Produced Icons are NON-owning wrappers.
 /// </summary>
 internal sealed class TrayIconRenderer : IDisposable
 {
     private const int SmCxSmIcon = 49;
     private const uint MonitorDefaultToPrimary = 1;
 
-    // 1px contrast halo (black in dark theme, white in light) keeps the
-    // digits readable over translucent/wallpaper-tinted taskbars. The em
-    // factors below leave room for it so it never clips at the canvas edge.
+    // Contrast halo keeps digits readable over tinted taskbars; the em factors below leave room for it.
     private const int OutlinePx = 1;
 
-    // Supersampling factor for text rendering; the halo stroke and glyph
-    // curves are rasterized at this scale and bicubic-downscaled.
+    // Supersampling factor: halo stroke and glyph curves rasterize at this scale, then bicubic-downscale.
     private const int TextScale = 4;
 
     private static readonly Color ChargingColor = Color.FromArgb(76, 201, 76);
@@ -51,11 +41,8 @@ internal sealed class TrayIconRenderer : IDisposable
     private (TrayIconState State, int SizePx, bool LightTheme)? _lastKey;
     private (TrayIconState State, int SizePx, bool LightTheme)? _pendingKey;
 
-    // Handle lifetime is delayed by one generation: Shell_NotifyIcon failures
-    // are swallowed inside H.NotifyIcon, so after any assignment either the
-    // new OR the previous handle may be the one the library has stored for
-    // explorer-restart re-adds. Destroying only the grandparent keeps every
-    // possibly-stored handle alive.
+    // Handle lifetime lags one generation: H.NotifyIcon swallows Shell_NotifyIcon failures, so either the
+    // new or the previous handle may be the stored one. Destroying only the grandparent keeps both alive.
     private nint _currentHicon;
     private nint _retiredHicon;
     private nint _pendingHicon;
@@ -81,12 +68,8 @@ internal sealed class TrayIconRenderer : IDisposable
     private static extern bool DestroyIcon(nint hIcon);
 
     /// <summary>
-    /// Returns a fresh Icon when the rendered result would differ from the
-    /// last committed one (or when forced), else null. Callers must assign
-    /// the Icon and then call <see cref="CommitAssignment"/>, or call
-    /// <see cref="AbandonAssignment"/> if the assignment failed. Never
-    /// returns a cached Icon instance: H.NotifyIcon's Icon setter disposes
-    /// the outgoing instance, so a reused Icon would be use-after-dispose.
+    /// Fresh Icon when the result would differ, else null; callers must then Commit or Abandon.
+    /// Never cached: H.NotifyIcon's setter disposes the outgoing instance, so reuse is use-after-dispose.
     /// </summary>
     public Icon? RenderIfChanged(TrayIconState state, bool force = false)
     {
@@ -122,9 +105,8 @@ internal sealed class TrayIconRenderer : IDisposable
     }
 
     /// <summary>
-    /// The rendered icon was assigned. The superseded handle is only retired
-    /// (a silently failed NIM_MODIFY would leave it as the library's stored
-    /// handle); the previously retired one is destroyed.
+    /// Assignment succeeded. The superseded handle is only retired (a silent NIM_MODIFY failure would
+    /// leave it stored by the library); the previously retired one is destroyed.
     /// </summary>
     public void CommitAssignment()
     {
@@ -141,9 +123,8 @@ internal sealed class TrayIconRenderer : IDisposable
     }
 
     /// <summary>
-    /// The assignment threw. The library may still have stored the new handle
-    /// before failing, so it is retired rather than destroyed; the dedupe key
-    /// stays unchanged so a later (forced) tick retries.
+    /// Assignment threw. The library may already have stored the new handle, so it is retired rather
+    /// than destroyed, and the dedupe key stays unchanged so a later forced tick retries.
     /// </summary>
     public void AbandonAssignment()
     {
@@ -187,9 +168,7 @@ internal sealed class TrayIconRenderer : IDisposable
             using var family = new FontFamily("Segoe UI");
             path.AddString(text, family, (int)FontStyle.Bold, em * TextScale, PointF.Empty, StringFormat.GenericTypographic);
 
-            // Center the ink box (digits have no descenders, so vertical ink
-            // centering equals cap-height centering; margins verified
-            // symmetric with the icon-preview tool).
+            // Center the ink box; digits have no descenders, so ink centering equals cap-height centering.
             var bounds = path.GetBounds();
             using var move = new Matrix();
             move.Translate((big - bounds.Width) / 2f - bounds.X, (big - bounds.Height) / 2f - bounds.Y);
@@ -273,10 +252,8 @@ internal sealed class TrayIconRenderer : IDisposable
     }
 
     /// <summary>
-    /// Parses the ICONDIR and returns the smallest embedded frame size that is
-    /// at least <paramref name="sizePx"/> (falls back to the largest frame).
-    /// The Icon(stream, size) constructor's closest-match can pick a smaller
-    /// frame and force a shell upscale, so the choice is made explicitly.
+    /// Smallest embedded frame at least <paramref name="sizePx"/>, else the largest. Chosen explicitly
+    /// because Icon(stream, size) closest-match can pick a smaller frame and force a shell upscale.
     /// </summary>
     private static int PickFrameSize(Stream stream, int sizePx)
     {
@@ -340,7 +317,6 @@ internal sealed class TrayIconRenderer : IDisposable
         }
         catch
         {
-            // fall through to the computed fallback
         }
 
         if (size <= 0)

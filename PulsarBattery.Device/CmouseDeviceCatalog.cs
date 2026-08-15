@@ -27,9 +27,7 @@ internal static class CmouseDeviceCatalog
     public const int VendorId = 0x3710;
     public const byte Cid = 0x57;
 
-    // Source: Pulsar cMouse V1.31 usersetting/Config.ini (VID, USB_PID,
-    // Wireless8_PID and Drive1..Drive125). CID/MID values and model selection
-    // were cross-checked against cMouse's HID command 0x01 response handling.
+    // Source: cMouse V1.31 usersetting/Config.ini; CID/MID cross-checked against its 0x01 response handling.
     public static IReadOnlySet<int> ProductIds { get; } = new HashSet<int>
     {
         0x3415,

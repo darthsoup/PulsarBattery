@@ -52,17 +52,15 @@ public sealed class PulsarBatteryReader
     }
 
     /// <summary>
-    /// Applies the non-null fields of <paramref name="changes"/> to the first
-    /// backend that supports writes. Returns null when no writable device is
-    /// present, otherwise whether every change was applied and confirmed.
+    /// Applies non-null fields to the first write-capable backend. Null when no writable device is
+    /// present, else whether every change was applied and confirmed.
     /// </summary>
     public bool? ApplyDeviceSettings(DeviceSettings changes, bool debug = false)
     {
         lock (GlobalReadLock)
         {
-            // Status, settings and writes must stay on the same backend. Shared
-            // dongle PIDs make an independent rescan unsafe when two Pulsar
-            // devices are connected.
+            // Status, settings and writes must stay on one backend: shared dongle PIDs make an
+            // independent rescan unsafe when two Pulsar devices are connected.
             if (_activeBackend is not null)
             {
                 try

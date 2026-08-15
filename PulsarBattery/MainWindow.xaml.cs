@@ -95,7 +95,6 @@ public sealed partial class MainWindow : Window
             var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
             _appWindow = AppWindow.GetFromWindowId(windowId);
 
-            // A small utility window: good default.
             _appWindow.Resize(new Windows.Graphics.SizeInt32(900, 820));
 
             if (_appWindow.Presenter is OverlappedPresenter presenter)
@@ -110,7 +109,6 @@ public sealed partial class MainWindow : Window
         }
         catch
         {
-            // best-effort sizing
         }
     }
 
@@ -143,7 +141,6 @@ public sealed partial class MainWindow : Window
                 }
                 catch
                 {
-                    // fall back to embedded icon resource
                 }
             }
 
@@ -155,7 +152,6 @@ public sealed partial class MainWindow : Window
         }
         catch
         {
-            // best-effort icon setup
         }
     }
 
@@ -213,7 +209,6 @@ public sealed partial class MainWindow : Window
             }
             catch
             {
-                // ignore
             }
         }
     }

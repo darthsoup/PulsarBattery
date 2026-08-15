@@ -52,10 +52,7 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
         _shellCreateRequested = true;
         TaskbarIcon.ForceCreate(enablesEfficiencyMode);
 
-        // Belt and braces: the pre-creation Icon assignment in Initialize is
-        // stored and used by the initial shell add, but a forced render here
-        // guarantees a correct icon even if that stored-handle behavior ever
-        // changes in the library.
+        // Forced render as belt and braces, in case the library's stored-handle behaviour ever changes.
         UpdateTrayIcon(force: true);
     }
 
@@ -65,9 +62,8 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
         _dispatcherQueue = window.DispatcherQueue;
         ViewModel = viewModel;
 
-        // This control never enters a visual tree, so its Loading event never
-        // fires and x:Bind stays dormant. Kick the generated bindings by hand
-        // so the tooltip and menu rows actually track the view model.
+        // This control never enters a visual tree, so Loading never fires and x:Bind stays dormant.
+        // Kick the generated bindings by hand so the tooltip and menu rows track the view model.
         Bindings.Update();
 
         if (viewModel is not null)
@@ -77,20 +73,15 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
 
         UpdateTrayIcon(force: true);
 
-        // Backstop: heals DPI/theme changes while the mouse is asleep, silent
-        // Shell_NotifyIcon failures (H.NotifyIcon swallows them, so a "commit"
-        // is never proof the shell shows the icon), and a tray icon lost to a
-        // failed shell add. Forced, because the dedupe cache cannot know about
-        // any of those.
+        // Backstop for DPI/theme changes while asleep and for silent Shell_NotifyIcon failures (a commit
+        // is never proof the shell shows the icon). Forced, because the dedupe cache cannot know about those.
         _refreshTimer = _dispatcherQueue.CreateTimer();
         _refreshTimer.Interval = TimeSpan.FromSeconds(60);
         _refreshTimer.Tick += (_, _) => HealTrayIcon();
         _refreshTimer.Start();
 
-        // Immediate repaint on explorer restart / DPI change. TaskbarCreated
-        // MUST force a re-render: the library re-adds the icon with its stored
-        // handle, which our bookkeeping may already have destroyed, and the
-        // dedupe cache would otherwise leave the tray icon blank.
+        // TaskbarCreated MUST force a re-render: the library re-adds with a stored handle our bookkeeping
+        // may already have destroyed, and the dedupe cache would otherwise leave the icon blank.
         try
         {
             _messageWindow = TaskbarIcon.TrayIcon.MessageWindow;
@@ -112,9 +103,8 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
     }
 
     /// <summary>
-    /// Re-creates the shell icon if it was lost (failed NIM_ADD at startup or
-    /// during an explorer restart: the library swallows those errors and
-    /// nothing else ever retries Create) and forces a fresh render+assign.
+    /// Re-creates the shell icon if a NIM_ADD was lost. The library swallows those errors and nothing
+    /// else ever retries Create.
     /// </summary>
     private void HealTrayIcon()
     {

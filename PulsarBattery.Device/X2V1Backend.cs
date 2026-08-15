@@ -111,15 +111,13 @@ public sealed class X2V1Backend : IHidBackend
             var linkRateHz = decoded?.LinkRateHz;
             var connectionName = connection == ConnectionKind.Dongle ? HidHelpers.GetProductName(writerDevice) : null;
 
-            // CmdVersion answers over the dongle too; the wired bcdDevice is
-            // only a fallback for when the device does not implement it. (On
-            // this model it is known to NAK, so the fallback is the usual path.)
+            // CmdVersion answers over the dongle too; bcdDevice is the fallback, and this model NAKs
+            // CmdVersion, so the fallback is the usual path here.
             _cachedFirmware ??= ReadVersion(writer!, reader ?? writer!, VersionPacket, Legacy17Protocol.CmdVersion, transportForInfo, debug);
             var firmware = _cachedFirmware
                 ?? (connection == ConnectionKind.Wired ? HidHelpers.GetFirmwareFromBcd(writerDevice) : null);
 
-            // Radio-only values; the EEPROM lives on the mouse, so gate on the
-            // same online check the settings read uses.
+            // Radio-only values, gated on the same online check the settings read uses.
             int? signal = null;
             string? dongleFirmware = null;
             if (connection == ConnectionKind.Dongle)
@@ -152,31 +150,18 @@ public sealed class X2V1Backend : IHidBackend
         }
     }
 
-    // EEPROM addresses of the settings this app surfaces. Every entry is a
-    // value/check pair except the DPI blocks, which are 4 bytes per stage.
+    // EEPROM addresses. Every entry is a value/check pair except the DPI blocks (4 bytes per stage).
     private const ushort AddrSysConfig = 0x0000;   // rate, stage count, active stage
     private const ushort AddrLod = 0x000A;
     private const ushort AddrDpiPair1 = 0x000C;    // stages 1+2; +8 per further pair
 
-    /// <summary>
-    /// DPI step for this model's sensor: stage values are stored as
-    /// <c>(raw + 1) x step</c>. Verified live on an X2 V1: 07 07 00 47 is
-    /// 400 DPI and 0F 0F 00 37 is 800 DPI.
-    /// </summary>
+    /// <summary>DPI step for this sensor: stage values are stored as (raw + 1) x step.</summary>
     private const int DpiBaseStep = 50;
-    // 0xA9 debounce, 0xAB motion sync, 0xAD sleep delay, 0xAF angle snap,
-    // 0xB1 ripple control.
-    //
-    // Index 2 (0x00AD) was previously labelled "led" here and dropped. The
-    // Pulsar cMouse notes name it SleepTime, in units of 10 seconds, and list
-    // the light-related fields separately (0x00A0 Light, 0x00B3 MovingOffLight),
-    // so it is surfaced as the sleep delay. An earlier probe of this device
-    // guessed "LED-off timer" for the same address; both readings agree on the
-    // decasecond unit, and only hardware can settle which label is right.
+
+    // 0xA9 debounce, 0xAB motion sync, 0xAD sleep delay (decaseconds), 0xAF angle snap, 0xB1 ripple control.
     private const ushort AddrAdvParams = 0x00A9;
 
-    // Stored polling code -> Hz. The low nibble is inverted relative to the
-    // high one; the X2 V1 tops out at 1000 Hz, so only 0x01..0x08 occur here.
+    // Stored polling code -> Hz. Low nibble is inverted relative to the high one; X2 V1 tops out at 1000 Hz.
     private static readonly Dictionary<byte, int> PollingRateHzByCode = new()
     {
         [0x01] = 1000,
@@ -188,9 +173,7 @@ public sealed class X2V1Backend : IHidBackend
         [0x40] = 8000,
     };
 
-    // Only the rates this model actually reaches (see PollingRateHzByCode) are
-    // offered for writing; 2000/4000/8000 decode on paper but are unreachable
-    // on real X2 V1 hardware per the protocol notes.
+    // 2000/4000/8000 decode on paper but are unreachable on real X2 V1 hardware, so they are not writable.
     private static readonly IReadOnlyDictionary<int, byte> PollingRateCodeByHz = new Dictionary<int, byte>
     {
         [1000] = 0x01,
@@ -201,8 +184,7 @@ public sealed class X2V1Backend : IHidBackend
 
     private static readonly IReadOnlyList<int> WritablePollingRatesHz = [125, 250, 500, 1000];
 
-    // Only the two LOD codes this backend already decodes round-trip safely
-    // (see the switch in ReadSettingsSnapshot); code 0 is left unmapped.
+    // Only the two LOD codes that round-trip safely; code 0 is left unmapped.
     private static readonly IReadOnlyDictionary<int, byte> LodCodeByMm10 = new Dictionary<int, byte>
     {
         [10] = 0x01,
@@ -211,25 +193,18 @@ public sealed class X2V1Backend : IHidBackend
 
     private static readonly IReadOnlyList<int> WritableLodValuesMm10 = [10, 20];
 
-    // Same decasecond delay register as the Pulsar cMouse V1.31 driver at the
-    // identical address (0x00AD) -- reusing its hardware-verified value set.
+    // Hardware-verified value set from the Pulsar cMouse V1.31 driver at the same address (0x00AD).
     private static readonly IReadOnlyList<int> WritableSleepValuesSeconds = [10, 30, 60, 300, 600, 1800];
 
-    // Conservative write range: only the plain low-byte DPI encoding (no
-    // exponent bits) that ParseDpiStage already accepts on read. Actual
-    // stored DPIs using the exponent bits still read back fine; this just
-    // limits what new values can be written until the exponent scaling for
-    // this sensor family is confirmed (see Legacy17Protocol.ParseDpiStage).
+    // Plain low-byte encoding only, until exponent scaling is confirmed for this sensor family.
+    // Stored DPIs that do use the exponent bits still read back fine; this only caps writes.
     private static readonly DeviceValueRange WritableDpiRange = new(50, 12_800, 50);
 
     public DeviceSettings? ReadSettings(bool debug) => ReadSettingsSnapshot(debug)?.Values;
 
     /// <summary>
-    /// Reads the on-device settings out of the mouse's EEPROM together with the
-    /// capabilities needed to render a safe editor. The EEPROM lives on the
-    /// mouse rather than the dongle, so this only answers while the wireless
-    /// side is awake: an idle X2 V1 sleeps within seconds and every block then
-    /// times out, which is reported as "no settings" rather than partial data.
+    /// Reads EEPROM settings plus editor capabilities. The EEPROM is on the mouse, not the dongle, so an
+    /// idle X2 V1 (it sleeps within seconds) times out every block and reports no settings, not partial data.
     /// </summary>
     public DeviceSettingsSnapshot? ReadSettingsSnapshot(bool debug)
     {
@@ -325,10 +300,8 @@ public sealed class X2V1Backend : IHidBackend
             if (settings.RippleControl is not null) readable |= DeviceSettingField.RippleControl;
             if (settings.SleepSeconds is not null) readable |= DeviceSettingField.Sleep;
 
-            // Writable is gated per EEPROM sub-block rather than mirroring
-            // Readable outright: a field is only ever offered for writing when
-            // the block that a rollback would restore it from was itself just
-            // read successfully.
+            // Gated per EEPROM sub-block, not mirroring Readable: a field is only writable when the block
+            // a rollback would restore it from was itself just read successfully.
             var writable = DeviceSettingField.None;
             if (sys is not null)
             {
@@ -386,13 +359,8 @@ public sealed class X2V1Backend : IHidBackend
     public bool SupportsSettingsWrite => true;
 
     /// <summary>
-    /// Writes the requested EEPROM fields and verifies each by reading it back,
-    /// rolling back to the previous value if any step fails. Uses the same
-    /// value/check-pair addresses as <see cref="ReadSettingsSnapshot"/> --
-    /// <see cref="CmouseLegacyBackend"/> write-verifies the identical
-    /// 0x00A9..0x00B1 register block on the sibling cMouse protocol, but this
-    /// has not been exercised on X2 V1 hardware yet, hence
-    /// <see cref="DeviceSettingsWriteTrust.VendorDerived"/> above.
+    /// Writes EEPROM fields, verifies each by reading back, and rolls back if any step fails.
+    /// Not yet exercised on X2 V1 hardware, hence <see cref="DeviceSettingsWriteTrust.VendorDerived"/>.
     /// </summary>
     public bool ApplySettings(DeviceSettings changes, bool debug)
     {
@@ -516,9 +484,7 @@ public sealed class X2V1Backend : IHidBackend
     }
 
     /// <summary>
-    /// Reads the current value of every requested field's pair/block so each
-    /// write can be verified and, on failure partway through, rolled back to
-    /// exactly what was on the mouse before this call.
+    /// Reads each requested field's current pair/block so writes can be verified and rolled back exactly.
     /// </summary>
     private static List<WriteOperation>? BuildOperations(
         HidStream writer,
@@ -657,9 +623,7 @@ public sealed class X2V1Backend : IHidBackend
                 return null;
             }
 
-            // Plain low-byte encoding only -- matches WritableDpiRange, which
-            // is capped to the values ParseDpiStage decodes without needing
-            // the exponent bits (see DpiExponentScaling.Unknown there).
+            // Plain low-byte encoding only, matching WritableDpiRange (no exponent bits).
             var raw = (byte)((dpi / DpiBaseStep) - 1);
             var desired = new byte[4];
             desired[0] = raw;
@@ -812,9 +776,8 @@ public sealed class X2V1Backend : IHidBackend
     private const int PacketLength = 17;
 
     /// <summary>
-    /// Queries the device-identification command with a fresh random challenge.
-    /// Returns null when the device does not answer or the response fails its
-    /// own cross-check, so callers fall back to PID-based guessing.
+    /// Queries device identification with a fresh random challenge; null on no answer or a failed
+    /// cross-check, so callers fall back to PID-based guessing.
     /// </summary>
     private static (int ModelId, byte ConnectionCode, byte DongleType)? ReadDeviceInfo(
         HidStream writer,
@@ -947,9 +910,8 @@ public sealed class X2V1Backend : IHidBackend
     }
 
     /// <summary>
-    /// Reads a firmware version over the wire. Unlike the bcdDevice fallback
-    /// this also answers behind the dongle, where the descriptor would only
-    /// expose the receiver's own version.
+    /// Reads firmware over the wire; unlike bcdDevice this answers behind the dongle, where the
+    /// descriptor would only expose the receiver's own version.
     /// </summary>
     private static string? ReadVersion(HidStream writer, HidStream reader, byte[] packet, byte expectedCmd, string transport, bool debug)
     {

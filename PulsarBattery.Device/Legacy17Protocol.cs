@@ -6,18 +6,9 @@ using HidSharp;
 namespace PulsarBattery.Device;
 
 /// <summary>
-/// Shared pieces of the legacy CompX/Nordic 17-byte report protocol used by
-/// the X2 CrazyLight and X2 V1: [reportId, cmd, data...(14), checksum] where
-/// checksum = 0x55 - sum(bytes[0..15]).
+/// Pulsar "cMouse" legacy 17-byte protocol (X2 CrazyLight, X2 V1): [reportId, cmd, data(14), checksum],
+/// checksum = 0x55 - sum(bytes[0..15]). Offsets follow amassias/Bibimbap (MIT), shifted +1 for our report ID.
 /// </summary>
-/// <remarks>
-/// This is the Pulsar "cMouse" vendor protocol. Command names and field
-/// offsets below follow the reverse-engineering notes published in
-/// amassias/Bibimbap (MIT), docs/protocol.md, a macOS configurator that
-/// documented the same wire format we had been replaying blind. Their frame
-/// indices are relative to the frame; ours include the report ID at [0], so
-/// their data[n] is our payload[n + 1].
-/// </remarks>
 internal static class Legacy17Protocol
 {
     private const int FrameLength = 17;
@@ -29,10 +20,7 @@ internal static class Legacy17Protocol
     /// <summary>Tells the device that configuration software is running.</summary>
     public const byte CmdDriverStatus = 0x02;
 
-    /// <summary>
-    /// Firmware version of the responding device. Unlike the wired-only
-    /// bcdDevice fallback this answers over the dongle as well.
-    /// </summary>
+    /// <summary>Firmware version of the responding device; unlike bcdDevice this answers over the dongle too.</summary>
     public const byte CmdVersion = 0x12;
 
     /// <summary>Firmware version of the receiver itself, same payload shape.</summary>
@@ -42,12 +30,8 @@ internal static class Legacy17Protocol
     public const byte CmdRssi = 0x2B;
 
     /// <summary>
-    /// Device-identification command. Unlike the other legacy commands this one
-    /// carries an 8-byte payload: four caller-chosen challenge bytes followed by
-    /// four zero placeholders. The device answers with CID/MID mixed into the
-    /// challenge at bytes 6..7, and returns CID, MID, connection type and
-    /// dongle type in the clear at bytes 10..13. Some firmware also mixes the
-    /// latter two fields into bytes 8..9; CrazyLight V3.04 leaves them zero.
+    /// Device identification; 8-byte payload of 4 challenge bytes + 4 zeros. Answers with CID/MID mixed into
+    /// the challenge at 6..7 and CID, MID, connection and dongle type in clear at 10..13 (V3.04 zeros 8..9).
     /// </summary>
     public const byte CmdInfo = 0x01;
 
@@ -72,9 +56,8 @@ internal static class Legacy17Protocol
     public const byte Connection8K = 0x05;
 
     /// <summary>
-    /// Maps a <see cref="CmdInfo"/> connection code to the transport and the
-    /// link rate it runs at. Codes 3..5 were missing here while only 0..2 were
-    /// known, which mis-read every 2K/8K link as an unknown connection.
+    /// Maps a <see cref="CmdInfo"/> connection code to transport and link rate.
+    /// Codes 3..5 were once missing here, which mis-read every 2K/8K link as unknown.
     /// </summary>
     public static (ConnectionKind Kind, int LinkRateHz)? DecodeConnection(byte code) => code switch
     {
@@ -88,9 +71,8 @@ internal static class Legacy17Protocol
     };
 
     /// <summary>
-    /// Reads a block of the mouse's settings EEPROM. The 16-bit address goes at
-    /// bytes 3..4 (big-endian) and the byte count at byte 5. Only answered while
-    /// the mouse itself is awake: the dongle cannot serve this on its own.
+    /// Reads a settings-EEPROM block: big-endian address at bytes 3..4, count at byte 5.
+    /// Only answered while the mouse is awake; the dongle cannot serve it alone.
     /// </summary>
     public const byte CmdGetEeprom = 0x08;
 
@@ -104,13 +86,8 @@ internal static class Legacy17Protocol
         => BuildPacket(reportId, CmdGetEeprom, [0x00, (byte)(address >> 8), (byte)(address & 0xFF), length]);
 
     /// <summary>
-    /// Builds a non-flash command in the structured 17-byte cMouse frame format.
-    /// Status and address are zero, the length is written without routing flags,
-    /// and <paramref name="data"/> starts at byte 6.
+    /// Builds a non-flash command frame: status and address zero, length without routing flags, data at byte 6.
     /// </summary>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when <paramref name="data"/> exceeds the ten-byte frame capacity.
-    /// </exception>
     public static byte[] BuildCommandPacket(byte reportId, byte cmd, ReadOnlySpan<byte> data = default)
     {
         if (data.Length > MaxDataLength)
@@ -127,18 +104,12 @@ internal static class Legacy17Protocol
         return packet;
     }
 
-    /// <summary>
-    /// Builds <see cref="CmdDriverStatus"/> with the required one-byte payload.
-    /// Passing <see langword="true"/> announces an active configuration driver;
-    /// <see langword="false"/> releases that state during shutdown.
-    /// </summary>
+    /// <summary>Builds <see cref="CmdDriverStatus"/>; true announces an active driver, false releases it.</summary>
     public static byte[] BuildDriverStatusPacket(byte reportId, bool online)
         => BuildCommandPacket(reportId, CmdDriverStatus, [online ? (byte)0x01 : (byte)0x00]);
 
     /// <summary>
-    /// Builds a <see cref="CmdOnline"/> query or hold operation. A null
-    /// <paramref name="hold"/> emits a zero-length reachability query; true and
-    /// false emit the one-byte acquire and release forms respectively.
+    /// Builds a <see cref="CmdOnline"/> query when <paramref name="hold"/> is null, else the acquire/release form.
     /// </summary>
     public static byte[] BuildOnlinePacket(byte reportId, bool? hold = null)
         => hold.HasValue
@@ -146,13 +117,9 @@ internal static class Legacy17Protocol
             : BuildCommandPacket(reportId, CmdOnline);
 
     /// <summary>
-    /// Builds one EEPROM write frame using a big-endian address and at most ten
-    /// data bytes. The length is always the plain byte count; the keyboard-mode
-    /// routing bit is deliberately never set for mouse traffic.
+    /// Builds one EEPROM write frame (big-endian address, max 10 data bytes).
+    /// The keyboard-mode routing bit is deliberately never set for mouse traffic.
     /// </summary>
-    /// <exception cref="ArgumentOutOfRangeException">
-    /// Thrown when <paramref name="data"/> exceeds the ten-byte frame capacity.
-    /// </exception>
     public static byte[] BuildEepromWritePacket(byte reportId, ushort address, ReadOnlySpan<byte> data)
     {
         if (data.Length > MaxDataLength)
@@ -171,16 +138,12 @@ internal static class Legacy17Protocol
         return packet;
     }
 
-    /// <summary>
-    /// Encodes a scalar EEPROM value together with its internal complement, so
-    /// the two bytes sum to <c>0x55</c> modulo 256.
-    /// </summary>
+    /// <summary>Encodes a value with its complement so the pair sums to 0x55 mod 256.</summary>
     public static byte[] EncodeCheckedValue(byte value)
         => [value, unchecked((byte)(0x55 - value))];
 
     /// <summary>
-    /// Validates the checksum of the first complete 17-byte report. Additional
-    /// bytes advertised by a larger HID collection are intentionally ignored.
+    /// Validates the first complete 17-byte report; extra bytes from a larger HID collection are ignored.
     /// </summary>
     public static bool HasValidChecksum(IReadOnlyList<byte> frame)
     {
@@ -199,9 +162,8 @@ internal static class Legacy17Protocol
     }
 
     /// <summary>
-    /// Parses a data-bearing EEPROM response only when its checksum, status,
-    /// command, big-endian address, and declared length all match the request.
-    /// A status-only acknowledgement is rejected because it contains no data.
+    /// Parses an EEPROM response only when checksum, status, command, address and length match the request.
+    /// A status-only acknowledgement is rejected because it carries no data.
     /// </summary>
     public static bool TryParseEepromResponse(
         IReadOnlyList<byte> frame,
@@ -263,10 +225,7 @@ internal static class Legacy17Protocol
         return true;
     }
 
-    /// <summary>
-    /// Validates a write acknowledgement against the requested address and
-    /// data by reconstructing the exact frame that the device must echo.
-    /// </summary>
+    /// <summary>Validates a write ack by rebuilding the exact frame the device must echo.</summary>
     public static bool MatchesWriteAck(
         IReadOnlyList<byte> response,
         ushort address,
@@ -282,10 +241,8 @@ internal static class Legacy17Protocol
     }
 
     /// <summary>
-    /// Settings are stored as value/check pairs where <c>value + check == 0x55</c>,
-    /// which is why every setting sits on an even address. Returns one byte per
-    /// pair, or null if any pair fails its check, so a torn or stale frame is
-    /// rejected rather than surfaced as a bogus setting.
+    /// Settings are value/check pairs summing to 0x55, so every setting sits on an even address.
+    /// Returns null if any pair fails its check, rejecting torn frames instead of surfacing bogus settings.
     /// </summary>
     public static byte[]? ParseEepromPairs(IReadOnlyList<byte> payload, int expectedPairs)
     {
@@ -311,10 +268,8 @@ internal static class Legacy17Protocol
     }
 
     /// <summary>
-    /// How the high bit of a stage's exponent code scales the value. The low
-    /// bit always doubles; the high bit doubles on most sensors but is
-    /// <c>x * 5 + 10000</c> on the "pulsar x1" family, and nothing on this
-    /// protocol identifies the sensor.
+    /// How the exponent high bit scales DPI: doubling on most sensors, x * 5 + 10000 on the "pulsar x1"
+    /// family. Nothing in this protocol identifies the sensor, so the caller must supply it.
     /// </summary>
     public enum DpiExponentScaling
     {
@@ -325,24 +280,9 @@ internal static class Legacy17Protocol
     }
 
     /// <summary>
-    /// Decodes one DPI stage from a <c>DpiPair</c> block. Each stage is four
-    /// bytes (x, y, attributes, check) with <c>check = 0x55 - x - y - attr</c>.
+    /// Decodes one DPI stage: four bytes (x, y, attributes, check) with check = 0x55 - x - y - attr.
+    /// Attributes packs 2-bit fields, not a high byte: xEx 0-1, x high 2-3, yEx 4-5, y high 6-7.
     /// </summary>
-    /// <remarks>
-    /// The attributes byte packs four 2-bit fields, not a plain high byte:
-    /// <c>xEx</c> at bits 0-1, x's high bits at 2-3, <c>yEx</c> at 4-5 and y's
-    /// high bits at 6-7. Reading it as a high byte (as this did) only agrees
-    /// with the real layout while it is zero, which is why the two X2 V1
-    /// samples verified live (07 07 00 47 = 400 DPI and 0F 0F 00 37 = 800 DPI)
-    /// could not tell the formulas apart. Above 12800 DPI it diverged badly:
-    /// a 16000 stage decoded as 54400.
-    /// <para>
-    /// Cross-checked against the X2 CrazyLight flash dump published in
-    /// amassias/Bibimbap (Tests/.../x2-crazylight-core.json), with
-    /// <paramref name="baseStep"/> 10 and <see cref="DpiExponentScaling.PulsarX1"/>:
-    /// 27 27 00 07 = 400, 3F 3F 44 93 = 3200, 37 37 22 C5 = 12800.
-    /// </para>
-    /// </remarks>
     public static int? ParseDpiStage(
         IReadOnlyList<byte> payload,
         int stageWithinBlock,
@@ -376,8 +316,7 @@ internal static class Legacy17Protocol
                     dpi = (dpi * 5) + 10000;
                     break;
                 default:
-                    // Guessing the branch would show a plausible but wrong DPI;
-                    // report "unknown" and let the caller surface an em dash.
+                    // Guessing the branch would show a plausible but wrong DPI.
                     return null;
             }
         }
@@ -400,19 +339,9 @@ internal static class Legacy17Protocol
     }
 
     /// <summary>
-    /// Recovers the device info from a <see cref="CmdInfo"/> response. The
-    /// firmware computes <c>resp[6+i] = challenge[i]*(i+1) + challenge[(i+1)%4]
-    /// + info[i]</c>, so the transform inverts directly. CID/MID are
-    /// cross-checked against the cleartext copy at bytes 10..11 and rejected
-    /// unless both agree, which makes a garbled or stale frame fail closed.
-    /// Verified live on an X2 V1: three different challenges all decoded to
-    /// 06 04 00 00, matching bytes 10..13 exactly.
+    /// Inverts the firmware mix <c>resp[6+i] = challenge[i]*(i+1) + challenge[(i+1)%4] + info[i]</c>.
+    /// CID/MID must agree with the cleartext copy at 10..11, so a garbled or stale frame fails closed.
     /// </summary>
-    /// <remarks>
-    /// Connection and dongle type are taken from the checksummed clear bytes.
-    /// The dongle type gates receiver-side lighting and button features we do
-    /// not implement; it is returned for logging so it is not silently lost.
-    /// </remarks>
     public static (int ModelId, byte ConnectionCode, byte DongleType)? ParseInfoPayload(
         IReadOnlyList<byte> payload,
         ReadOnlySpan<byte> challenge)
@@ -428,9 +357,7 @@ internal static class Legacy17Protocol
             decoded[i] = (byte)((payload[6 + i] - (challenge[i] * (i + 1)) - challenge[(i + 1) % 4]) & 0xFF);
         }
 
-        // V3.04 encodes zero for connection/dongle in the mixed copy while the
-        // clear fields contain the live link values, so only CID/MID are a
-        // portable cross-check across the legacy firmware family.
+        // V3.04 zeros connection/dongle in the mixed copy, so only CID/MID cross-check portably.
         for (var i = 0; i < 2; i++)
         {
             if (decoded[i] != payload[10 + i])
@@ -464,9 +391,7 @@ internal static class Legacy17Protocol
     }
 
     /// <summary>
-    /// Decodes a <see cref="CmdBattery"/> response. The frame also carries the
-    /// pack voltage in millivolts (their data[7..8]) after the level and the
-    /// charging flag; it is null when the frame is too short or reads zero.
+    /// Decodes a <see cref="CmdBattery"/> response; pack voltage in mV follows the level and charging flag.
     /// </summary>
     public static (int battery, bool charging, int? voltageMv)? ParseBatteryPayload(IReadOnlyList<byte> payload)
     {
@@ -489,15 +414,8 @@ internal static class Legacy17Protocol
             }
         }
 
-        // The dongle answers the battery command even when the mouse itself is
-        // not reachable over RF (asleep, out of range, switched off), and then
-        // reports 0%. Verified live on an X2 V1: the live read returned 0 while
-        // the dongle's own cached state report still held 100%, and it snapped
-        // back to 100% as soon as the mouse became active again. Treating that
-        // as a real reading makes the app show 0% and fire a false low-battery
-        // alert, so report "no reading" instead and let the caller keep its
-        // cached value. 0% while charging is left alone: a flat battery on the
-        // cable is a legitimate state.
+        // The dongle answers with 0% when the mouse is unreachable (asleep, out of range), which would fire a
+        // false low-battery alert. Report no reading so the caller keeps its cache; 0% while charging is real.
         if (battery == 0 && !charging)
         {
             return null;
@@ -512,9 +430,7 @@ internal static class Legacy17Protocol
     }
 
     /// <summary>
-    /// Decodes a <see cref="CmdVersion"/> response into the "01.25"-style
-    /// string the rest of the app displays. The device reports a major byte
-    /// and a minor byte that is rendered in hex, so 3 / 0x05 reads "03.05".
+    /// Decodes <see cref="CmdVersion"/> to an "01.25"-style string; the minor byte renders as hex.
     /// </summary>
     public static string? ParseVersionPayload(IReadOnlyList<byte> payload)
     {
@@ -534,17 +450,9 @@ internal static class Legacy17Protocol
     }
 
     /// <summary>
-    /// Decodes a <see cref="CmdRssi"/> response into a raw signal strength.
+    /// Decodes <see cref="CmdRssi"/> to a bar count (4+ excellent, 3 good, 2 fair, 0-1 weak), not a percentage.
+    /// Call only after <see cref="WaitUntilOnline"/>: a sleeping mouse still answers, and its zero is not weak signal.
     /// </summary>
-    /// <remarks>
-    /// The value is a small bar count, not a percentage or a dBm figure. The
-    /// Pulsar cMouse notes bucket it as 4+ excellent, 3 good, 2 fair, 0-1 weak.
-    /// A status of 1 is the protocol's way of saying "this model has no RSSI",
-    /// not an error. See <see cref="ParseBatteryPayload"/> for the same
-    /// convention. Only call this once <see cref="WaitUntilOnline"/> has
-    /// succeeded: a sleeping mouse behind a live receiver still answers, and
-    /// its zero must not be shown as a weak signal.
-    /// </remarks>
     public static int? ParseSignalPayload(IReadOnlyList<byte> payload)
     {
         if (payload.Count < 7 || payload[2] != 0x00)
@@ -556,12 +464,9 @@ internal static class Legacy17Protocol
     }
 
     /// <summary>
-    /// Blocks until the wireless side reports itself reachable, or the timeout
-    /// elapses. Behind a dongle the receiver answers the handshake before it
-    /// has reached the mouse, and anything read in that window times out with
-    /// no useful explanation, so callers wait for the mouse itself.
+    /// Blocks until the mouse itself is reachable. The receiver answers the handshake before it has
+    /// reached the mouse, and anything read in that window times out with no useful explanation.
     /// </summary>
-    /// <returns>True once the mouse is online and idle.</returns>
     public static bool WaitUntilOnline(
         HidStream writer,
         HidStream reader,
@@ -599,11 +504,8 @@ internal static class Legacy17Protocol
     }
 
     /// <summary>
-    /// Reads input reports until one matches the expected command or the
-    /// timeout elapses. Bare 16-byte reports (report ID stripped by the OS)
-    /// are re-prefixed with <paramref name="normalizeReportId"/>;
-    /// <paramref name="bareReportFilter"/> can restrict which bare reports
-    /// qualify.
+    /// Reads input reports until one matches the expected command. Bare 16-byte reports (report ID
+    /// stripped by the OS) are re-prefixed with <paramref name="normalizeReportId"/>.
     /// </summary>
     public static byte[]? ReadResponse(
         HidStream reader,

@@ -1,15 +1,10 @@
 namespace PulsarBattery.Device;
 
 /// <summary>
-/// On-device configuration values. Null means the device (or its protocol)
-/// does not expose that value, and in <c>ApplySettings</c> requests, null
-/// means "leave unchanged".
+/// On-device configuration. Null means the protocol does not expose the value; in
+/// <c>ApplySettings</c> requests it means "leave unchanged".
 /// </summary>
-/// <param name="SleepSeconds">
-/// Idle delay before the mouse sleeps, in seconds. Stored on-device as a count
-/// of 10-second units, so the values the vendor tool offers are 10s, 30s, 1min,
-/// 5min, 10min and 30min.
-/// </param>
+/// <param name="SleepSeconds">Idle delay before sleep; stored on-device in 10-second units.</param>
 public sealed record DeviceSettings(
     int? PollingRateHz = null,
     int? DebounceMs = null,

@@ -19,10 +19,8 @@ public enum DeviceSettingField
 }
 
 /// <summary>
-/// Describes where a backend's write implementation has been validated. This
-/// is deliberately separate from <see cref="DeviceSettingsCapabilities.Writable"/>:
-/// a vendor-derived implementation can be enabled while still telling the UI
-/// that it has not been exercised on matching hardware yet.
+/// Where a backend's write implementation has been validated. Separate from Writable so a vendor-derived
+/// implementation can be enabled while still telling the UI it is unexercised on matching hardware.
 /// </summary>
 public enum DeviceSettingsWriteTrust
 {

@@ -30,9 +30,8 @@ public sealed partial class SettingsPage : Page
     private ViewModels.MainViewModel? ViewModel => DataContext as ViewModels.MainViewModel;
 
     /// <summary>
-    /// Armed from construction until <see cref="SettingsPage_Loaded"/> completes, and re-armed on
-    /// unload. ToggleSwitch.Toggled fires for programmatic changes too, so anything happening
-    /// outside the loaded window must never reach the autostart install flow.
+    /// Armed from construction until <see cref="SettingsPage_Loaded"/> completes, and re-armed on unload.
+    /// Toggled fires for programmatic changes too, which must never reach the autostart install flow.
     /// </summary>
     private bool _isUpdatingStartWithWindowsToggle = true;
 
@@ -149,10 +148,8 @@ public sealed partial class SettingsPage : Page
             return;
         }
 
-        // A cleared or untagged selection is never a user intent. WinUI raises
-        // SelectionChanged with SelectedItem == null while the ComboBox is realized and
-        // again while it is torn down; persisting that reset Language to null (= Auto)
-        // and silently discarded the user's choice.
+        // A cleared or untagged selection is never user intent. WinUI raises SelectionChanged with a null
+        // SelectedItem on both realize and teardown, and persisting that wiped the saved language.
         if (LanguageComboBox.SelectedItem is not ComboBoxItem { Tag: string tag })
         {
             return;
@@ -260,7 +257,6 @@ public sealed partial class SettingsPage : Page
         }
         catch
         {
-            // ignore
         }
     }
 
