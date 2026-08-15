@@ -43,11 +43,11 @@
     <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.251219" />
     <PackageReference Include="H.NotifyIcon.WinUI" Version="2.4.1" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2526" />
-    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.3.1" />
+    <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
     <!-- Direct reference (same version the metapackage resolves) only to get
          $(PkgMicrosoft_WindowsAppSDK_Runtime) for AddMissingWindowsAppRuntimeInsightsDll. -->
-    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.3.1" GeneratePathProperty="true" />
-    <PackageReference Include="System.Drawing.Common" Version="10.0.10" />
+    <PackageReference Include="Microsoft.WindowsAppSDK.Runtime" Version="2.4.0" GeneratePathProperty="true" />
+    <PackageReference Include="System.Drawing.Common" Version="10.0.11" />
   </ItemGroup>
 
   <ItemGroup>
@@ -147,18 +147,11 @@
        is how the single-file publish redirects LoadLibrary to the extraction directory — without
        that entry the loose-file copy works but the bundled publish still fails to load it.
        Remove once the SDK ships the DLL in its payload glob. -->
-  <Target Name="AddMissingWindowsAppRuntimeInsightsDll"
-          BeforeTargets="CreateWinRTRegistration;AssignTargetPaths;CoreCompile"
-          Condition="'$(WindowsAppSDKSelfContained)' == 'true'">
-    <Unzip SourceFiles="$(PkgMicrosoft_WindowsAppSDK_Runtime)\tools\MSIX\win10-$(Platform)\Microsoft.WindowsAppRuntime.2.msix"
-           DestinationFolder="$(IntermediateOutputPath)WindowsAppRuntimeMsix"
-           Include="Microsoft.WindowsAppRuntime.Insights.Resource.dll"
-           SkipUnchangedFiles="true" />
+  <Target Name="AddMissingWindowsAppRuntimeInsightsDll" BeforeTargets="CreateWinRTRegistration;AssignTargetPaths;CoreCompile" Condition="'$(WindowsAppSDKSelfContained)' == 'true'">
+    <Unzip SourceFiles="$(PkgMicrosoft_WindowsAppSDK_Runtime)\tools\MSIX\win10-$(Platform)\Microsoft.WindowsAppRuntime.2.msix" DestinationFolder="$(IntermediateOutputPath)WindowsAppRuntimeMsix" Include="Microsoft.WindowsAppRuntime.Insights.Resource.dll" SkipUnchangedFiles="true" />
     <ItemGroup>
       <MicrosoftWindowsAppSDKDllFiles Include="$(IntermediateOutputPath)WindowsAppRuntimeMsix\Microsoft.WindowsAppRuntime.Insights.Resource.dll" />
-      <None Include="$(IntermediateOutputPath)WindowsAppRuntimeMsix\Microsoft.WindowsAppRuntime.Insights.Resource.dll"
-            CopyToOutputDirectory="PreserveNewest"
-            Link="Microsoft.WindowsAppRuntime.Insights.Resource.dll" />
+      <None Include="$(IntermediateOutputPath)WindowsAppRuntimeMsix\Microsoft.WindowsAppRuntime.Insights.Resource.dll" CopyToOutputDirectory="PreserveNewest" Link="Microsoft.WindowsAppRuntime.Insights.Resource.dll" />
     </ItemGroup>
   </Target>
 </Project>
