@@ -177,14 +177,20 @@ public sealed partial class SettingsPage : Page
         LowBatteryExpander.Header = Loc.T("Low battery alerts");
         LowBatteryExpander.Description = Loc.T("Configure thresholds, sound, and cooldown for low-battery notifications");
 
-        AlertThresholdUnlockedCard.Header = Loc.T("Alert threshold (unlocked)");
-        AutomationProperties.SetName(AlertThresholdUnlockedNumberBox, Loc.T("Alert threshold (unlocked)"));
+        AlertThresholdUnlockedCard.Header = Loc.T("Warn below while using Windows");
+        AlertThresholdUnlockedCard.Description = Loc.T("Show a notification when the battery is below this percentage and the mouse is not charging.");
+        AutomationProperties.SetName(AlertThresholdUnlockedNumberBox, Loc.T("Warn below while using Windows"));
+        AutomationProperties.SetHelpText(AlertThresholdUnlockedNumberBox, Loc.T("Show a notification when the battery is below this percentage and the mouse is not charging."));
 
-        AlertThresholdLockedCard.Header = Loc.T("Alert threshold (locked)");
-        AutomationProperties.SetName(AlertThresholdLockedNumberBox, Loc.T("Alert threshold (locked)"));
+        AlertThresholdLockedCard.Header = Loc.T("Warn below after locking Windows");
+        AlertThresholdLockedCard.Description = Loc.T("Check during the first 10 seconds after locking Windows to remind you to charge if the battery is below this percentage.");
+        AutomationProperties.SetName(AlertThresholdLockedNumberBox, Loc.T("Warn below after locking Windows"));
+        AutomationProperties.SetHelpText(AlertThresholdLockedNumberBox, Loc.T("Check during the first 10 seconds after locking Windows to remind you to charge if the battery is below this percentage."));
 
-        AlertCooldownCard.Header = Loc.T("Alert cooldown");
-        AutomationProperties.SetName(AlertCooldownNumberBox, Loc.T("Alert cooldown"));
+        AlertCooldownCard.Header = Loc.T("Repeat reminder after");
+        AlertCooldownCard.Description = Loc.T("Wait this many minutes before repeating a warning while the battery remains low. The first warning has no delay. Set to 0 to warn at every battery check.");
+        AutomationProperties.SetName(AlertCooldownNumberBox, Loc.T("Repeat reminder after"));
+        AutomationProperties.SetHelpText(AlertCooldownNumberBox, Loc.T("Wait this many minutes before repeating a warning while the battery remains low. The first warning has no delay. Set to 0 to warn at every battery check."));
 
         EnableBeepsCard.Header = Loc.T("Enable beeps");
         EnableBeepsToggle.OnContent = Loc.T("On");
