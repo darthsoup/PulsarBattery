@@ -45,6 +45,11 @@
                     </LinearGradientBrush>
                 </Path.Fill>
             </Path>
+            <Path x:Name="GapLines"
+                  Stroke="{ThemeResource AccentFillColorDefaultBrush}"
+                  StrokeThickness="2"
+                  StrokeDashArray="4,3"
+                  StrokeDashCap="Round" />
             <Path x:Name="TrendLine"
                   Stroke="{ThemeResource AccentFillColorDefaultBrush}"
                   StrokeThickness="2"

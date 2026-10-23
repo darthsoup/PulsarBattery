@@ -169,6 +169,7 @@
   "Reading mouse settings...": "Mauseinstellungen werden gelesen...",
   "No readings in the last 24 hours": "Keine Messwerte in den letzten 24 Stunden",
   "{0} readings. Latest {1}% at {2}. Lowest {3}%, highest {4}%.": "{0} Messwerte. Zuletzt {1}% am {2}. Minimum {3}%, Maximum {4}%.",
+  "Dashed lines mark periods without readings.": "Gestrichelte Linien markieren Zeiträume ohne Messwerte.",
   "Connected": "Verbunden",
   "Device unavailable": "Gerät nicht verfügbar",
   "The mouse is unavailable. Showing the last successful reading. Move the mouse, check the receiver, or connect the USB cable.": "Die Maus ist nicht erreichbar. Angezeigt wird der zuletzt gelesene Akkustand. Bewege die Maus, prüfe den Empfänger oder schließe das USB-Kabel an.",

@@ -229,11 +229,14 @@ public sealed partial class MouseSettingsPage : Page
 
             var busy = viewModel.IsApplyingDeviceSetting || viewModel.IsReadingDeviceSettings || viewModel.IsLoading;
             RefreshSettingsButton.IsEnabled = !busy;
-            SettingsProgressPanel.Visibility = ToVisibility(busy);
             SettingsProgressRing.IsActive = busy;
-            SettingsProgressText.Text = busy
-                ? Loc.T(viewModel.IsApplyingDeviceSetting ? "Applying mouse setting..." : "Reading mouse settings...")
-                : string.Empty;
+            RefreshSettingsIcon.Visibility = ToVisibility(!busy);
+            var refreshLabel = busy
+                ? viewModel.IsApplyingDeviceSetting ? "Applying mouse setting..." : "Reading mouse settings..."
+                : "Refresh settings";
+            SettingsProgressText.Text = refreshLabel;
+            AutomationProperties.SetName(RefreshSettingsButton, Loc.T(refreshLabel));
+            ToolTipService.SetToolTip(RefreshSettingsButton, Loc.T(refreshLabel));
             UnsupportedSettingsPanel.Visibility = busy
                 ? Visibility.Collapsed
                 : viewModel.MouseSettingsUnsupportedVisibility;
@@ -497,18 +500,16 @@ public sealed partial class MouseSettingsPage : Page
         SleepCard.Header = Loc.T("Sleep timer");
         SleepCard.Description = Loc.T("Idle time before the mouse sleeps to save battery");
         AutomationProperties.SetName(SleepComboBox, Loc.T("Sleep timer"));
+        RefreshSettingsIdleMeasure.Text = Loc.T("Refresh settings");
+        RefreshSettingsReadMeasure.Text = Loc.T("Reading mouse settings...");
+        RefreshSettingsApplyMeasure.Text = Loc.T("Applying mouse setting...");
         AutomationProperties.SetName(RefreshSettingsButton, Loc.T("Refresh settings"));
+        ToolTipService.SetToolTip(RefreshSettingsButton, Loc.T("Refresh settings"));
     }
 
     private void PageHeader_SizeChanged(object sender, SizeChangedEventArgs e)
     {
-        var wide = e.NewSize.Width >= 520;
-        Grid.SetColumnSpan(PageTitle, wide ? 1 : 2);
-        Grid.SetColumn(RefreshSettingsButton, wide ? 1 : 0);
-        Grid.SetColumnSpan(RefreshSettingsButton, wide ? 1 : 2);
-        Grid.SetRow(RefreshSettingsButton, wide ? 0 : 1);
-        RefreshSettingsButton.HorizontalAlignment = wide ? HorizontalAlignment.Right : HorizontalAlignment.Left;
-        PageHeader.RowSpacing = wide ? 0 : 16;
+        RefreshSettingsLabels.Visibility = ToVisibility(e.NewSize.Width >= 520);
     }
 
     private void RootGrid_PointerPressed(object sender, PointerRoutedEventArgs e)

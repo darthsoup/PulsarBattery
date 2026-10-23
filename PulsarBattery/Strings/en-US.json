@@ -169,6 +169,7 @@
   "Reading mouse settings...": "Reading mouse settings...",
   "No readings in the last 24 hours": "No readings in the last 24 hours",
   "{0} readings. Latest {1}% at {2}. Lowest {3}%, highest {4}%.": "{0} readings. Latest {1}% at {2}. Lowest {3}%, highest {4}%.",
+  "Dashed lines mark periods without readings.": "Dashed lines mark periods without readings.",
   "Connected": "Connected",
   "Device unavailable": "Device unavailable",
   "The mouse is unavailable. Showing the last successful reading. Move the mouse, check the receiver, or connect the USB cable.": "The mouse is unavailable. Showing the last successful reading. Move the mouse, check the receiver, or connect the USB cable.",
