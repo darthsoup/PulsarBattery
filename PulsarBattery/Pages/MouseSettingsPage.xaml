@@ -17,17 +17,68 @@
               PointerPressed="RootGrid_PointerPressed">
             <StackPanel Spacing="24" MaxWidth="1000">
 
-                <!-- Negative bottom margin cancels the ~8px of slack that TitleTextBlockStyle's
-                     36px LineHeight leaves below the glyphs, so the 24px Spacing below the title
-                     reads the same as the 24px between sections. Matches SettingsPage. -->
-                <controls:TranslatedTextBlock Text="Mouse Settings"
-                                              TextStyle="{ThemeResource TitleTextBlockStyle}"
-                                              Margin="0,0,0,-8" />
+                <Grid x:Name="PageHeader" ColumnSpacing="16" RowSpacing="16"
+                      SizeChanged="PageHeader_SizeChanged">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <!-- Cancel the title line-height slack to match the other page sections. -->
+                    <controls:TranslatedTextBlock x:Name="PageTitle"
+                                                  Text="Mouse Settings"
+                                                  Grid.ColumnSpan="2"
+                                                  TextStyle="{ThemeResource TitleTextBlockStyle}"
+                                                  TextWrapping="Wrap"
+                                                  Margin="0,0,0,-8" />
+                    <Button x:Name="RefreshSettingsButton"
+                            Grid.Row="1"
+                            Grid.ColumnSpan="2"
+                            HorizontalAlignment="Left"
+                            VerticalAlignment="Center"
+                            Click="RefreshSettingsButton_Click">
+                        <StackPanel Orientation="Horizontal" Spacing="8">
+                            <FontIcon Glyph="&#xE72C;" FontSize="14" />
+                            <controls:TranslatedTextBlock Text="Refresh settings" />
+                        </StackPanel>
+                    </Button>
+                </Grid>
 
-                <Border Style="{StaticResource PulsarCardStyle}"
-                        Padding="60,80"
+                <Grid x:Name="SettingsProgressPanel"
+                      ColumnSpacing="12"
+                      Visibility="Collapsed">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <ProgressRing x:Name="SettingsProgressRing"
+                                  Width="20"
+                                  Height="20"
+                                  IsActive="False" />
+                    <TextBlock x:Name="SettingsProgressText"
+                               Grid.Column="1"
+                               VerticalAlignment="Center"
+                               TextWrapping="Wrap"
+                               AutomationProperties.LiveSetting="Polite" />
+                </Grid>
+
+                <!-- Visibility must track IsOpen so a closed InfoBar consumes no section spacing. -->
+                <InfoBar x:Name="ApplyInfoBar"
+                         Severity="Warning"
+                         IsOpen="{x:Bind ViewModel.MouseSettingsErrorOpen, Mode=OneWay}"
+                         Visibility="{x:Bind local:MouseSettingsPage.BoolToVisibility(ViewModel.MouseSettingsErrorOpen), Mode=OneWay}"
+                         Message="{x:Bind ViewModel.MouseSettingsErrorText, Mode=OneWay}"
+                         CloseButtonClick="ApplyInfoBar_CloseButtonClick"
+                         IsClosable="True" />
+
+                <Border x:Name="UnsupportedSettingsPanel"
+                        Style="{StaticResource PulsarCardStyle}"
+                        Padding="32,48"
                         MinHeight="300"
-                        Visibility="{x:Bind ViewModel.MouseSettingsUnsupportedVisibility, Mode=OneWay}">
+                        Visibility="Collapsed">
                     <StackPanel HorizontalAlignment="Center"
                                 VerticalAlignment="Center"
                                 Spacing="16">
@@ -42,6 +93,8 @@
                         </Border>
                         <controls:TranslatedTextBlock Text="This device cannot be configured"
                                                       TextStyle="{ThemeResource SubtitleTextBlockStyle}"
+                                                      TextWrapping="Wrap"
+                                                      TextAlignment="Center"
                                                       HorizontalAlignment="Center" />
                         <controls:TranslatedTextBlock Text="Connect a supported mouse to change its settings"
                                                       TextStyle="{ThemeResource CaptionTextBlockStyle}"
@@ -53,17 +106,6 @@
                 </Border>
 
                 <StackPanel Spacing="24" Visibility="{x:Bind ViewModel.MouseSettingsVisibility, Mode=OneWay}">
-
-                    <!-- Visibility must track IsOpen. A closed InfoBar renders 0px tall but stays
-                         Visibility="Visible", so the parent StackPanel still allots it a 24px
-                         Spacing gap. Three closed bars added 72px of dead space under the title. -->
-                    <InfoBar x:Name="ApplyInfoBar"
-                             Severity="Warning"
-                             IsOpen="{x:Bind ViewModel.MouseSettingsErrorOpen, Mode=OneWay}"
-                             Visibility="{x:Bind local:MouseSettingsPage.BoolToVisibility(ViewModel.MouseSettingsErrorOpen), Mode=OneWay}"
-                             Message="{x:Bind ViewModel.MouseSettingsErrorText, Mode=OneWay}"
-                             CloseButtonClick="ApplyInfoBar_CloseButtonClick"
-                             IsClosable="True" />
 
                     <InfoBar Severity="Informational"
                              IsOpen="{x:Bind ViewModel.MouseSettingsReadOnly, Mode=OneWay}"
@@ -96,7 +138,7 @@
                                        SmallChange="50"
                                        LargeChange="400"
                                        SpinButtonPlacementMode="Compact"
-                                       Value="{x:Bind ViewModel.DpiValue, Mode=TwoWay}"
+                                       ValueChanged="DpiNumberBox_ValueChanged"
                                        Width="140" />
                         </settingscontrols:SettingsCard>
 
@@ -113,7 +155,7 @@
                                            Maximum="30"
                                            SmallChange="1"
                                            SpinButtonPlacementMode="Compact"
-                                           Value="{x:Bind ViewModel.DebounceMsValue, Mode=TwoWay}"
+                                           ValueChanged="DebounceNumberBox_ValueChanged"
                                            Width="120" />
                                 <TextBlock Text="ms"
                                            Style="{ThemeResource CaptionTextBlockStyle}"
@@ -136,17 +178,17 @@
 
                         <settingscontrols:SettingsCard x:Name="MotionSyncCard">
                             <ToggleSwitch x:Name="MotionSyncToggle"
-                                          IsOn="{x:Bind ViewModel.MotionSyncIsOn, Mode=TwoWay}" />
+                                          Toggled="MotionSyncToggle_Toggled" />
                         </settingscontrols:SettingsCard>
 
                         <settingscontrols:SettingsCard x:Name="AngleSnapCard">
                             <ToggleSwitch x:Name="AngleSnapToggle"
-                                          IsOn="{x:Bind ViewModel.AngleSnapIsOn, Mode=TwoWay}" />
+                                          Toggled="AngleSnapToggle_Toggled" />
                         </settingscontrols:SettingsCard>
 
                         <settingscontrols:SettingsCard x:Name="RippleControlCard">
                             <ToggleSwitch x:Name="RippleControlToggle"
-                                          IsOn="{x:Bind ViewModel.RippleControlIsOn, Mode=TwoWay}" />
+                                          Toggled="RippleControlToggle_Toggled" />
                         </settingscontrols:SettingsCard>
                     </StackPanel>
 
@@ -165,15 +207,6 @@
                 </StackPanel>
 
             </StackPanel>
-            <!-- Invisible focus target: clicking empty page space moves focus here so a
-                 NumberBox being edited loses focus and commits its value (NumberBox only
-                 updates its binding on focus loss). See RootGrid_PointerPressed. -->
-            <Button x:Name="FocusSink"
-                    Width="1"
-                    Height="1"
-                    Opacity="0"
-                    IsHitTestVisible="False"
-                    TabIndex="-1" />
         </Grid>
     </ScrollViewer>
 </Page>

@@ -28,6 +28,11 @@ public sealed class X2V1Backend : IHidBackend
     // BatteryMonitor loop, so successful answers are kept.
     private string? _cachedFirmware;
     private string? _cachedDongleFirmware;
+    private string? _firmwareDevicePath;
+    private Target? _lastTarget;
+    private bool _lastTargetConfirmed;
+    private Target? _lastSettingsTarget;
+    private DeviceSettingField _lastSettingsWritable;
 
     public DeviceStatus? ReadBatteryStatus(bool debug)
     {
@@ -35,6 +40,12 @@ public sealed class X2V1Backend : IHidBackend
 
         if (allDevices.Count == 0)
         {
+            _cachedFirmware = null;
+            _cachedDongleFirmware = null;
+            _firmwareDevicePath = null;
+            _lastTarget = null;
+            _lastTargetConfirmed = false;
+            ClearSettingsTarget();
             return null;
         }
 
@@ -47,12 +58,14 @@ public sealed class X2V1Backend : IHidBackend
             }
         }
 
+        ClearSettingsTarget();
         return null;
     }
 
     private DeviceStatus? TryReadWithReaders(HidDevice writerCandidate, List<HidDevice> readerPool, bool debug)
     {
-        var status = TryReadPair(writerCandidate, writerCandidate, debug);
+        var uniqueTarget = SelectSettingsTarget(readerPool.Select(DescribeEndpoint));
+        var status = TryReadPair(writerCandidate, writerCandidate, uniqueTarget, debug);
         if (status is not null)
         {
             return status;
@@ -60,7 +73,12 @@ public sealed class X2V1Backend : IHidBackend
 
         foreach (var readerCandidate in readerPool.OrderBy(r => r.DevicePath))
         {
-            status = TryReadPair(writerCandidate, readerCandidate, debug);
+            if (string.Equals(readerCandidate.DevicePath, writerCandidate.DevicePath, StringComparison.OrdinalIgnoreCase))
+            {
+                continue;
+            }
+
+            status = TryReadPair(writerCandidate, readerCandidate, uniqueTarget, debug);
             if (status is not null)
             {
                 return status;
@@ -70,7 +88,7 @@ public sealed class X2V1Backend : IHidBackend
         return null;
     }
 
-    private DeviceStatus? TryReadPair(HidDevice writerDevice, HidDevice readerDevice, bool debug)
+    private DeviceStatus? TryReadPair(HidDevice writerDevice, HidDevice readerDevice, Target? uniqueTarget, bool debug)
     {
         HidStream? writer = null;
         HidStream? reader = null;
@@ -81,7 +99,7 @@ public sealed class X2V1Backend : IHidBackend
                 return null;
             }
 
-            if (writerDevice.DevicePath == readerDevice.DevicePath)
+            if (string.Equals(writerDevice.DevicePath, readerDevice.DevicePath, StringComparison.OrdinalIgnoreCase))
             {
                 reader = writer;
             }
@@ -111,6 +129,13 @@ public sealed class X2V1Backend : IHidBackend
             var linkRateHz = decoded?.LinkRateHz;
             var connectionName = connection == ConnectionKind.Dongle ? HidHelpers.GetProductName(writerDevice) : null;
 
+            if (!string.Equals(_firmwareDevicePath, writerDevice.DevicePath, StringComparison.OrdinalIgnoreCase))
+            {
+                _cachedFirmware = null;
+                _cachedDongleFirmware = null;
+                _firmwareDevicePath = writerDevice.DevicePath;
+            }
+
             // CmdVersion answers over the dongle too; bcdDevice is the fallback, and this model NAKs
             // CmdVersion, so the fallback is the usual path here.
             _cachedFirmware ??= ReadVersion(writer!, reader ?? writer!, VersionPacket, Legacy17Protocol.CmdVersion, transportForInfo, debug);
@@ -133,7 +158,17 @@ public sealed class X2V1Backend : IHidBackend
                 }
             }
 
-            return ReadBatteryCmd04(writer!, reader ?? writer!, debug, transportForInfo, connection, connectionName, firmware, linkRateHz, signal, dongleFirmware);
+            var status = ReadBatteryCmd04(writer!, reader ?? writer!, debug, transportForInfo, connection, connectionName, firmware, linkRateHz, signal, dongleFirmware);
+            if (status is not null)
+            {
+                var target = new Target(writerDevice.DevicePath, readerDevice.DevicePath);
+                var confirmed = SamePath(target.WriterPath, target.ReaderPath)
+                    || SameTarget(target, uniqueTarget)
+                    || (writerDevice.ProductID == readerDevice.ProductID && info is not null);
+                SetCurrentTarget(target, confirmed);
+            }
+
+            return status;
         }
         catch
         {
@@ -208,19 +243,35 @@ public sealed class X2V1Backend : IHidBackend
     /// </summary>
     public DeviceSettingsSnapshot? ReadSettingsSnapshot(bool debug)
     {
-        var devices = HidHelpers.EnumerateDevices(Vid, d => d.ProductID is PidWireless or PidWired).ToList();
-        var writerDevice = devices.FirstOrDefault(d => SafeLength(d.GetMaxFeatureReportLength) == PacketLength);
-        var readerDevice = devices.FirstOrDefault(d => SafeLength(d.GetMaxInputReportLength) == PacketLength);
-        if (writerDevice is null || readerDevice is null)
+        ClearSettingsTarget();
+        if (_lastTarget is not null && !_lastTargetConfirmed)
         {
             return null;
         }
 
+        var devices = HidHelpers.EnumerateDevices(Vid, d => d.ProductID is PidWireless or PidWired).ToList();
+        var target = SelectSettingsTarget(devices.Select(DescribeEndpoint), _lastTarget);
+        if (target is null)
+        {
+            return null;
+        }
+
+        var writerDevice = devices.First(d => SamePath(d.DevicePath, target.WriterPath));
+        var readerDevice = devices.First(d => SamePath(d.DevicePath, target.ReaderPath));
         HidStream? writer = null;
         HidStream? reader = null;
         try
         {
-            if (!writerDevice.TryOpen(out writer) || !readerDevice.TryOpen(out reader))
+            if (!writerDevice.TryOpen(out writer))
+            {
+                return null;
+            }
+
+            if (string.Equals(writerDevice.DevicePath, readerDevice.DevicePath, StringComparison.OrdinalIgnoreCase))
+            {
+                reader = writer;
+            }
+            else if (!readerDevice.TryOpen(out reader))
             {
                 return null;
             }
@@ -246,37 +297,34 @@ public sealed class X2V1Backend : IHidBackend
             var adv = ReadEepromPairs(writer, reader, transport, AddrAdvParams, 5, debug);
             var lod = ReadEepromPairs(writer, reader, transport, AddrLod, 1, debug);
 
+            int? activeStage = sys is not null && sys[2] >= 1 && sys[2] <= sys[1] ? sys[2] : null;
             int? dpi = null;
-            if (sys is not null)
+            if (activeStage is int stage)
             {
-                var stage = sys[2];
-                if (stage >= 1)
+                // Stages are stored two per block, four bytes each.
+                var block = (ushort)(AddrDpiPair1 + (((stage - 1) / 2) * 8));
+                var response = Exchange(writer, reader, Legacy17Protocol.BuildEepromReadPacket(OutputReportId, block, 8), Legacy17Protocol.CmdGetEeprom, transport, debug);
+                if (response is not null
+                    && Legacy17Protocol.TryParseEepromResponse(
+                        response,
+                        Legacy17Protocol.CmdGetEeprom,
+                        block,
+                        8,
+                        out _))
                 {
-                    // Stages are stored two per block, four bytes each.
-                    var block = (ushort)(AddrDpiPair1 + (((stage - 1) / 2) * 8));
-                    var response = Exchange(writer, reader, Legacy17Protocol.BuildEepromReadPacket(OutputReportId, block, 8), Legacy17Protocol.CmdGetEeprom, transport, debug);
-                    if (response is not null
-                        && Legacy17Protocol.TryParseEepromResponse(
-                            response,
-                            Legacy17Protocol.CmdGetEeprom,
-                            block,
-                            8,
-                            out _))
-                    {
-                        dpi = Legacy17Protocol.ParseDpiStage(response, (stage - 1) % 2, DpiBaseStep);
-                    }
+                    dpi = Legacy17Protocol.ParseDpiStage(response, (stage - 1) % 2, DpiBaseStep);
                 }
             }
 
             var settings = new DeviceSettings(
                 PollingRateHz: sys is not null && PollingRateHzByCode.TryGetValue(sys[0], out var hz) ? hz : null,
-                DebounceMs: adv?[0],
-                MotionSync: adv is null ? null : adv[1] == 0x01,
+                DebounceMs: adv?[0] is <= 15 and byte debounce ? debounce : null,
+                MotionSync: adv?[1] switch { 0 => false, 1 => true, _ => null },
                 Dpi: dpi,
-                DpiStage: sys?[2],
+                DpiStage: activeStage,
                 LodMm10: lod?[0] switch { 1 => 10, 2 => 20, _ => null },
-                AngleSnap: adv is null ? null : adv[3] == 0x01,
-                RippleControl: adv is null ? null : adv[4] == 0x01,
+                AngleSnap: adv?[3] switch { 0 => false, 1 => true, _ => null },
+                RippleControl: adv?[4] switch { 0 => false, 1 => true, _ => null },
                 SleepSeconds: adv?[2] is > 0 and byte sleepUnits ? sleepUnits * 10 : null);
 
             if (debug)
@@ -326,6 +374,7 @@ public sealed class X2V1Backend : IHidBackend
                 writable |= DeviceSettingField.Lod;
             }
 
+            writable &= readable;
             var capabilities = new DeviceSettingsCapabilities(
                 readable,
                 writable,
@@ -339,6 +388,9 @@ public sealed class X2V1Backend : IHidBackend
                 WriteTrust: DeviceSettingsWriteTrust.VendorDerived,
                 HasPersistentBackup: false);
 
+            SetCurrentTarget(target, confirmed: true);
+            _lastSettingsTarget = target;
+            _lastSettingsWritable = writable;
             return new DeviceSettingsSnapshot(settings, capabilities);
         }
         catch
@@ -356,7 +408,9 @@ public sealed class X2V1Backend : IHidBackend
         }
     }
 
-    public bool SupportsSettingsWrite => true;
+    public bool SupportsSettingsWrite => _lastTargetConfirmed
+        && SameTarget(_lastTarget, _lastSettingsTarget)
+        && _lastSettingsWritable != DeviceSettingField.None;
 
     /// <summary>
     /// Writes EEPROM fields, verifies each by reading back, and rolls back if any step fails.
@@ -364,24 +418,35 @@ public sealed class X2V1Backend : IHidBackend
     /// </summary>
     public bool ApplySettings(DeviceSettings changes, bool debug)
     {
-        if (!ValidateChanges(changes))
+        if (!SupportsSettingsWrite || !ValidateChanges(changes, _lastSettingsWritable))
         {
             return false;
         }
 
         var devices = HidHelpers.EnumerateDevices(Vid, d => d.ProductID is PidWireless or PidWired).ToList();
-        var writerDevice = devices.FirstOrDefault(d => SafeLength(d.GetMaxFeatureReportLength) == PacketLength);
-        var readerDevice = devices.FirstOrDefault(d => SafeLength(d.GetMaxInputReportLength) == PacketLength);
-        if (writerDevice is null || readerDevice is null)
+        var target = SelectSettingsTarget(devices.Select(DescribeEndpoint), _lastSettingsTarget);
+        if (target is null)
         {
+            ClearSettingsTarget();
             return false;
         }
 
+        var writerDevice = devices.First(d => SamePath(d.DevicePath, target.WriterPath));
+        var readerDevice = devices.First(d => SamePath(d.DevicePath, target.ReaderPath));
         HidStream? writer = null;
         HidStream? reader = null;
         try
         {
-            if (!writerDevice.TryOpen(out writer) || !readerDevice.TryOpen(out reader))
+            if (!writerDevice.TryOpen(out writer))
+            {
+                return false;
+            }
+
+            if (SamePath(writerDevice.DevicePath, readerDevice.DevicePath))
+            {
+                reader = writer;
+            }
+            else if (!readerDevice.TryOpen(out reader))
             {
                 return false;
             }
@@ -448,8 +513,23 @@ public sealed class X2V1Backend : IHidBackend
         }
     }
 
-    private static bool ValidateChanges(DeviceSettings changes)
+    private static bool ValidateChanges(DeviceSettings changes, DeviceSettingField writable)
     {
+        var requested = DeviceSettingField.None;
+        if (changes.PollingRateHz is not null) requested |= DeviceSettingField.PollingRate;
+        if (changes.DebounceMs is not null) requested |= DeviceSettingField.Debounce;
+        if (changes.MotionSync is not null) requested |= DeviceSettingField.MotionSync;
+        if (changes.Dpi is not null) requested |= DeviceSettingField.Dpi;
+        if (changes.DpiStage is not null) requested |= DeviceSettingField.DpiStage;
+        if (changes.LodMm10 is not null) requested |= DeviceSettingField.Lod;
+        if (changes.AngleSnap is not null) requested |= DeviceSettingField.AngleSnap;
+        if (changes.RippleControl is not null) requested |= DeviceSettingField.RippleControl;
+        if (changes.SleepSeconds is not null) requested |= DeviceSettingField.Sleep;
+        if (requested == DeviceSettingField.None || (writable & requested) != requested)
+        {
+            return false;
+        }
+
         if (changes.PollingRateHz is int rate && !PollingRateCodeByHz.ContainsKey(rate))
         {
             return false;
@@ -753,10 +833,12 @@ public sealed class X2V1Backend : IHidBackend
                 timeoutSeconds: 0.6,
                 InputReportIds,
                 normalizeReportId: DefaultInputReportId,
-                bareReportFilter: static b => b is 0x01 or 0x02 or 0x03 or 0x04 or 0x08 or 0x0E,
+                bareReportFilter: b => b == expectedCmd,
                 debug,
                 maxLength,
-                idleSleepMs: 10);
+                idleSleepMs: 10,
+                responseFilter: response => expectedCmd != Legacy17Protocol.CmdGetEeprom
+                    || (response[3] == packet[3] && response[4] == packet[4] && response[5] == packet[5]));
             return response is not null && Legacy17Protocol.HasValidChecksum(response)
                 ? response
                 : null;
@@ -765,6 +847,70 @@ public sealed class X2V1Backend : IHidBackend
         {
             return null;
         }
+    }
+
+    internal sealed record Endpoint(string Path, int ProductId, int FeatureLength, int InputLength);
+
+    internal sealed record Target(string WriterPath, string ReaderPath);
+
+    internal static Target? SelectSettingsTarget(IEnumerable<Endpoint> endpoints, Target? requiredTarget = null)
+    {
+        var available = endpoints
+            .Where(endpoint => !string.IsNullOrWhiteSpace(endpoint.Path))
+            .DistinctBy(endpoint => endpoint.Path, StringComparer.OrdinalIgnoreCase)
+            .ToArray();
+        var writers = available.Where(endpoint => endpoint.FeatureLength == PacketLength).ToArray();
+        var readers = available.Where(endpoint => endpoint.InputLength == PacketLength).ToArray();
+
+        Endpoint? writer;
+        Endpoint? reader;
+        if (requiredTarget is not null)
+        {
+            writer = writers.FirstOrDefault(endpoint => SamePath(endpoint.Path, requiredTarget.WriterPath));
+            reader = readers.FirstOrDefault(endpoint => SamePath(endpoint.Path, requiredTarget.ReaderPath));
+        }
+        else
+        {
+            // HID paths do not identify which separate collections belong to one physical mouse.
+            // Discover only an unambiguous pair; subsequent operations keep those exact paths.
+            writer = writers.Length == 1 ? writers[0] : null;
+            reader = readers.Length == 1 ? readers[0] : null;
+        }
+
+        return writer is not null && reader is not null && writer.ProductId == reader.ProductId
+            ? new Target(writer.Path, reader.Path)
+            : null;
+    }
+
+    private static Endpoint DescribeEndpoint(HidDevice device) => new(
+        device.DevicePath,
+        device.ProductID,
+        SafeLength(device.GetMaxFeatureReportLength),
+        SafeLength(device.GetMaxInputReportLength));
+
+    private static bool SamePath(string left, string right)
+        => string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+
+    private static bool SameTarget(Target? left, Target? right)
+        => left is not null && right is not null
+            && SamePath(left.WriterPath, right.WriterPath)
+            && SamePath(left.ReaderPath, right.ReaderPath);
+
+    private void SetCurrentTarget(Target target, bool confirmed)
+    {
+        if (!confirmed || !SameTarget(_lastTarget, target))
+        {
+            ClearSettingsTarget();
+        }
+
+        _lastTarget = target;
+        _lastTargetConfirmed = confirmed;
+    }
+
+    private void ClearSettingsTarget()
+    {
+        _lastSettingsTarget = null;
+        _lastSettingsWritable = DeviceSettingField.None;
     }
 
     private static int SafeLength(Func<int> get)
@@ -801,7 +947,7 @@ public sealed class X2V1Backend : IHidBackend
                 timeoutSeconds: 0.6,
                 InputReportIds,
                 normalizeReportId: DefaultInputReportId,
-                bareReportFilter: static b => b is 0x01 or 0x02 or 0x03 or 0x04 or 0x08 or 0x0E,
+                bareReportFilter: static b => b == Legacy17Protocol.CmdInfo,
                 debug,
                 maxLength,
                 idleSleepMs: 10);
@@ -934,7 +1080,7 @@ public sealed class X2V1Backend : IHidBackend
             timeoutSeconds,
             InputReportIds,
             normalizeReportId: DefaultInputReportId,
-            bareReportFilter: static b => b is 0x01 or 0x02 or 0x03 or 0x04 or 0x08 or 0x0E,
+            bareReportFilter: static b => b == Legacy17Protocol.CmdBattery,
             debug,
             maxLen,
             idleSleepMs: 10);
@@ -953,6 +1099,7 @@ public sealed class X2V1Backend : IHidBackend
         // preserves the byte-exact captured warmup packet.
         var nonce = (uint)(DateTime.UtcNow.Ticks & 0xFFFFFFFF);
         Span<byte> body = stackalloc byte[15];
+        body.Clear();
         body[0] = OutputReportId;
         body[1] = 0x01;
         body[5] = 0x08;

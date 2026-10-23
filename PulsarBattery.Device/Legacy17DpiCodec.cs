@@ -82,7 +82,7 @@ internal static class Legacy17DpiCodec
     public static int? DecodeStage(Legacy17SensorKind sensor, IReadOnlyList<byte> block)
     {
         var length = RecordLength(sensor);
-        if (block.Count < length || Legacy17Protocol.Checksum(ToArray(block, length - 1)) != block[length - 1])
+        if (block is null || block.Count < length || Legacy17Protocol.Checksum(ToArray(block, length - 1)) != block[length - 1])
         {
             return null;
         }

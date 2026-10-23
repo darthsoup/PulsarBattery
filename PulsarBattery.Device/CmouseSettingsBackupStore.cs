@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using System.Globalization;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
@@ -91,9 +92,108 @@ internal sealed class CmouseSettingsBackupStore
         }
     }
 
+    internal bool TryValidate(
+        string directory,
+        string devicePath,
+        int productId,
+        byte cid,
+        byte mid)
+    {
+        try
+        {
+            if (string.IsNullOrWhiteSpace(devicePath)
+                || !CmouseDeviceCatalog.ProductIds.Contains(productId)
+                || !CmouseDeviceCatalog.TryGet(cid, mid, out var profile))
+            {
+                return false;
+            }
+
+            var manifestBytes = ReadBoundedBytes(Path.Combine(directory, ManifestFileName), 256 * 1024);
+            var manifestHash = Encoding.ASCII.GetString(
+                ReadBoundedBytes(Path.Combine(directory, ManifestHashFileName), 128)).Trim();
+            if (!string.Equals(ComputeSha256(manifestBytes), manifestHash, StringComparison.OrdinalIgnoreCase))
+            {
+                return false;
+            }
+
+            var manifest = JsonSerializer.Deserialize(
+                manifestBytes,
+                CmouseSettingsBackupJsonContext.Default.CmouseSettingsBackupManifest);
+            var requiresExtendedDpi = profile.Sensor == Legacy17SensorKind.Paw3955;
+            if (manifest is null
+                || manifest.FormatVersion != 1
+                || manifest.AppRunId != _appRunId
+                || string.IsNullOrWhiteSpace(manifest.Model)
+                || manifest.VendorId != CmouseDeviceCatalog.VendorId
+                || manifest.ProductId != productId
+                || manifest.Cid != cid
+                || manifest.Mid != mid
+                || !string.Equals(manifest.DevicePath, devicePath, StringComparison.OrdinalIgnoreCase)
+                || !string.Equals(manifest.DevicePathSha256,
+                    ComputeSha256(Encoding.UTF8.GetBytes(devicePath.ToUpperInvariant())),
+                    StringComparison.OrdinalIgnoreCase)
+                || manifest.HashAlgorithm != HashAlgorithmName
+                || manifest.Regions is null
+                || manifest.Regions.Length != (requiresExtendedDpi ? 2 : 1))
+            {
+                return false;
+            }
+
+            var hasCore = false;
+            var hasExtendedDpi = false;
+            foreach (var region in manifest.Regions)
+            {
+                if (region is null)
+                {
+                    return false;
+                }
+
+                if (region.Name == "core-settings" && !hasCore)
+                {
+                    if (!ValidateRegion(directory, region, CoreFileName, 0, CoreRegionLength))
+                    {
+                        return false;
+                    }
+
+                    hasCore = true;
+                }
+                else if (region.Name == "extended-dpi" && requiresExtendedDpi && !hasExtendedDpi)
+                {
+                    if (!ValidateRegion(directory, region, ExtendedDpiFileName, ExtendedDpiAddress, ExtendedDpiLength))
+                    {
+                        return false;
+                    }
+
+                    hasExtendedDpi = true;
+                }
+                else
+                {
+                    return false;
+                }
+            }
+
+            return hasCore && hasExtendedDpi == requiresExtendedDpi;
+        }
+        catch (Exception ex) when (ex is IOException or InvalidDataException or UnauthorizedAccessException
+            or JsonException or ArgumentException or NotSupportedException)
+        {
+            return false;
+        }
+    }
+
     internal string Save(CmouseSettingsBackup backup)
     {
         Validate(backup);
+
+        // The public snapshot exposes mutable arrays. Own the bytes before callbacks
+        // or disk I/O so the manifest and every region describe the same snapshot.
+        backup = backup with
+        {
+            CoreSettingsRegion = (byte[])backup.CoreSettingsRegion.Clone(),
+            ExtendedDpiRegion = backup.ExtendedDpiRegion is null
+                ? null
+                : (byte[])backup.ExtendedDpiRegion.Clone(),
+        };
 
         if (string.IsNullOrWhiteSpace(_rootDirectory))
         {
@@ -106,8 +206,9 @@ internal sealed class CmouseSettingsBackupStore
         var createdUtc = _utcNow().ToUniversalTime();
         var devicePathHash = ComputeSha256(Encoding.UTF8.GetBytes(backup.DevicePath.ToUpperInvariant()));
         var backupId = Guid.NewGuid().ToString("N");
+        var timestamp = createdUtc.ToString("yyyyMMdd'T'HHmmssfff'Z'", CultureInfo.InvariantCulture);
         var directoryName =
-            $"{createdUtc:yyyyMMdd'T'HHmmssfff'Z'}-mid{backup.Mid:X2}-{devicePathHash[..16]}-{backupId}";
+            $"{timestamp}-mid{backup.Mid:X2}-{devicePathHash[..16]}-{backupId}";
         var publishedDirectory = Path.Combine(rootDirectory, directoryName);
         var temporaryDirectory = Path.Combine(rootDirectory, $".tmp-{backupId}");
         var published = false;
@@ -229,6 +330,42 @@ internal sealed class CmouseSettingsBackupStore
         }
     }
 
+    private static bool ValidateRegion(
+        string directory,
+        CmouseSettingsBackupRegionManifest region,
+        string fileName,
+        int startAddress,
+        int length)
+    {
+        if (region.FileName != fileName || region.StartAddress != startAddress || region.Length != length)
+        {
+            return false;
+        }
+
+        var bytes = ReadBoundedBytes(Path.Combine(directory, fileName), length);
+        return bytes.Length == length
+            && string.Equals(ComputeSha256(bytes), region.Sha256, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private static byte[] ReadBoundedBytes(string path, int maximumLength)
+    {
+        using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read);
+        var length = stream.Length;
+        if (length > maximumLength)
+        {
+            throw new InvalidDataException("The backup file exceeds its expected size.");
+        }
+
+        var bytes = new byte[checked((int)length)];
+        stream.ReadExactly(bytes);
+        if (stream.ReadByte() != -1)
+        {
+            throw new InvalidDataException("The backup file changed during verification.");
+        }
+
+        return bytes;
+    }
+
     private static void Validate(CmouseSettingsBackup backup)
     {
         ArgumentNullException.ThrowIfNull(backup);
@@ -278,11 +415,16 @@ internal sealed class CmouseSettingsBackupStore
     internal static string ComputeSha256(ReadOnlySpan<byte> bytes) =>
         Convert.ToHexString(SHA256.HashData(bytes));
 
-    private static string GetDefaultRootDirectory() =>
-        Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            ApplicationDirectoryName,
-            BackupsDirectoryName);
+    private static string GetDefaultRootDirectory()
+    {
+        var localApplicationData = Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData);
+        return string.IsNullOrWhiteSpace(localApplicationData)
+            ? string.Empty
+            : Path.Combine(
+                localApplicationData,
+                ApplicationDirectoryName,
+                BackupsDirectoryName);
+    }
 }
 
 [JsonSerializable(typeof(CmouseSettingsBackupManifest))]

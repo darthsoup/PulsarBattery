@@ -10,9 +10,9 @@ internal static class HidHelpers
     public static byte[]? ReadWithTimeout(HidStream stream, int maxLength, int timeoutMs)
     {
         var buffer = new byte[maxLength];
-        stream.ReadTimeout = timeoutMs;
         try
         {
+            stream.ReadTimeout = timeoutMs;
             var read = stream.Read(buffer, 0, buffer.Length);
             if (read <= 0)
             {
@@ -21,7 +21,7 @@ internal static class HidHelpers
 
             return buffer.Take(read).ToArray();
         }
-        catch
+        catch (TimeoutException)
         {
             return null;
         }

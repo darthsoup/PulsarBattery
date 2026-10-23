@@ -6,6 +6,7 @@ using PulsarBattery.Tools;
 using PulsarBattery.ViewModels;
 using System;
 using System.ComponentModel;
+using System.Globalization;
 using WinRT.Interop;
 using WinUIWindow = Microsoft.UI.Xaml.Window;
 
@@ -25,6 +26,21 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
 
     public event PropertyChangedEventHandler? PropertyChanged;
 
+    public bool IsAvailable
+    {
+        get
+        {
+            try
+            {
+                return !_disposed && TaskbarIcon.TrayIcon.IsCreated;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+    }
+
     public MainViewModel? ViewModel
     {
         get => _viewModel;
@@ -40,15 +56,23 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
         InitializeComponent();
 
         OpenMenuItem.Text = Loc.T("Open");
+        RefreshMenuItem.Text = Loc.T("Refresh battery status");
         ExitMenuItem.Text = Loc.T("Exit");
 
         TaskbarIcon.LeftClickCommand = new RelayCommand(ShowWindow);
         OpenMenuItem.Command = new RelayCommand(ShowWindow);
+        RefreshMenuItem.Command = new RelayCommand(RefreshBattery);
         ExitMenuItem.Command = new RelayCommand(ExitApp);
+        UpdateMenuState();
     }
 
     public void ForceCreate(bool enablesEfficiencyMode = true)
     {
+        if (_disposed)
+        {
+            return;
+        }
+
         _shellCreateRequested = true;
         TaskbarIcon.ForceCreate(enablesEfficiencyMode);
 
@@ -58,6 +82,11 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
 
     public void Initialize(WinUIWindow window, MainViewModel? viewModel = null)
     {
+        if (_disposed || _window is not null)
+        {
+            return;
+        }
+
         _window = window;
         _dispatcherQueue = window.DispatcherQueue;
         ViewModel = viewModel;
@@ -71,13 +100,14 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
             viewModel.PropertyChanged += ViewModel_PropertyChanged;
         }
 
+        UpdateMenuState();
         UpdateTrayIcon(force: true);
 
         // Backstop for DPI/theme changes while asleep and for silent Shell_NotifyIcon failures (a commit
         // is never proof the shell shows the icon). Forced, because the dedupe cache cannot know about those.
         _refreshTimer = _dispatcherQueue.CreateTimer();
         _refreshTimer.Interval = TimeSpan.FromSeconds(60);
-        _refreshTimer.Tick += (_, _) => HealTrayIcon();
+        _refreshTimer.Tick += RefreshTimer_Tick;
         _refreshTimer.Start();
 
         // TaskbarCreated MUST force a re-render: the library re-adds with a stored handle our bookkeeping
@@ -87,6 +117,7 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
             _messageWindow = TaskbarIcon.TrayIcon.MessageWindow;
             _messageWindow.TaskbarCreated += MessageWindow_IconRefreshNeeded;
             _messageWindow.DpiChanged += MessageWindow_IconRefreshNeeded;
+            _messageWindow.KeyboardEventReceived += MessageWindow_KeyboardEventReceived;
         }
         catch (Exception ex)
         {
@@ -101,6 +132,34 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
         // Raised on the message-loop thread; only marshal, do no work here.
         _dispatcherQueue?.TryEnqueue(HealTrayIcon);
     }
+
+    private void MessageWindow_KeyboardEventReceived(object? sender, H.NotifyIcon.Core.MessageWindow.KeyboardEventReceivedEventArgs e)
+    {
+        if (_disposed || e.KeyboardEvent != H.NotifyIcon.Core.KeyboardEvent.ContextMenu)
+        {
+            return;
+        }
+
+        // H.NotifyIcon 2.5.0-beta.3 still only raises an event for WM_CONTEXTMENU; open the flyout here.
+        _dispatcherQueue?.TryEnqueue(() =>
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            try
+            {
+                TaskbarIcon.ShowContextMenu(e.Point);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(nameof(TrayIcon), ex);
+            }
+        });
+    }
+
+    private void RefreshTimer_Tick(DispatcherQueueTimer sender, object args) => HealTrayIcon();
 
     /// <summary>
     /// Re-creates the shell icon if a NIM_ADD was lost. The library swallows those errors and nothing
@@ -131,10 +190,57 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(MainViewModel.TrayIconState) or null or "")
+        if (e.PropertyName is nameof(MainViewModel.TrayIconState)
+            or nameof(MainViewModel.CanRefresh)
+            or nameof(MainViewModel.DeviceStatusText)
+            or nameof(MainViewModel.LastUpdatedText)
+            or nameof(MainViewModel.ModelName)
+            or null or "")
         {
-            UpdateTrayIcon();
+            if (_dispatcherQueue?.HasThreadAccess == true)
+            {
+                UpdateTrayPresentation();
+            }
+            else
+            {
+                _dispatcherQueue?.TryEnqueue(UpdateTrayPresentation);
+            }
         }
+    }
+
+    private void UpdateTrayPresentation()
+    {
+        if (_disposed)
+        {
+            return;
+        }
+
+        UpdateMenuState();
+        UpdateTrayIcon();
+    }
+
+    private void UpdateMenuState()
+    {
+        var viewModel = ViewModel;
+        var hasLiveData = viewModel?.TrayIconState.HasData == true;
+        ModelMenuItem.Text = viewModel?.HasInitialData == true ? viewModel.ModelName : "Pulsar Battery";
+        BatteryMenuItem.Text = hasLiveData
+            ? string.Format(CultureInfo.CurrentCulture, Loc.T("Battery: {0}%"), viewModel!.BatteryPercentage)
+            : Loc.T("Battery: --");
+        StatusMenuItem.Text = hasLiveData ? viewModel!.ChargingStateText : viewModel?.DeviceStatusText ?? Loc.T("No data yet");
+        LastUpdatedMenuItem.Text = $"{Loc.T("Last updated")}: {viewModel?.LastUpdatedText ?? Loc.T("No data yet")}";
+        RefreshMenuItem.IsEnabled = viewModel?.CanRefresh == true;
+    }
+
+    private void RefreshBattery()
+    {
+        _dispatcherQueue?.TryEnqueue(() =>
+        {
+            if (!_disposed && ViewModel?.CanRefresh == true)
+            {
+                ViewModel.RefreshNow();
+            }
+        });
     }
 
     private void UpdateTrayIcon(bool force = false)
@@ -171,14 +277,26 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
 
     private void ShowWindow()
     {
-        _window?.DispatcherQueue.TryEnqueue(() =>
+        var window = _window;
+        window?.DispatcherQueue.TryEnqueue(() =>
         {
+            if (_disposed)
+            {
+                return;
+            }
+
+            if (window is global::PulsarBattery.MainWindow mainWindow)
+            {
+                mainWindow.ShowAndActivate();
+                return;
+            }
+
             EfficiencyMode.Set(false);
 
-            var hwnd = WindowNative.GetWindowHandle(_window);
+            var hwnd = WindowNative.GetWindowHandle(window);
             var appWindow = AppWindow.GetFromWindowId(Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd));
             appWindow?.Show();
-            _window.Activate();
+            window.Activate();
         });
     }
 
@@ -202,14 +320,28 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
         {
             _messageWindow.TaskbarCreated -= MessageWindow_IconRefreshNeeded;
             _messageWindow.DpiChanged -= MessageWindow_IconRefreshNeeded;
+            _messageWindow.KeyboardEventReceived -= MessageWindow_KeyboardEventReceived;
             _messageWindow = null;
         }
 
-        _refreshTimer?.Stop();
+        if (_refreshTimer is not null)
+        {
+            _refreshTimer.Stop();
+            _refreshTimer.Tick -= RefreshTimer_Tick;
+        }
         _refreshTimer = null;
 
-        TaskbarIcon.Dispose();
-        _renderer.Dispose();
+        Bindings.StopTracking();
+        _viewModel = null;
+        _window = null;
+        try
+        {
+            TaskbarIcon.Dispose();
+        }
+        finally
+        {
+            _renderer.Dispose();
+        }
     }
 
     private sealed class RelayCommand(Action execute) : System.Windows.Input.ICommand

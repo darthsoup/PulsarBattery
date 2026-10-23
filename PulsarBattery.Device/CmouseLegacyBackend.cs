@@ -64,11 +64,14 @@ public sealed class CmouseLegacyBackend : IHidBackend
     private string? _lastDevicePath;
     private CmouseDeviceProfile? _lastSettingsProfile;
     private string? _lastSettingsDevicePath;
+    private DeviceSettingField _lastSettingsWritable;
+    private CmouseDeviceProfile? _cachedFirmwareProfile;
+    private string? _cachedFirmwareDevicePath;
     private string? _cachedFirmware;
     private string? _cachedDongleFirmware;
     private readonly CmouseSettingsBackupStore _settingsBackupStore;
     private readonly object _settingsBackupGate = new();
-    private readonly HashSet<string> _persistentlyBackedUpDevices =
+    private readonly Dictionary<string, string> _persistentlyBackedUpDevices =
         new(StringComparer.OrdinalIgnoreCase);
 
     public CmouseLegacyBackend()
@@ -275,25 +278,28 @@ public sealed class CmouseLegacyBackend : IHidBackend
 
             _lastSettingsDevicePath = context.Device.DevicePath;
             _lastSettingsProfile = context.Profile;
+            _lastSettingsWritable = writable;
             return new DeviceSettingsSnapshot(values, capabilities);
         });
 
         if (snapshot is null)
         {
-            _lastSettingsDevicePath = null;
-            _lastSettingsProfile = null;
+            ClearSettingsTarget();
         }
 
         return snapshot;
     }
 
-    public bool SupportsSettingsWrite => _lastSettingsProfile?.WriteEnabled == true;
+    public bool SupportsSettingsWrite => _lastSettingsProfile?.WriteEnabled == true
+        && _lastSettingsWritable != DeviceSettingField.None;
 
     public bool ApplySettings(DeviceSettings changes, bool debug)
     {
         var targetPath = _lastSettingsDevicePath;
         var targetProfile = _lastSettingsProfile;
-        if (targetPath is null || targetProfile is null)
+        if (targetPath is null
+            || targetProfile is null
+            || !ValidateChanges(targetProfile, changes, _lastSettingsWritable))
         {
             return false;
         }
@@ -305,7 +311,7 @@ public sealed class CmouseLegacyBackend : IHidBackend
             allowDeviceSwitch: false,
             context =>
         {
-            if (!context.Profile.WriteEnabled || !ValidateChanges(context.Profile, changes))
+            if (!context.Profile.WriteEnabled)
             {
                 return BoolResult.False;
             }
@@ -400,9 +406,19 @@ public sealed class CmouseLegacyBackend : IHidBackend
                 context.Device.DevicePath,
                 context.Profile.Cid,
                 context.Profile.Mid);
-            if (_persistentlyBackedUpDevices.Contains(backupKey))
+            if (_persistentlyBackedUpDevices.TryGetValue(backupKey, out var existingDirectory))
             {
-                return true;
+                if (_settingsBackupStore.TryValidate(
+                    existingDirectory,
+                    context.Device.DevicePath,
+                    context.Device.ProductID,
+                    context.Profile.Cid,
+                    context.Profile.Mid))
+                {
+                    return true;
+                }
+
+                _persistentlyBackedUpDevices.Remove(backupKey);
             }
 
             var backup = CreateSettingsBackup(context, debug);
@@ -428,7 +444,7 @@ public sealed class CmouseLegacyBackend : IHidBackend
                 return false;
             }
 
-            _persistentlyBackedUpDevices.Add(backupKey);
+            _persistentlyBackedUpDevices[backupKey] = directory!;
             if (debug)
             {
                 System.Diagnostics.Debug.WriteLine(
@@ -539,16 +555,26 @@ public sealed class CmouseLegacyBackend : IHidBackend
                     continue;
                 }
 
-                if (!string.Equals(_lastDevicePath, device.DevicePath, StringComparison.OrdinalIgnoreCase)
-                    || _lastProfile?.Mid != context.Profile.Mid)
+                // An action can populate firmware before failing, so the cache identity must track
+                // the opened device independently of the last successful status.
+                if (!string.Equals(_cachedFirmwareDevicePath, device.DevicePath, StringComparison.OrdinalIgnoreCase)
+                    || _cachedFirmwareProfile != context.Profile)
                 {
                     _cachedFirmware = null;
                     _cachedDongleFirmware = null;
+                    _cachedFirmwareDevicePath = device.DevicePath;
+                    _cachedFirmwareProfile = context.Profile;
                 }
 
                 var result = action(context);
                 if (result is not null)
                 {
+                    if (!string.Equals(_lastSettingsDevicePath, device.DevicePath, StringComparison.OrdinalIgnoreCase)
+                        || _lastSettingsProfile != context.Profile)
+                    {
+                        ClearSettingsTarget();
+                    }
+
                     _lastDevicePath = device.DevicePath;
                     _lastProfile = context.Profile;
                     return result;
@@ -584,6 +610,13 @@ public sealed class CmouseLegacyBackend : IHidBackend
         }
 
         return null;
+    }
+
+    private void ClearSettingsTarget()
+    {
+        _lastSettingsDevicePath = null;
+        _lastSettingsProfile = null;
+        _lastSettingsWritable = DeviceSettingField.None;
     }
 
     private IEnumerable<HidDevice> EnumerateCandidates(
@@ -701,8 +734,8 @@ public sealed class CmouseLegacyBackend : IHidBackend
 
     private static bool WaitUntilOnline(SessionContext context, bool debug)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(3);
-        while (DateTime.UtcNow < deadline)
+        var started = System.Diagnostics.Stopwatch.GetTimestamp();
+        while (System.Diagnostics.Stopwatch.GetElapsedTime(started) < TimeSpan.FromSeconds(3))
         {
             var response = Exchange(
                 context,
@@ -1048,8 +1081,31 @@ public sealed class CmouseLegacyBackend : IHidBackend
         return operations;
     }
 
-    private static bool ValidateChanges(CmouseDeviceProfile profile, DeviceSettings changes)
+    internal static bool ValidateChanges(
+        CmouseDeviceProfile profile,
+        DeviceSettings? changes,
+        DeviceSettingField writable)
     {
+        if (!profile.WriteEnabled || changes is null)
+        {
+            return false;
+        }
+
+        var requested = DeviceSettingField.None;
+        AddReadable(ref requested, DeviceSettingField.PollingRate, changes.PollingRateHz);
+        AddReadable(ref requested, DeviceSettingField.Debounce, changes.DebounceMs);
+        AddReadable(ref requested, DeviceSettingField.MotionSync, changes.MotionSync);
+        AddReadable(ref requested, DeviceSettingField.Dpi, changes.Dpi);
+        AddReadable(ref requested, DeviceSettingField.DpiStage, changes.DpiStage);
+        AddReadable(ref requested, DeviceSettingField.Lod, changes.LodMm10);
+        AddReadable(ref requested, DeviceSettingField.AngleSnap, changes.AngleSnap);
+        AddReadable(ref requested, DeviceSettingField.RippleControl, changes.RippleControl);
+        AddReadable(ref requested, DeviceSettingField.Sleep, changes.SleepSeconds);
+        if (requested == DeviceSettingField.None || (requested & writable) != requested)
+        {
+            return false;
+        }
+
         if (changes.PollingRateHz is int rate && !PollingRateCodeByHz.ContainsKey(rate))
         {
             return false;

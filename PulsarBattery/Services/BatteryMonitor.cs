@@ -15,33 +15,63 @@ public sealed class BatteryMonitor : IDisposable
 
     private readonly PulsarBatteryReader _batteryReader;
     private readonly CancellationTokenSource _cancellationTokenSource;
-    private readonly TimeSpan _statusCacheDuration;
-    
-    private (DateTimeOffset timestamp, PulsarBatteryReader.BatteryStatus status)? _cachedBatteryStatus;
-    private DateTimeOffset? _lastLowBatteryAlertAt;
+    private readonly object _lifecycleGate = new();
+    private Task? _monitorTask;
+    private bool _disposed;
+    private long? _lastLowBatteryAlertTimestamp;
 
     public BatteryMonitor()
     {
         _batteryReader = new PulsarBatteryReader();
         _cancellationTokenSource = new CancellationTokenSource();
-        _statusCacheDuration = TimeSpan.FromMinutes(10);
     }
 
     public void Start()
     {
-        Task.Run(() => MonitorBatteryAsync(_cancellationTokenSource.Token));
+        lock (_lifecycleGate)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            if (_monitorTask is not null)
+            {
+                return;
+            }
+
+            var cancellationToken = _cancellationTokenSource.Token;
+            _monitorTask = Task.Run(() => MonitorBatteryAsync(cancellationToken));
+        }
     }
 
     public void Dispose()
     {
-        _cancellationTokenSource.Cancel();
-        _cancellationTokenSource.Dispose();
+        lock (_lifecycleGate)
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            _disposed = true;
+            _cancellationTokenSource.Cancel();
+            if (_monitorTask is null)
+            {
+                _cancellationTokenSource.Dispose();
+            }
+            else
+            {
+                // A synchronous HID read can outlive shutdown; release its token source after the loop exits.
+                _ = _monitorTask.ContinueWith(
+                    _ => _cancellationTokenSource.Dispose(),
+                    CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously,
+                    TaskScheduler.Default);
+            }
+        }
     }
 
     private async Task MonitorBatteryAsync(CancellationToken cancellationToken)
     {
-        var lastUnlockedTime = DateTimeOffset.MinValue;
-        var lastCheckTime = DateTimeOffset.MinValue;
+        long? lastUnlockedTimestamp = null;
+        long? lastCheckTimestamp = null;
 
         while (!cancellationToken.IsCancellationRequested)
         {
@@ -51,12 +81,12 @@ public sealed class BatteryMonitor : IDisposable
 
                 if (isWorkstationLocked)
                 {
-                    HandleLockedWorkstation(lastUnlockedTime);
+                    HandleLockedWorkstation(lastUnlockedTimestamp, cancellationToken);
                 }
                 else
                 {
-                    lastUnlockedTime = DateTimeOffset.UtcNow;
-                    lastCheckTime = HandleUnlockedWorkstation(lastCheckTime);
+                    lastUnlockedTimestamp = Stopwatch.GetTimestamp();
+                    lastCheckTimestamp = HandleUnlockedWorkstation(lastCheckTimestamp, cancellationToken);
                 }
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -81,150 +111,107 @@ public sealed class BatteryMonitor : IDisposable
 
     private async Task<bool> ConfirmWorkstationIsLockedAsync(CancellationToken cancellationToken)
     {
-        var isLocked = IsWorkstationLocked();
+        if (!IsWorkstationLocked())
+        {
+            return false;
+        }
+
         await Task.Delay(TimeSpan.FromSeconds(WorkstationLockConfirmationDelaySeconds), cancellationToken);
-        return isLocked && IsWorkstationLocked();
+        return IsWorkstationLocked();
     }
 
-    private void HandleLockedWorkstation(DateTimeOffset lastUnlockedTime)
+    private void HandleLockedWorkstation(long? lastUnlockedTimestamp, CancellationToken cancellationToken)
     {
-        if (IsWithinPostLockMonitoringWindow(lastUnlockedTime))
+        if (lastUnlockedTimestamp is not null &&
+            Stopwatch.GetElapsedTime(lastUnlockedTimestamp.Value) < TimeSpan.FromSeconds(PostLockMonitoringWindowSeconds))
         {
             var threshold = AppSettingsService.Current.AlertThresholdLockedPercent;
-            CheckBatteryStatus(threshold);
+            CheckBatteryStatus(threshold, cancellationToken);
         }
     }
 
-    private bool IsWithinPostLockMonitoringWindow(DateTimeOffset lastUnlockedTime)
-    {
-        var timeSinceUnlock = DateTimeOffset.UtcNow - lastUnlockedTime;
-        return timeSinceUnlock < TimeSpan.FromSeconds(PostLockMonitoringWindowSeconds);
-    }
-
-    private DateTimeOffset HandleUnlockedWorkstation(DateTimeOffset lastCheckTime)
+    private long? HandleUnlockedWorkstation(long? lastCheckTimestamp, CancellationToken cancellationToken)
     {
         var pollInterval = GetCurrentPollInterval();
 
-        if (ShouldCheckBatteryStatus(lastCheckTime, pollInterval))
+        if (lastCheckTimestamp is null || Stopwatch.GetElapsedTime(lastCheckTimestamp.Value) >= pollInterval)
         {
             var threshold = AppSettingsService.Current.AlertThresholdUnlockedPercent;
-            CheckBatteryStatus(threshold);
-            return DateTimeOffset.UtcNow;
+            CheckBatteryStatus(threshold, cancellationToken);
+            return Stopwatch.GetTimestamp();
         }
 
-        return lastCheckTime;
+        return lastCheckTimestamp;
     }
 
     private TimeSpan GetCurrentPollInterval()
     {
-        var intervalMinutes = Math.Max(MinimumPollIntervalMinutes, AppSettingsService.Current.PollIntervalMinutes);
+        var configuredMinutes = AppSettingsService.Current.PollIntervalMinutes;
+        var intervalMinutes = double.IsFinite(configuredMinutes)
+            ? Math.Clamp(configuredMinutes, MinimumPollIntervalMinutes, 24 * 60)
+            : MinimumPollIntervalMinutes;
         return TimeSpan.FromMinutes(intervalMinutes);
     }
 
-    private bool ShouldCheckBatteryStatus(DateTimeOffset lastCheckTime, TimeSpan interval)
+    private void CheckBatteryStatus(int batteryThreshold, CancellationToken cancellationToken)
     {
-        var timeSinceLastCheck = DateTimeOffset.UtcNow - lastCheckTime;
-        return timeSinceLastCheck >= interval;
-    }
-
-    private void CheckBatteryStatus(int batteryThreshold)
-    {
-        var status = ReadBatteryStatusWithCache();
+        cancellationToken.ThrowIfCancellationRequested();
+        var status = _batteryReader.ReadBatteryStatus();
+        cancellationToken.ThrowIfCancellationRequested();
         
-        if (status is null)
+        // Cached levels are useful for display, but must never warn for a disconnected or sleeping mouse.
+        if (status is null || status.Percentage is < 0 or > 100)
         {
             Debug.WriteLine("Battery status not available");
+            NotificationHelper.StopLowBatterySound();
             return;
         }
 
-        HandleLowBatteryWarning(status, batteryThreshold);
+        lock (_lifecycleGate)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            HandleLowBatteryWarning(status, batteryThreshold);
+        }
     }
 
     private void HandleLowBatteryWarning(PulsarBatteryReader.BatteryStatus status, int batteryThreshold)
     {
         if (status.IsCharging)
         {
-            Debug.WriteLine("Battery state is charging or above the threshold");
-            _lastLowBatteryAlertAt = null;
+            _lastLowBatteryAlertTimestamp = null;
+            NotificationHelper.StopLowBatterySound();
             return;
         }
 
         Debug.WriteLine($"Battery: NotCharging {status.Percentage}% threshold {batteryThreshold}");
+        var settings = AppSettingsService.Current;
+        if (status.Percentage >= Math.Max(settings.AlertThresholdUnlockedPercent, settings.AlertThresholdLockedPercent))
+        {
+            _lastLowBatteryAlertTimestamp = null;
+        }
 
         if (status.Percentage >= batteryThreshold)
         {
-            _lastLowBatteryAlertAt = null;
             return;
         }
 
-        if (IsLowBatteryAlertAllowed())
+        if (IsLowBatteryAlertAllowed(_lastLowBatteryAlertTimestamp))
         {
             Debug.WriteLine("Warning: Battery level is below threshold and not charging!");
-            NotificationHelper.NotifyLowBattery(status.Percentage, batteryThreshold, status.Model);
+            if (NotificationHelper.NotifyLowBattery(status.Percentage, batteryThreshold, status.Model))
+            {
+                _lastLowBatteryAlertTimestamp = Stopwatch.GetTimestamp();
+            }
         }
     }
 
-    private bool IsLowBatteryAlertAllowed()
+    private static bool IsLowBatteryAlertAllowed(long? lastAlertTimestamp)
     {
         var cooldownMinutes = AppSettingsService.Current.AlertCooldownMinutes;
-        var cooldown = TimeSpan.FromMinutes(Math.Max(0, cooldownMinutes));
-
-        if (_lastLowBatteryAlertAt is null)
-        {
-            _lastLowBatteryAlertAt = DateTimeOffset.UtcNow;
-            return true;
-        }
-
-        var timeSinceLastAlert = DateTimeOffset.UtcNow - _lastLowBatteryAlertAt.Value;
-        if (timeSinceLastAlert >= cooldown)
-        {
-            _lastLowBatteryAlertAt = DateTimeOffset.UtcNow;
-            return true;
-        }
-
-        return false;
-    }
-
-    private PulsarBatteryReader.BatteryStatus? ReadBatteryStatusWithCache()
-    {
-        var currentStatus = _batteryReader.ReadBatteryStatus();
-        
-        if (currentStatus is not null)
-        {
-            UpdateStatusCache(currentStatus);
-            return currentStatus;
-        }
-
-        return GetCachedStatusIfValid();
-    }
-
-    private void UpdateStatusCache(PulsarBatteryReader.BatteryStatus status)
-    {
-        _cachedBatteryStatus = (DateTimeOffset.UtcNow, status);
-    }
-
-    private PulsarBatteryReader.BatteryStatus? GetCachedStatusIfValid()
-    {
-        if (_cachedBatteryStatus is null)
-        {
-            return null;
-        }
-
-        var (cacheTimestamp, cachedStatus) = _cachedBatteryStatus.Value;
-        
-        if (IsCacheStillValid(cacheTimestamp))
-        {
-            Debug.WriteLine("Using cached battery status");
-            return cachedStatus;
-        }
-
-        return null;
-    }
-
-    private bool IsCacheStillValid(DateTimeOffset cacheTimestamp)
-    {
-        var cacheAge = DateTimeOffset.UtcNow - cacheTimestamp;
-        return cacheAge <= _statusCacheDuration;
+        var cooldown = TimeSpan.FromMinutes(double.IsFinite(cooldownMinutes)
+            ? Math.Clamp(cooldownMinutes, 0, 24 * 60)
+            : 20);
+        return lastAlertTimestamp is null || Stopwatch.GetElapsedTime(lastAlertTimestamp.Value) >= cooldown;
     }
 
     private static bool IsWorkstationLocked()

@@ -14,6 +14,13 @@
     </Window.SystemBackdrop>
 
     <Grid x:Name="RootGrid">
+        <Grid.KeyboardAccelerators>
+            <KeyboardAccelerator Key="Number1" Modifiers="Control" Invoked="NavigationAccelerator_Invoked" />
+            <KeyboardAccelerator Key="Number2" Modifiers="Control" Invoked="NavigationAccelerator_Invoked" />
+            <KeyboardAccelerator Key="Number3" Modifiers="Control" Invoked="NavigationAccelerator_Invoked" />
+            <KeyboardAccelerator Key="Number4" Modifiers="Control" Invoked="NavigationAccelerator_Invoked" />
+            <KeyboardAccelerator Key="F5" Invoked="RefreshAccelerator_Invoked" />
+        </Grid.KeyboardAccelerators>
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -43,9 +50,9 @@
             AlwaysShowHeader="False"
             IsTabStop="False"
             SelectionChanged="NavView_SelectionChanged"
-            SelectionFollowsFocus="Enabled">
+            SelectionFollowsFocus="Disabled">
 
-            <Frame x:Name="ContentFrame" />
+            <Frame x:Name="ContentFrame" IsNavigationStackEnabled="False" />
 
             <NavigationView.MenuItems>
                 <NavigationViewItem

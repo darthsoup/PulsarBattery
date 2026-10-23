@@ -1,12 +1,16 @@
 using Microsoft.Win32;
+using PulsarBattery.Tools;
 using System;
-using System.Diagnostics;
 using System.IO;
 
 namespace PulsarBattery.Services;
 
 internal readonly record struct StartupRegistrationResult(bool Success, bool IsEnabled);
-internal readonly record struct StartupRegistrationState(bool IsEnabled, string? CommandLine, string? ExecutablePath);
+internal readonly record struct StartupRegistrationState(
+    bool IsEnabled,
+    string? CommandLine,
+    string? ExecutablePath,
+    RegistryValueKind ValueKind = RegistryValueKind.String);
 
 internal static class StartupRegistrationService
 {
@@ -31,12 +35,17 @@ internal static class StartupRegistrationService
         try
         {
             using var key = Registry.CurrentUser.OpenSubKey(RunKeyPath, writable: false);
-            var commandLine = key?.GetValue(RunValueName) as string;
+            var commandLine = key?.GetValue(RunValueName, null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
             var isEnabled = !string.IsNullOrWhiteSpace(commandLine);
+            var valueKind = commandLine is not null ? key!.GetValueKind(RunValueName) : RegistryValueKind.String;
+            var expandedCommandLine = valueKind == RegistryValueKind.ExpandString && commandLine is not null
+                ? Environment.ExpandEnvironmentVariables(commandLine)
+                : commandLine;
             state = new StartupRegistrationState(
                 IsEnabled: isEnabled,
                 CommandLine: commandLine,
-                ExecutablePath: ExtractExecutablePath(commandLine));
+                ExecutablePath: ExtractExecutablePath(expandedCommandLine),
+                ValueKind: valueKind);
             return true;
         }
         catch
@@ -58,7 +67,10 @@ internal static class StartupRegistrationService
             return false;
         }
 
-        return PathsEqual(state.ExecutablePath, executablePath);
+        var commandLine = state.ValueKind == RegistryValueKind.ExpandString && state.CommandLine is not null
+            ? Environment.ExpandEnvironmentVariables(state.CommandLine)
+            : state.CommandLine;
+        return MatchesStartupCommandLine(commandLine, executablePath);
     }
 
     public static StartupRegistrationResult SetEnabled(bool enabled, string? executablePath = null)
@@ -76,17 +88,22 @@ internal static class StartupRegistrationService
                 return new StartupRegistrationResult(Success: false, IsEnabled: current);
             }
 
-            if (enabled)
+            var expectedCommandLine = enabled ? BuildStartupCommandLine(executablePath) : null;
+            if (expectedCommandLine is not null)
             {
-                key.SetValue(RunValueName, BuildStartupCommandLine(executablePath), RegistryValueKind.String);
+                key.SetValue(RunValueName, expectedCommandLine, RegistryValueKind.String);
             }
             else
             {
                 key.DeleteValue(RunValueName, throwOnMissingValue: false);
             }
 
-            var isEnabledNow = key.GetValue(RunValueName) is string value && !string.IsNullOrWhiteSpace(value);
-            return new StartupRegistrationResult(Success: isEnabledNow == enabled, IsEnabled: isEnabledNow);
+            var actualCommandLine = key.GetValue(RunValueName) as string;
+            var isEnabledNow = !string.IsNullOrWhiteSpace(actualCommandLine);
+            var success = enabled
+                ? string.Equals(actualCommandLine, expectedCommandLine, StringComparison.Ordinal)
+                : actualCommandLine is null;
+            return new StartupRegistrationResult(Success: success, IsEnabled: isEnabledNow);
         }
         catch
         {
@@ -99,23 +116,94 @@ internal static class StartupRegistrationService
         }
     }
 
-    private static string BuildStartupCommandLine(string? executablePathOverride)
+    internal static bool TryRestoreRegistrationState(StartupRegistrationState previousState, string installedExePath)
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.CreateSubKey(RunKeyPath, writable: true);
+            if (key is null)
+            {
+                return false;
+            }
+
+            var currentCommandLine = key.GetValue(RunValueName, null, RegistryValueOptions.DoNotExpandEnvironmentNames) as string;
+            if (string.Equals(currentCommandLine, previousState.CommandLine, StringComparison.Ordinal) &&
+                (currentCommandLine is null || key.GetValueKind(RunValueName) == previousState.ValueKind))
+            {
+                return true;
+            }
+
+            // Do not undo an independent registration change made after this installation started.
+            var installedCommandLine = $"\"{Path.GetFullPath(installedExePath)}\" {StartupArgument}";
+            if (!string.Equals(currentCommandLine, installedCommandLine, StringComparison.Ordinal))
+            {
+                return false;
+            }
+
+            if (previousState.CommandLine is null)
+            {
+                key.DeleteValue(RunValueName, throwOnMissingValue: false);
+            }
+            else
+            {
+                key.SetValue(RunValueName, previousState.CommandLine, previousState.ValueKind);
+            }
+
+            return true;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(nameof(StartupRegistrationService), ex);
+            return false;
+        }
+    }
+
+    internal static string BuildStartupCommandLine(string? executablePathOverride)
     {
         var executablePath = executablePathOverride;
         if (string.IsNullOrWhiteSpace(executablePath))
         {
-            executablePath = Environment.ProcessPath;
+            executablePath = SelfInstallService.GetCurrentExecutablePath();
         }
 
-        if (string.IsNullOrWhiteSpace(executablePath))
+        if (string.IsNullOrWhiteSpace(executablePath) ||
+            !Path.IsPathFullyQualified(executablePath) ||
+            executablePath.IndexOfAny(['"', '\r', '\n', '\0']) >= 0)
         {
-            executablePath = Process.GetCurrentProcess().MainModule?.FileName ?? "PulsarBattery.exe";
+            throw new ArgumentException("A fully qualified executable path is required.", nameof(executablePathOverride));
+        }
+
+        executablePath = Path.GetFullPath(executablePath);
+        if (!File.Exists(executablePath))
+        {
+            throw new FileNotFoundException("The startup executable was not found.", executablePath);
         }
 
         return $"\"{executablePath}\" {StartupArgument}";
     }
 
-    private static string? ExtractExecutablePath(string? commandLine)
+    internal static bool MatchesStartupCommandLine(string? commandLine, string? executablePath)
+    {
+        if (!PathsEqual(ExtractExecutablePath(commandLine), executablePath) || commandLine is null)
+        {
+            return false;
+        }
+
+        var trimmed = commandLine.Trim();
+        var argumentStart = trimmed.StartsWith('"')
+            ? trimmed.IndexOf('"', 1) + 1
+            : FindFirstWhitespace(trimmed);
+        if (argumentStart <= 0 || argumentStart >= trimmed.Length || !char.IsWhiteSpace(trimmed[argumentStart]))
+        {
+            return false;
+        }
+
+        var argument = trimmed[argumentStart..].Trim();
+        return string.Equals(argument, StartupArgument, StringComparison.OrdinalIgnoreCase) ||
+            string.Equals(argument, "--tray", StringComparison.OrdinalIgnoreCase);
+    }
+
+    internal static string? ExtractExecutablePath(string? commandLine)
     {
         if (string.IsNullOrWhiteSpace(commandLine))
         {
@@ -134,8 +222,21 @@ internal static class StartupRegistrationService
             return null;
         }
 
-        var firstSpaceIndex = trimmed.IndexOf(' ');
+        var firstSpaceIndex = FindFirstWhitespace(trimmed);
         return firstSpaceIndex > 0 ? trimmed.Substring(0, firstSpaceIndex) : trimmed;
+    }
+
+    private static int FindFirstWhitespace(string value)
+    {
+        for (var i = 0; i < value.Length; i++)
+        {
+            if (char.IsWhiteSpace(value[i]))
+            {
+                return i;
+            }
+        }
+
+        return -1;
     }
 
     private static bool PathsEqual(string? left, string? right)
@@ -147,13 +248,18 @@ internal static class StartupRegistrationService
 
         try
         {
+            if (!Path.IsPathFullyQualified(left) || !Path.IsPathFullyQualified(right))
+            {
+                return false;
+            }
+
             var fullLeft = Path.GetFullPath(left).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             var fullRight = Path.GetFullPath(right).TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
             return string.Equals(fullLeft, fullRight, StringComparison.OrdinalIgnoreCase);
         }
         catch
         {
-            return string.Equals(left, right, StringComparison.OrdinalIgnoreCase);
+            return false;
         }
     }
 }

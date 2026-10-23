@@ -2,12 +2,9 @@
 using PulsarBattery.Services;
 using PulsarBattery.Tools;
 using System;
-using System.Collections.Generic;
-using System.Diagnostics;
 using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
-using System.Runtime.InteropServices.WindowsRuntime;
 using System.Threading.Tasks;
 
 namespace PulsarBattery;
@@ -20,11 +17,15 @@ public partial class App : Application
     private static extern int SetCurrentProcessExplicitAppUserModelID(string appID);
 
     internal static bool IsExitRequested { get; private set; }
+    internal static bool IsShutdownComplete { get; private set; }
+    internal static bool IsTrayAvailable => Current is App app && app._trayIcon?.IsAvailable == true;
     internal static Window? MainWindow { get; private set; }
 
     private Window? _window;
     private readonly BatteryMonitor _monitor = new();
     private TrayIcon? _trayIcon;
+    private bool _shutdownStarted;
+    private bool _resourcesDisposed;
 
     public App()
     {
@@ -34,8 +35,7 @@ public partial class App : Application
         AppDomain.CurrentDomain.ProcessExit += (_, _) =>
         {
             NotificationHelper.Unregister();
-            // Backstop for exit paths that bypass ExitApplication (e.g. closing the
-            // window with "minimize to tray" disabled).
+            // Process termination can bypass the orderly window-close path.
             AppSettingsService.Flush();
         };
     }
@@ -69,20 +69,86 @@ public partial class App : Application
         IsExitRequested = true;
     }
 
-    internal static void ExitApplication()
+    internal static async void ExitApplication()
     {
+        if (MainWindow?.DispatcherQueue is { HasThreadAccess: false } dispatcher)
+        {
+            dispatcher.TryEnqueue(ExitApplication);
+            return;
+        }
+
+        if (Current is not App app || app._shutdownStarted)
+        {
+            return;
+        }
+
+        app._shutdownStarted = true;
         RequestExit();
+
+        try
+        {
+            app._monitor.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(nameof(App), ex);
+        }
+
+        try
+        {
+            if (MainWindow is global::PulsarBattery.MainWindow mainWindow)
+            {
+                await mainWindow.StopAsync();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(nameof(App), ex);
+        }
+
         AppSettingsService.Flush();
+        app.DisposeResources();
+        IsShutdownComplete = true;
 
         try
         {
             MainWindow?.Close();
         }
-        catch
+        catch (Exception ex)
         {
+            Log.Error(nameof(App), ex);
         }
 
-        Current?.Exit();
+        app.Exit();
+    }
+
+    private void DisposeResources()
+    {
+        if (_resourcesDisposed)
+        {
+            return;
+        }
+
+        _resourcesDisposed = true;
+        try
+        {
+            _monitor.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(nameof(App), ex);
+        }
+
+        try
+        {
+            _trayIcon?.Dispose();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(nameof(App), ex);
+        }
+
+        NotificationHelper.Unregister();
     }
 
     protected override async void OnLaunched(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
@@ -102,48 +168,40 @@ public partial class App : Application
 
         NotificationHelper.Init();
 
-        _monitor.Start();
-
         _window = new MainWindow();
         MainWindow = _window;
         _window.Closed += (_, _) =>
         {
+            RequestExit();
             try
             {
-                if (_window is MainWindow mw)
+                if (!IsShutdownComplete && _window is MainWindow mw)
                 {
                     mw.Stop();
                 }
             }
-            catch
+            catch (Exception ex)
             {
+                Log.Error(nameof(App), ex);
             }
 
-            _monitor.Dispose();
-            _trayIcon?.Dispose();
+            AppSettingsService.Flush();
+            DisposeResources();
+            MainWindow = null;
         };
 
-        var startInTray = ShouldStartInTray(args);
+        _monitor.Start();
+
+        var startInTray = ShouldStartInTray();
         if (!startInTray)
         {
             _window.Activate();
         }
 
-        // Create tray icon once the window exists (it can remain hidden on startup).
-        _trayIcon = new TrayIcon();
-        if (_window is MainWindow mainWindow)
-        {
-            _trayIcon.Initialize(_window, mainWindow.ViewModel);
-        }
-        else
-        {
-            _trayIcon.Initialize(_window);
-        }
-
-        // Some WinUI scenarios require an explicit creation call. Only drop
-        // into efficiency mode when starting hidden in the tray.
         try
         {
+            _trayIcon = new TrayIcon();
+            _trayIcon.Initialize(_window, ((MainWindow)_window).ViewModel);
             _trayIcon.ForceCreate(enablesEfficiencyMode: startInTray);
         }
         catch (Exception ex)
@@ -151,28 +209,24 @@ public partial class App : Application
             Log.Error(nameof(App), ex);
         }
 
-        var sourceExeToDelete = SelfInstallService.TryGetCleanupSourceExePath(Environment.GetCommandLineArgs());
-        if (!string.IsNullOrWhiteSpace(sourceExeToDelete))
+        // A hidden window must remain reachable even when Explorer rejects the tray icon.
+        if (startInTray && !IsTrayAvailable)
         {
-            _ = Task.Run(async () => await TryDeleteFileWithRetriesAsync(sourceExeToDelete));
+            ((MainWindow)_window).ShowAndActivate();
         }
+
+        _ = Task.Run(async () =>
+        {
+            var sourceExeToDelete = SelfInstallService.TryGetCleanupSourceExePath(Environment.GetCommandLineArgs());
+            if (!string.IsNullOrWhiteSpace(sourceExeToDelete))
+            {
+                await TryDeleteFileWithRetriesAsync(sourceExeToDelete);
+            }
+        });
     }
 
-    private static bool ShouldStartInTray(Microsoft.UI.Xaml.LaunchActivatedEventArgs args)
+    private static bool ShouldStartInTray()
     {
-        try
-        {
-            var raw = args.Arguments ?? string.Empty;
-            if (raw.IndexOf("--background", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                raw.IndexOf("--tray", StringComparison.OrdinalIgnoreCase) >= 0)
-            {
-                return true;
-            }
-        }
-        catch
-        {
-        }
-
         try
         {
             return Environment.GetCommandLineArgs().Any(static arg =>

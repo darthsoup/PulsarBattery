@@ -299,9 +299,10 @@ internal static class Sonix64Protocol
 
     public static byte[]? Query(HidStream stream, IReadOnlyList<byte> command, bool debug)
     {
+        var request = BuildPacket(command);
         for (var attempt = 0; attempt < 3; attempt++)
         {
-            stream.SetFeature(BuildPacket(command));
+            stream.SetFeature(request);
 
             for (var read = 0; read < 6; read++)
             {
@@ -310,15 +311,14 @@ internal static class Sonix64Protocol
                 var response = new byte[PacketLength + 1];
                 stream.GetFeature(response);
 
-                var wire = response.Skip(1).ToArray();
-                if (wire[0] == 0x01 && wire[1] == command[0] && wire[2] == command[1] && wire[3] == command[2])
+                if (TryParseResponse(response, command, writeAcknowledgement: false, out var wire))
                 {
                     return wire;
                 }
 
                 if (debug)
                 {
-                    System.Diagnostics.Debug.WriteLine($"sonix64 pending cmd={Convert.ToHexString(command.ToArray())} resp={Convert.ToHexString(wire[..16])}");
+                    System.Diagnostics.Debug.WriteLine($"sonix64 pending cmd={Convert.ToHexString(command.ToArray())} resp={Convert.ToHexString(response.AsSpan(1, 16))}");
                 }
             }
         }
@@ -328,15 +328,7 @@ internal static class Sonix64Protocol
 
     private static bool Write(HidStream stream, byte[] catRegSub, byte[] values, bool debug)
     {
-        var wire = new byte[PacketLength];
-        wire[1] = catRegSub[0];
-        wire[2] = catRegSub[1];
-        wire[3] = catRegSub[2];
-        wire[6] = 0x01; // profile 1 (captured layout)
-        values.CopyTo(wire, 7);
-        FinalizePacket(wire, out var buffer);
-
-        stream.SetFeature(buffer);
+        stream.SetFeature(BuildWritePacket(catRegSub, values));
 
         for (var read = 0; read < 6; read++)
         {
@@ -345,15 +337,14 @@ internal static class Sonix64Protocol
             var response = new byte[PacketLength + 1];
             stream.GetFeature(response);
 
-            var echo = response.Skip(1).ToArray();
-            if (echo[0] is 0x01 or 0x02 && echo[1] == catRegSub[0] && echo[2] == catRegSub[1] && echo[3] == catRegSub[2])
+            if (TryParseResponse(response, catRegSub, writeAcknowledgement: true, out _))
             {
                 return true;
             }
 
             if (debug)
             {
-                System.Diagnostics.Debug.WriteLine($"sonix64 write pending cmd={Convert.ToHexString(catRegSub)} resp={Convert.ToHexString(echo[..16])}");
+                System.Diagnostics.Debug.WriteLine($"sonix64 write pending cmd={Convert.ToHexString(catRegSub)} resp={Convert.ToHexString(response.AsSpan(1, 16))}");
             }
         }
 
@@ -368,11 +359,44 @@ internal static class Sonix64Protocol
             return null;
         }
 
-        return wire[7] == 0x01;
+        return ParseBoolean(wire[7]);
+    }
+
+    internal static bool? ParseBoolean(byte value) => value switch
+    {
+        0 => false,
+        1 => true,
+        _ => null,
+    };
+
+    internal static bool TryParseResponse(
+        ReadOnlySpan<byte> response,
+        IReadOnlyList<byte> command,
+        bool writeAcknowledgement,
+        out byte[] wire)
+    {
+        wire = [];
+        if (command is null || command.Count != 3 || response.Length < PacketLength + 1)
+        {
+            return false;
+        }
+
+        var packet = response.Slice(1, PacketLength);
+        if ((packet[0] != 0x01 && (!writeAcknowledgement || packet[0] != 0x02))
+            || packet[1] != command[0]
+            || packet[2] != command[1]
+            || packet[3] != command[2])
+        {
+            return false;
+        }
+
+        wire = packet.ToArray();
+        return true;
     }
 
     public static byte[] BuildPacket(IReadOnlyList<byte> command)
     {
+        ValidateCommand(command);
         var wire = new byte[PacketLength];
         for (var i = 0; i < command.Count; i++)
         {
@@ -381,6 +405,33 @@ internal static class Sonix64Protocol
 
         FinalizePacket(wire, out var buffer);
         return buffer;
+    }
+
+    internal static byte[] BuildWritePacket(IReadOnlyList<byte> command, ReadOnlySpan<byte> values)
+    {
+        ValidateCommand(command);
+        if (values.Length is < 1 or > 55)
+        {
+            throw new ArgumentOutOfRangeException(nameof(values));
+        }
+
+        var wire = new byte[PacketLength];
+        wire[1] = command[0];
+        wire[2] = command[1];
+        wire[3] = command[2];
+        wire[6] = 0x01; // profile 1 (captured layout)
+        values.CopyTo(wire.AsSpan(7));
+        FinalizePacket(wire, out var buffer);
+        return buffer;
+    }
+
+    private static void ValidateCommand(IReadOnlyList<byte> command)
+    {
+        ArgumentNullException.ThrowIfNull(command);
+        if (command.Count != 3)
+        {
+            throw new ArgumentException("A Sonix command must contain category, register and subregister.", nameof(command));
+        }
     }
 
     private static void FinalizePacket(byte[] wire, out byte[] buffer)

@@ -4,23 +4,20 @@
     xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
     xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
     xmlns:controls="using:PulsarBattery.Controls"
+    xmlns:local="using:PulsarBattery.Pages"
     xmlns:settingscontrols="using:CommunityToolkit.WinUI.Controls"
-    xmlns:converters="using:PulsarBattery.Converters"
     xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
     xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
     mc:Ignorable="d">
 
     <Page.Resources>
-        <converters:DoubleToIntConverter x:Key="DoubleToIntConverter" />
-
         <Style x:Key="SettingsSectionHeaderStyle" TargetType="controls:TranslatedTextBlock">
             <Setter Property="TextStyle" Value="{ThemeResource BodyStrongTextBlockStyle}" />
             <Setter Property="Margin" Value="0,0,0,4" />
         </Style>
 
-        <!-- Unbased on purpose: WindowsAppSDK ships no DefaultNumberBoxStyle key
-             (NumberBox has only an unkeyed implicit style), so there is nothing to
-             base on. Minimum/Maximum stay local because they differ per box. -->
+        <!-- WindowsAppSDK has no DefaultNumberBoxStyle resource.
+             Minimum and Maximum stay local because they differ per box. -->
         <Style x:Key="SettingsNumberBoxStyle" TargetType="NumberBox">
             <Setter Property="Width" Value="120" />
             <Setter Property="SpinButtonPlacementMode" Value="Compact" />
@@ -28,17 +25,17 @@
         </Style>
     </Page.Resources>
 
-    <ScrollViewer x:Name="RootScrollViewer" HorizontalScrollBarVisibility="Disabled">
+    <ScrollViewer x:Name="RootScrollViewer"
+                  IsTabStop="True"
+                  HorizontalScrollBarVisibility="Disabled">
         <Grid x:Name="RootGrid"
               Padding="32,24,32,32"
               Background="Transparent"
               PointerPressed="RootGrid_PointerPressed">
             <StackPanel Spacing="24" MaxWidth="1000">
 
-                <!-- Negative bottom margin cancels the ~8px of slack that TitleTextBlockStyle's
-                     36px LineHeight leaves below the glyphs. Without it the panel's 24px Spacing
-                     reads as ~33px under the title but ~25px between sections, so the title
-                     looks detached from the page it heads. -->
+                <!-- Negative margin cancels the title line height's extra 8px below the glyphs,
+                     keeping the optical gap consistent with the other sections. -->
                 <controls:TranslatedTextBlock Text="Settings"
                                               TextStyle="{ThemeResource TitleTextBlockStyle}"
                                               Margin="0,0,0,-8" />
@@ -52,7 +49,7 @@
                             <NumberBox x:Name="PollIntervalNumberBox"
                                        Minimum="1"
                                        Maximum="120"
-                                       Value="{x:Bind ViewModel.PollIntervalMinutes, Mode=TwoWay}"
+                                       ValueChanged="SettingsNumberBox_ValueChanged"
                                        Style="{StaticResource SettingsNumberBoxStyle}" />
                             <controls:TranslatedTextBlock Text="min"
                                                           TextStyle="{ThemeResource CaptionTextBlockStyle}"
@@ -66,7 +63,7 @@
                             <NumberBox x:Name="LogIntervalNumberBox"
                                        Minimum="1"
                                        Maximum="240"
-                                       Value="{x:Bind ViewModel.LogIntervalMinutes, Mode=TwoWay}"
+                                       ValueChanged="SettingsNumberBox_ValueChanged"
                                        Style="{StaticResource SettingsNumberBoxStyle}" />
                             <controls:TranslatedTextBlock Text="min"
                                                           TextStyle="{ThemeResource CaptionTextBlockStyle}"
@@ -87,7 +84,7 @@
                                     <NumberBox x:Name="AlertThresholdUnlockedNumberBox"
                                                Minimum="1"
                                                Maximum="100"
-                                               Value="{x:Bind ViewModel.AlertThresholdUnlockedPercent, Mode=TwoWay, Converter={StaticResource DoubleToIntConverter}}"
+                                               ValueChanged="SettingsNumberBox_ValueChanged"
                                                Style="{StaticResource SettingsNumberBoxStyle}" />
                                     <TextBlock Text="%"
                                                Style="{ThemeResource CaptionTextBlockStyle}"
@@ -101,7 +98,7 @@
                                     <NumberBox x:Name="AlertThresholdLockedNumberBox"
                                                Minimum="1"
                                                Maximum="100"
-                                               Value="{x:Bind ViewModel.AlertThresholdLockedPercent, Mode=TwoWay, Converter={StaticResource DoubleToIntConverter}}"
+                                               ValueChanged="SettingsNumberBox_ValueChanged"
                                                Style="{StaticResource SettingsNumberBoxStyle}" />
                                     <TextBlock Text="%"
                                                Style="{ThemeResource CaptionTextBlockStyle}"
@@ -115,7 +112,7 @@
                                     <NumberBox x:Name="AlertCooldownNumberBox"
                                                Minimum="0"
                                                Maximum="1440"
-                                               Value="{x:Bind ViewModel.AlertCooldownMinutes, Mode=TwoWay}"
+                                               ValueChanged="SettingsNumberBox_ValueChanged"
                                                Style="{StaticResource SettingsNumberBoxStyle}" />
                                     <controls:TranslatedTextBlock Text="min"
                                                                   TextStyle="{ThemeResource CaptionTextBlockStyle}"
@@ -125,12 +122,12 @@
                             </settingscontrols:SettingsCard>
 
                             <settingscontrols:SettingsCard x:Name="EnableBeepsCard">
-                                <ToggleSwitch IsOn="{x:Bind ViewModel.EnableBeeps, Mode=TwoWay}"
-                                              x:Name="EnableBeepsToggle" />
+                                <ToggleSwitch x:Name="EnableBeepsToggle"
+                                              Toggled="SettingsToggle_Toggled" />
                             </settingscontrols:SettingsCard>
 
                             <settingscontrols:SettingsCard x:Name="AlertSoundCard">
-                                <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                                <StackPanel Spacing="8" MaxWidth="360">
                                     <!-- Read-only TextBox rather than a trimmed TextBlock so the
                                          path stays scrollable, selectable and copyable. -->
                                     <TextBox x:Name="AlertSoundPathTextBox"
@@ -138,10 +135,12 @@
                                              ToolTipService.ToolTip="{x:Bind ViewModel.LowBatterySoundDisplay, Mode=OneWay}"
                                              IsReadOnly="True"
                                              TextWrapping="NoWrap"
-                                             MinWidth="200"
-                                             MaxWidth="360" />
-                                    <Button x:Name="ChooseSoundButton" Click="ChooseLowBatterySound_Click" />
-                                    <Button x:Name="ClearSoundButton" Click="ClearLowBatterySound_Click" />
+                                             MinWidth="160"
+                                             HorizontalAlignment="Stretch" />
+                                    <StackPanel Orientation="Horizontal" Spacing="8">
+                                        <Button x:Name="ChooseSoundButton" Click="ChooseLowBatterySound_Click" />
+                                        <Button x:Name="ClearSoundButton" Click="ClearLowBatterySound_Click" />
+                                    </StackPanel>
                                 </StackPanel>
                             </settingscontrols:SettingsCard>
                         </settingscontrols:SettingsExpander.Items>
@@ -149,7 +148,7 @@
 
                     <settingscontrols:SettingsCard x:Name="QuickActionsCard" ContentAlignment="Left">
                         <StackPanel Spacing="8">
-                            <StackPanel Orientation="Horizontal" Spacing="8">
+                            <StackPanel Spacing="8" HorizontalAlignment="Left">
                                 <Button x:Name="SendLowBatteryTestButton"
                                         Click="SendLowBatteryTest_Click"
                                         Style="{ThemeResource AccentButtonStyle}" />
@@ -158,6 +157,7 @@
                             </StackPanel>
                             <StackPanel Spacing="2">
                                 <TextBlock Text="{x:Bind ViewModel.StatusText, Mode=OneWay}"
+                                           TextWrapping="Wrap"
                                            Style="{ThemeResource CaptionTextBlockStyle}"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                                 <TextBlock Text="{x:Bind ViewModel.LastUpdatedText, Mode=OneWay}"
@@ -173,25 +173,25 @@
                                                   Style="{StaticResource SettingsSectionHeaderStyle}" />
 
                     <settingscontrols:SettingsCard x:Name="MinimizeToTrayCard">
-                        <ToggleSwitch IsOn="{x:Bind ViewModel.MinimizeToTrayOnClose, Mode=TwoWay}"
-                                      x:Name="MinimizeToTrayToggle" />
+                        <ToggleSwitch x:Name="MinimizeToTrayToggle"
+                                      Toggled="SettingsToggle_Toggled" />
                     </settingscontrols:SettingsCard>
 
                     <settingscontrols:SettingsCard x:Name="ShowBatteryInTrayCard">
-                        <ToggleSwitch IsOn="{x:Bind ViewModel.ShowBatteryInTray, Mode=TwoWay}"
-                                      x:Name="ShowBatteryInTrayToggle" />
+                        <ToggleSwitch x:Name="ShowBatteryInTrayToggle"
+                                      Toggled="SettingsToggle_Toggled" />
                     </settingscontrols:SettingsCard>
 
                     <settingscontrols:SettingsCard x:Name="StartWithWindowsCard">
-                        <!-- IsOn is driven from code via ApplyStartWithWindowsToggleState, not a
-                             OneWay x:Bind: the binding's initial push raises Toggled while no guard
-                             is armed, which re-enters the autostart install flow. -->
+                        <!-- A binding's initial push also raises Toggled, so this state is
+                             synchronized in code while the lifecycle guard is armed. -->
                         <ToggleSwitch x:Name="StartWithWindowsToggle"
                                       Toggled="StartWithWindowsToggle_Toggled" />
                     </settingscontrols:SettingsCard>
 
                     <InfoBar x:Name="InstallInfoBar"
                              IsOpen="False"
+                             Visibility="{x:Bind local:SettingsPage.BoolToVisibility(InstallInfoBar.IsOpen), Mode=OneWay}"
                              IsClosable="True"
                              Margin="0,8,0,0" />
                 </StackPanel>
@@ -201,11 +201,8 @@
                                                   Style="{StaticResource SettingsSectionHeaderStyle}" />
 
                     <settingscontrols:SettingsCard x:Name="LanguageCard">
-                        <!-- Tag carries the persisted AppSettings.Language value. "auto" is a
-                             UI-only sentinel that maps to null on disk; a null Tag made "user
-                             picked Auto" indistinguishable from "SelectionChanged fired with no
-                             selection", which silently wiped the saved language.
-                             Language names are endonyms and intentionally not localized. -->
+                        <!-- "auto" distinguishes an intentional system-language choice from a
+                             teardown event with no selection. Language names are endonyms. -->
                         <ComboBox x:Name="LanguageComboBox"
                                   MinWidth="200"
                                   SelectionChanged="LanguageComboBox_SelectionChanged">
@@ -220,10 +217,7 @@
                     <controls:TranslatedTextBlock Text="About"
                                                   Style="{StaticResource SettingsSectionHeaderStyle}" />
 
-                    <!-- Product name and copyright are intentionally not localized (a German
-                         rendering would be byte-identical), so this expander needs no x:Name
-                         or ApplyLocalization entry. The toolkit's automation peer already
-                         exposes Header as the accessible name. -->
+                    <!-- Product name and copyright are identical in all supported locales. -->
                     <settingscontrols:SettingsExpander
                         Header="Pulsar Battery"
                         Description="&#169; 2026 darthsoup, Elehiggle">
@@ -250,15 +244,6 @@
                 </StackPanel>
 
             </StackPanel>
-            <!-- Invisible focus target: clicking empty page space moves focus here so a
-                 NumberBox being edited loses focus and commits its value (NumberBox only
-                 updates its binding on focus loss). See RootGrid_PointerPressed. -->
-            <Button x:Name="FocusSink"
-                    Width="1"
-                    Height="1"
-                    Opacity="0"
-                    IsHitTestVisible="False"
-                    TabIndex="-1" />
         </Grid>
     </ScrollViewer>
 </Page>
