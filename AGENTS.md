@@ -18,7 +18,7 @@ Publish output: `PulsarBattery\bin\Publish\win-x64\PulsarBattery.exe` (single fi
 
 `PulsarBattery.exe --background` (or `--tray`) starts without showing the window.
 
-Protocol, catalog, checksum, DPI-codec and app-service regression tests live in `PulsarBattery.Device.Tests`. CI (`.github/workflows/build.yml`) runs them before publishing; `release.yml` fires on `v*` tags and rewrites the version in `app.manifest` and `Package.appxmanifest` from the tag.
+Protocol, catalog, checksum, DPI-codec and app-service regression tests live in `PulsarBattery.Device.Tests`. Both workflows run them before publishing. `release.yml` accepts only `vMAJOR.MINOR.PATCH` with components 0 through 65534 and rewrites both manifests through `.github/scripts/Set-ReleaseVersion.ps1`. A separate release job receives repository write permission only after the tested build succeeds; it verifies the ZIP checksum before upload. `.github/scripts/Test-ReleaseVersion.ps1` tests tag validation and manifest updates on temporary copies. `global.json` selects stable .NET 10 SDKs.
 
 ## Architecture
 

@@ -70,6 +70,20 @@ The test suite covers protocols, device catalogs, settings, history storage, ima
 dotnet test .\PulsarBattery.Device.Tests\PulsarBattery.Device.Tests.csproj -c Release
 ```
 
+## GitHub workflows
+
+Branch pushes, pull requests and manual runs restore the solution, test release-version validation, run the Release regression suite and publish the x64 EXE. Test results are retained as TRX artifacts for 14 days. Superseded builds of the same branch or pull request are cancelled.
+
+Push a tag in the exact form `vMAJOR.MINOR.PATCH` to release, for example `v0.4.2`. Components must be between 0 and 65534, with no leading zeros or suffixes. Prerelease tags and four-component tags are rejected before the manifests are changed. The release runs its own tests before packaging; only a separate job with repository write permission can publish the resulting ZIP and `SHA256SUMS.txt` after verifying the checksum.
+
+Both Windows jobs use Windows Server 2025 and stable .NET 10 SDKs; `global.json` allows newer .NET 10 feature bands and patches. Actions are pinned to commit SHAs. Dependabot checks Actions and the three NuGet projects weekly.
+
+Run the release-version checks locally with PowerShell:
+
+```powershell
+.\.github\scripts\Test-ReleaseVersion.ps1
+```
+
 ## Keyboard shortcuts and history
 
 - `F5`: refresh the battery reading.
