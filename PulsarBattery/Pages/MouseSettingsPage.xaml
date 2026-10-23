@@ -17,52 +17,47 @@
               PointerPressed="RootGrid_PointerPressed">
             <StackPanel Spacing="24" MaxWidth="1000">
 
-                <Grid x:Name="PageHeader" ColumnSpacing="16" RowSpacing="16"
+                <!-- The negative margin removes the title style's extra line-height slack. -->
+                <Grid x:Name="PageHeader" Margin="0,0,0,-8" ColumnSpacing="12"
                       SizeChanged="PageHeader_SizeChanged">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-                    <!-- Cancel the title line-height slack to match the other page sections. -->
                     <controls:TranslatedTextBlock x:Name="PageTitle"
                                                   Text="Mouse Settings"
-                                                  Grid.ColumnSpan="2"
                                                   TextStyle="{ThemeResource TitleTextBlockStyle}"
                                                   TextWrapping="Wrap"
-                                                  Margin="0,0,0,-8" />
+                                                  VerticalAlignment="Center" />
                     <Button x:Name="RefreshSettingsButton"
-                            Grid.Row="1"
-                            Grid.ColumnSpan="2"
-                            HorizontalAlignment="Left"
+                            Grid.Column="1"
+                            MinWidth="36"
+                            MinHeight="36"
+                            HorizontalAlignment="Right"
                             VerticalAlignment="Center"
+                            AutomationProperties.LiveSetting="Polite"
                             Click="RefreshSettingsButton_Click">
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE72C;" FontSize="14" />
-                            <controls:TranslatedTextBlock Text="Refresh settings" />
+                            <Grid Width="20" Height="20">
+                                <FontIcon x:Name="RefreshSettingsIcon" Glyph="&#xE72C;" FontSize="16"
+                                          AutomationProperties.AccessibilityView="Raw" />
+                                <ProgressRing x:Name="SettingsProgressRing"
+                                              Width="20" Height="20" IsActive="False"
+                                              AutomationProperties.AccessibilityView="Raw" />
+                            </Grid>
+                            <!-- Transparent labels reserve the widest localized state without changing button size. -->
+                            <Grid x:Name="RefreshSettingsLabels" VerticalAlignment="Center">
+                                <TextBlock x:Name="RefreshSettingsIdleMeasure" Opacity="0"
+                                           AutomationProperties.AccessibilityView="Raw" />
+                                <TextBlock x:Name="RefreshSettingsReadMeasure" Opacity="0"
+                                           AutomationProperties.AccessibilityView="Raw" />
+                                <TextBlock x:Name="RefreshSettingsApplyMeasure" Opacity="0"
+                                           AutomationProperties.AccessibilityView="Raw" />
+                                <controls:TranslatedTextBlock x:Name="SettingsProgressText" Text="Refresh settings"
+                                                              AutomationProperties.AccessibilityView="Raw" />
+                            </Grid>
                         </StackPanel>
                     </Button>
-                </Grid>
-
-                <Grid x:Name="SettingsProgressPanel"
-                      ColumnSpacing="12"
-                      Visibility="Collapsed">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="*" />
-                    </Grid.ColumnDefinitions>
-                    <ProgressRing x:Name="SettingsProgressRing"
-                                  Width="20"
-                                  Height="20"
-                                  IsActive="False" />
-                    <TextBlock x:Name="SettingsProgressText"
-                               Grid.Column="1"
-                               VerticalAlignment="Center"
-                               TextWrapping="Wrap"
-                               AutomationProperties.LiveSetting="Polite" />
                 </Grid>
 
                 <!-- Visibility must track IsOpen so a closed InfoBar consumes no section spacing. -->

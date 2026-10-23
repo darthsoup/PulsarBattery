@@ -27,7 +27,7 @@
                         <Setter Target="DeviceImageHost.Visibility" Value="Collapsed" />
                         <Setter Target="LoadingCard.Padding" Value="24" />
                         <Setter Target="NoDeviceCard.Padding" Value="24" />
-                        <Setter Target="RefreshButtonLabel.Visibility" Value="Collapsed" />
+                        <Setter Target="RefreshButtonLabels.Visibility" Value="Collapsed" />
                         <Setter Target="DeviceSummary.(Grid.Column)" Value="0" />
                         <Setter Target="DeviceSummary.(Grid.ColumnSpan)" Value="3" />
                         <Setter Target="PercentageText.FontSize" Value="44" />
@@ -67,27 +67,35 @@
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <controls:TranslatedTextBlock Text="Dashboard"
                                                   TextStyle="{ThemeResource TitleTextBlockStyle}"
                                                   VerticalAlignment="Center" />
-                    <ProgressRing x:Name="RefreshProgress"
-                                  Grid.Column="1"
-                                  Width="20"
-                                  Height="20"
-                                  IsActive="{x:Bind ViewModel.IsLoading, Mode=OneWay}"
-                                  Visibility="{x:Bind ViewModel.RefreshingVisibility, Mode=OneWay}" />
                     <Button x:Name="RefreshButton"
-                            Grid.Column="2"
+                            Grid.Column="1"
                             MinWidth="36"
                             MinHeight="36"
+                            VerticalAlignment="Center"
+                            AutomationProperties.LiveSetting="Polite"
                             IsEnabled="{x:Bind ViewModel.CanRefresh, Mode=OneWay}"
                             Click="RetryConnection_Click">
                         <StackPanel Orientation="Horizontal" Spacing="8">
-                            <FontIcon Glyph="&#xE72C;" FontSize="16"
-                                      AutomationProperties.AccessibilityView="Raw" />
-                            <controls:TranslatedTextBlock x:Name="RefreshButtonLabel" Text="Refresh" />
+                            <Grid Width="20" Height="20">
+                                <FontIcon x:Name="RefreshIcon" Glyph="&#xE72C;" FontSize="16"
+                                          AutomationProperties.AccessibilityView="Raw" />
+                                <ProgressRing x:Name="RefreshProgress"
+                                              Width="20" Height="20" IsActive="False"
+                                              AutomationProperties.AccessibilityView="Raw" />
+                            </Grid>
+                            <!-- Transparent labels reserve the widest localized state without changing button size. -->
+                            <Grid x:Name="RefreshButtonLabels" VerticalAlignment="Center">
+                                <TextBlock x:Name="RefreshIdleMeasure" Opacity="0"
+                                           AutomationProperties.AccessibilityView="Raw" />
+                                <TextBlock x:Name="RefreshBusyMeasure" Opacity="0"
+                                           AutomationProperties.AccessibilityView="Raw" />
+                                <controls:TranslatedTextBlock x:Name="RefreshButtonLabel" Text="Refresh"
+                                                              AutomationProperties.AccessibilityView="Raw" />
+                            </Grid>
                         </StackPanel>
                     </Button>
                 </Grid>

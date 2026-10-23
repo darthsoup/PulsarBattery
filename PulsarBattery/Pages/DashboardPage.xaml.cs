@@ -22,10 +22,10 @@ public sealed partial class DashboardPage : Page
         LastUpdatedLabel.Text = $"{Loc.T("Last updated")}: ";
         StaleDataInfoBar.Title = Loc.T("Device unavailable");
         AutomationProperties.SetName(RetryButton, Loc.T("Retry connection"));
-        AutomationProperties.SetName(RefreshButton, Loc.T("Refresh battery status"));
-        AutomationProperties.SetName(RefreshProgress, Loc.T("Updating..."));
         AutomationProperties.SetName(BatteryBar, Loc.T("Battery level"));
-        ToolTipService.SetToolTip(RefreshButton, $"{Loc.T("Refresh battery status")} (F5)");
+        RefreshIdleMeasure.Text = Loc.T("Refresh");
+        RefreshBusyMeasure.Text = Loc.T("Updating...");
+        ApplyRefreshState();
 
         Loaded += DashboardPage_Loaded;
         Unloaded += DashboardPage_Unloaded;
@@ -42,10 +42,15 @@ public sealed partial class DashboardPage : Page
         }
 
         ApplyBatteryState();
+        ApplyRefreshState();
     }
 
     // The view model outlives this page (rebuilt on every navigation), so unhooking here prevents leaks.
-    private void DashboardPage_Unloaded(object sender, RoutedEventArgs e) => UnsubscribeViewModel();
+    private void DashboardPage_Unloaded(object sender, RoutedEventArgs e)
+    {
+        RefreshProgress.IsActive = false;
+        UnsubscribeViewModel();
+    }
 
     private void UnsubscribeViewModel()
     {
@@ -58,12 +63,28 @@ public sealed partial class DashboardPage : Page
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName is nameof(MainViewModel.IsLoading))
+        {
+            ApplyRefreshState();
+        }
+
         if (e.PropertyName is nameof(MainViewModel.BatteryVisualState)
             or nameof(MainViewModel.BatteryPercentage)
             or nameof(MainViewModel.HasStaleData))
         {
             ApplyBatteryState();
         }
+    }
+
+    private void ApplyRefreshState()
+    {
+        var busy = ViewModel?.IsLoading == true;
+        RefreshProgress.IsActive = busy;
+        RefreshIcon.Visibility = busy ? Visibility.Collapsed : Visibility.Visible;
+        RefreshButtonLabel.Text = busy ? "Updating..." : "Refresh";
+        var description = Loc.T(busy ? "Updating..." : "Refresh battery status");
+        AutomationProperties.SetName(RefreshButton, description);
+        ToolTipService.SetToolTip(RefreshButton, busy ? description : $"{description} (F5)");
     }
 
     // The success/critical fills differ between light and dark.

@@ -157,6 +157,7 @@ public sealed partial class SparklineControl : UserControl
             EmptyText.Visibility = Visibility.Visible;
             ScaleLabels.Visibility = Visibility.Collapsed;
             ReferenceLine.Visibility = Visibility.Collapsed;
+            GapLines.Data = null;
             TrendLine.Data = null;
             FillPath.Data = null;
             ReadingMarkers.Data = null;
@@ -182,6 +183,7 @@ public sealed partial class SparklineControl : UserControl
             PlotInset + (1 - reading.Percentage / 100.0) * (height - PlotInset * 2));
 
         var lines = new PathGeometry();
+        var gaps = new PathGeometry();
         var fills = new PathGeometry();
         var markers = new GeometryGroup();
         var segments = SplitSegments(windowed);
@@ -193,10 +195,19 @@ public sealed partial class SparklineControl : UserControl
             maximum = Math.Max(maximum, reading.Percentage);
         }
 
+        BatteryReading? previousEnd = null;
         foreach (var segment in segments)
         {
             var points = Downsample(segment, MaxPlotPoints);
             var start = ToPoint(points[0]);
+            if (previousEnd is { } previous && string.Equals(previous.Model, points[0].Model, StringComparison.Ordinal))
+            {
+                var gap = new PathFigure { StartPoint = ToPoint(previous), IsFilled = false };
+                gap.Segments.Add(new LineSegment { Point = start });
+                gaps.Figures.Add(gap);
+            }
+
+            previousEnd = points[^1];
             if (points.Count == 1)
             {
                 markers.Children.Add(new EllipseGeometry { Center = start, RadiusX = PlotInset, RadiusY = PlotInset });
@@ -223,12 +234,19 @@ public sealed partial class SparklineControl : UserControl
             markers.Children.Add(new EllipseGeometry { Center = ToPoint(last), RadiusX = PlotInset, RadiusY = PlotInset });
         }
 
+        GapLines.Data = gaps;
         TrendLine.Data = lines;
         FillPath.Data = fills;
         ReadingMarkers.Data = markers;
-        SetAccessibleSummary(string.Format(CultureInfo.CurrentCulture,
+        string summary = string.Format(CultureInfo.CurrentCulture,
             Loc.T("{0} readings. Latest {1}% at {2}. Lowest {3}%, highest {4}%."),
-            windowed.Count, last.Percentage, last.Timestamp.ToLocalTime().ToString("g", CultureInfo.CurrentCulture), minimum, maximum));
+            windowed.Count, last.Percentage, last.Timestamp.ToLocalTime().ToString("g", CultureInfo.CurrentCulture), minimum, maximum);
+        if (gaps.Figures.Count > 0)
+        {
+            summary += " " + Loc.T("Dashed lines mark periods without readings.");
+        }
+
+        SetAccessibleSummary(summary);
     }
 
     private void SetAccessibleSummary(string summary)
