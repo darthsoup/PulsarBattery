@@ -144,19 +144,22 @@
                         </settingscontrols:SettingsCard>
 
                         <settingscontrols:SettingsCard x:Name="DebounceCard">
-                            <StackPanel Orientation="Horizontal" Spacing="8" VerticalAlignment="Center">
+                            <Grid Width="140" ColumnSpacing="8" VerticalAlignment="Center">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
                                 <NumberBox x:Name="DebounceNumberBox"
                                            Minimum="0"
                                            Maximum="30"
                                            SmallChange="1"
                                            SpinButtonPlacementMode="Compact"
-                                           ValueChanged="DebounceNumberBox_ValueChanged"
-                                           Width="120" />
-                                <TextBlock Text="ms"
+                                           ValueChanged="DebounceNumberBox_ValueChanged" />
+                                <TextBlock Grid.Column="1" Text="ms"
                                            Style="{ThemeResource CaptionTextBlockStyle}"
                                            Foreground="{ThemeResource TextFillColorSecondaryBrush}"
                                            VerticalAlignment="Center" />
-                            </StackPanel>
+                            </Grid>
                         </settingscontrols:SettingsCard>
                     </StackPanel>
 
