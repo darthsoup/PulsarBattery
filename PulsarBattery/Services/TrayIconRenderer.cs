@@ -36,6 +36,7 @@ internal sealed class TrayIconRenderer : IDisposable
     private const int TextScale = 4;
 
     private static readonly Color ChargingColor = Color.FromArgb(76, 201, 76);
+    private static readonly Color ChargingColorLightTheme = Color.FromArgb(23, 125, 45);
     private static readonly Color LowColor = Color.FromArgb(232, 17, 35);
 
     private (TrayIconState State, int SizePx, bool LightTheme)? _lastKey;
@@ -58,6 +59,12 @@ internal sealed class TrayIconRenderer : IDisposable
     [DllImport("user32.dll")]
     private static extern int GetSystemMetricsForDpi(int index, uint dpi);
 
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)]
+    private static extern nint FindWindow(string className, string? windowName);
+
+    [DllImport("user32.dll")]
+    private static extern uint GetDpiForWindow(nint window);
+
     [DllImport("user32.dll")]
     private static extern nint MonitorFromPoint(POINT pt, uint flags);
 
@@ -78,6 +85,7 @@ internal sealed class TrayIconRenderer : IDisposable
             return null;
         }
 
+        state = state with { Percentage = Math.Clamp(state.Percentage, 0, 100) };
         var sizePx = GetTrayIconSizePx();
         var key = (state, sizePx, IsSystemLightTheme());
         if (!force && _lastKey is { } last && last == key)
@@ -90,7 +98,16 @@ internal sealed class TrayIconRenderer : IDisposable
             : RenderGearIcon(sizePx);
 
         var hicon = bitmap.GetHicon();
-        var icon = Icon.FromHandle(hicon); // non-owning wrapper
+        Icon icon;
+        try
+        {
+            icon = Icon.FromHandle(hicon);
+        }
+        catch
+        {
+            DestroyIcon(hicon);
+            throw;
+        }
 
         // A previous pending handle means the last assignment was never
         // confirmed; treat it as abandoned.
@@ -110,6 +127,11 @@ internal sealed class TrayIconRenderer : IDisposable
     /// </summary>
     public void CommitAssignment()
     {
+        if (_pendingHicon == 0)
+        {
+            return;
+        }
+
         if (_retiredHicon != 0)
         {
             DestroyIcon(_retiredHicon);
@@ -124,7 +146,7 @@ internal sealed class TrayIconRenderer : IDisposable
 
     /// <summary>
     /// Assignment threw. The library may already have stored the new handle, so it is retired rather
-    /// than destroyed, and the dedupe key stays unchanged so a later forced tick retries.
+    /// than destroyed. Clear the dedupe key so returning to the previous state also retries.
     /// </summary>
     public void AbandonAssignment()
     {
@@ -140,6 +162,7 @@ internal sealed class TrayIconRenderer : IDisposable
         }
 
         _pendingKey = null;
+        _lastKey = null;
     }
 
     private static Bitmap RenderBatteryText(TrayIconState state, int sizePx, bool lightTheme)
@@ -147,7 +170,7 @@ internal sealed class TrayIconRenderer : IDisposable
         var text = state.HasData ? state.Percentage.ToString(CultureInfo.InvariantCulture) : "–";
         var color = state switch
         {
-            { HasData: true, IsCharging: true } => ChargingColor,
+            { HasData: true, IsCharging: true } => lightTheme ? ChargingColorLightTheme : ChargingColor,
             { HasData: true, IsLow: true } => LowColor,
             _ => lightTheme ? Color.Black : Color.White,
         };
@@ -166,7 +189,8 @@ internal sealed class TrayIconRenderer : IDisposable
 
             using var path = new GraphicsPath();
             using var family = new FontFamily("Segoe UI");
-            path.AddString(text, family, (int)FontStyle.Bold, em * TextScale, PointF.Empty, StringFormat.GenericTypographic);
+            using var format = StringFormat.GenericTypographic;
+            path.AddString(text, family, (int)FontStyle.Bold, em * TextScale, PointF.Empty, format);
 
             // Center the ink box; digits have no descenders, so ink centering equals cap-height centering.
             var bounds = path.GetBounds();
@@ -296,18 +320,33 @@ internal sealed class TrayIconRenderer : IDisposable
 
     private static int GetTrayIconSizePx()
     {
-        uint dpi = 96;
+        uint dpi = 0;
         try
         {
-            var monitor = MonitorFromPoint(default, MonitorDefaultToPrimary);
-            if (monitor != 0 && GetDpiForMonitor(monitor, 0 /* MDT_EFFECTIVE_DPI */, out var dpiX, out _) == 0)
+            var taskbar = FindWindow("Shell_TrayWnd", null);
+            if (taskbar != 0)
             {
-                dpi = dpiX;
+                dpi = GetDpiForWindow(taskbar);
             }
         }
         catch
         {
-            // shcore unavailable: keep 96.
+        }
+
+        if (dpi == 0)
+        {
+            dpi = 96;
+            try
+            {
+                var monitor = MonitorFromPoint(default, MonitorDefaultToPrimary);
+                if (monitor != 0 && GetDpiForMonitor(monitor, 0 /* MDT_EFFECTIVE_DPI */, out var dpiX, out _) == 0)
+                {
+                    dpi = dpiX;
+                }
+            }
+            catch
+            {
+            }
         }
 
         var size = 0;

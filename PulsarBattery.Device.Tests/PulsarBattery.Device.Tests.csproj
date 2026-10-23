@@ -25,4 +25,24 @@
     <Using Include="Xunit" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Compile Include="..\PulsarBattery\Services\AppSettings.cs" Link="App\AppSettings.cs" />
+    <Compile Include="..\PulsarBattery\Services\AppSettingsService.cs" Link="App\AppSettingsService.cs" />
+    <Compile Include="..\PulsarBattery\Services\SettingsStore.cs" Link="App\SettingsStore.cs" />
+    <Compile Include="..\PulsarBattery\Services\HistoryStore.cs" Link="App\HistoryStore.cs" />
+    <Compile Include="..\PulsarBattery\Services\PulsarBatteryReader.cs" Link="App\PulsarBatteryReader.cs" />
+    <Compile Include="..\PulsarBattery\Services\SelfInstallService.cs" Link="App\SelfInstallService.cs" />
+    <Compile Include="..\PulsarBattery\Services\StartupRegistrationService.cs" Link="App\StartupRegistrationService.cs" />
+    <Compile Include="..\PulsarBattery\Services\DeviceImageService.cs" Link="App\DeviceImageService.cs" />
+    <Compile Include="..\PulsarBattery\Models\BatteryReading.cs" Link="App\BatteryReading.cs" />
+    <Compile Include="..\PulsarBattery\Tools\LocalizationService.cs" Link="App\LocalizationService.cs" />
+    <Compile Include="..\PulsarBattery\Tools\JsonContext.cs" Link="App\JsonContext.cs" />
+    <Compile Include="..\PulsarBattery\Tools\Log.cs" Link="App\Log.cs" />
+    <Compile Include="..\PulsarBattery\Tools\Loc.cs" Link="App\Loc.cs" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Content Include="..\PulsarBattery\Assets\Devices\*.png" Link="Assets\Devices\%(Filename)%(Extension)" CopyToOutputDirectory="PreserveNewest" />
+  </ItemGroup>
+
 </Project>

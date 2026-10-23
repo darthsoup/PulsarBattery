@@ -19,12 +19,11 @@ public sealed partial class MouseSettingsPage : Page
 
     private ViewModels.MainViewModel? ViewModel => DataContext as ViewModels.MainViewModel;
 
-    private bool _isUpdatingSelection;
+    // Templating, range updates and teardown can raise input events without a user edit.
+    private bool _isUpdatingSelection = true;
+    private ViewModels.MainViewModel? _subscribedViewModel;
 
-    /// <summary>
-    /// Used by x:Bind so an InfoBar's Visibility tracks the same flag as its IsOpen. Derived
-    /// rather than a separate VM property so the two can never drift out of sync.
-    /// </summary>
+    /// <summary>Keeps a closed InfoBar from consuming section spacing.</summary>
     public static Visibility BoolToVisibility(bool value)
         => value ? Visibility.Visible : Visibility.Collapsed;
 
@@ -32,7 +31,6 @@ public sealed partial class MouseSettingsPage : Page
     {
         InitializeComponent();
         ApplyLocalization();
-        InitializeComboBoxes();
 
         Loaded += MouseSettingsPage_Loaded;
         Unloaded += MouseSettingsPage_Unloaded;
@@ -40,28 +38,43 @@ public sealed partial class MouseSettingsPage : Page
 
     private void MouseSettingsPage_Loaded(object sender, RoutedEventArgs e)
     {
-        if (ViewModel is { } viewModel)
+        _isUpdatingSelection = true;
+        if (ViewModel is not { } viewModel)
         {
-            viewModel.PropertyChanged += ViewModel_PropertyChanged;
-            viewModel.SetMouseSettingsPageActive(true);
-            InitializeComboBoxes();
-            SyncCapabilityState();
-            SyncComboSelections();
-            _ = viewModel.RefreshDeviceSettingsAsync();
+            return;
         }
+
+        _subscribedViewModel = viewModel;
+        viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+        viewModel.PropertyChanged += ViewModel_PropertyChanged;
+        viewModel.SetMouseSettingsPageActive(true);
+        InitializeComboBoxes();
+        SyncCapabilityState();
+        SyncComboSelections();
+        SyncEditableValues();
+        _isUpdatingSelection = false;
+        _ = viewModel.RefreshDeviceSettingsAsync();
     }
 
     private void MouseSettingsPage_Unloaded(object sender, RoutedEventArgs e)
     {
-        if (ViewModel is { } viewModel)
+        _isUpdatingSelection = true;
+        SettingsProgressRing.IsActive = false;
+        if (_subscribedViewModel is { } viewModel)
         {
             viewModel.SetMouseSettingsPageActive(false);
             viewModel.PropertyChanged -= ViewModel_PropertyChanged;
+            _subscribedViewModel = null;
         }
     }
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (!ReferenceEquals(sender, _subscribedViewModel))
+        {
+            return;
+        }
+
         if (e.PropertyName is nameof(ViewModels.MainViewModel.PollingRateHz)
             or nameof(ViewModels.MainViewModel.LodMm10)
             or nameof(ViewModels.MainViewModel.DpiStage)
@@ -70,23 +83,45 @@ public sealed partial class MouseSettingsPage : Page
             SyncComboSelections();
         }
 
+        if (e.PropertyName is nameof(ViewModels.MainViewModel.DpiValue)
+            or nameof(ViewModels.MainViewModel.DebounceMsValue)
+            or nameof(ViewModels.MainViewModel.MotionSyncIsOn)
+            or nameof(ViewModels.MainViewModel.AngleSnapIsOn)
+            or nameof(ViewModels.MainViewModel.RippleControlIsOn))
+        {
+            SyncEditableValues(e.PropertyName);
+        }
+
         if (e.PropertyName is nameof(ViewModels.MainViewModel.SettingsCapabilities))
         {
             InitializeComboBoxes();
             SyncCapabilityState();
             SyncComboSelections();
+            SyncEditableValues();
         }
 
         if (e.PropertyName is nameof(ViewModels.MainViewModel.IsApplyingDeviceSetting)
             or nameof(ViewModels.MainViewModel.IsReadingDeviceSettings)
-            or nameof(ViewModels.MainViewModel.IsLoading))
+            or nameof(ViewModels.MainViewModel.IsLoading)
+            or nameof(ViewModels.MainViewModel.MouseSettingsUnsupportedVisibility)
+            || e.PropertyName?.StartsWith("CanWrite", StringComparison.Ordinal) == true)
         {
             SyncCapabilityState();
+            if ((e.PropertyName is nameof(ViewModels.MainViewModel.IsApplyingDeviceSetting)
+                    && _subscribedViewModel?.IsApplyingDeviceSetting == false)
+                || (e.PropertyName is nameof(ViewModels.MainViewModel.IsReadingDeviceSettings)
+                    && _subscribedViewModel?.IsReadingDeviceSettings == false))
+            {
+                // Unchanged snapshots raise no value notifications; restore confirmed values explicitly.
+                SyncComboSelections();
+                SyncEditableValues();
+            }
         }
     }
 
     private void InitializeComboBoxes()
     {
+        var wasUpdating = _isUpdatingSelection;
         _isUpdatingSelection = true;
         try
         {
@@ -140,7 +175,7 @@ public sealed partial class MouseSettingsPage : Page
         }
         finally
         {
-            _isUpdatingSelection = false;
+            _isUpdatingSelection = wasUpdating;
         }
     }
 
@@ -151,42 +186,62 @@ public sealed partial class MouseSettingsPage : Page
             return;
         }
 
-        PollingRateComboBox.IsEnabled = viewModel.CanWritePollingRate;
-        DpiNumberBox.IsEnabled = viewModel.CanWriteDpi;
-        DpiNumberBox.Minimum = viewModel.DpiMinimum;
-        DpiNumberBox.Maximum = viewModel.DpiMaximum;
-        DpiNumberBox.SmallChange = viewModel.DpiSmallChange;
-        DpiStageComboBox.IsEnabled = viewModel.CanWriteDpiStage;
-        DebounceNumberBox.IsEnabled = viewModel.CanWriteDebounce;
-        DebounceNumberBox.Minimum = viewModel.DebounceMinimum;
-        DebounceNumberBox.Maximum = viewModel.DebounceMaximum;
-        LodComboBox.IsEnabled = viewModel.CanWriteLod;
-        MotionSyncToggle.IsEnabled = viewModel.CanWriteMotionSync;
-        AngleSnapToggle.IsEnabled = viewModel.CanWriteAngleSnap;
-        RippleControlToggle.IsEnabled = viewModel.CanWriteRippleControl;
-        SleepComboBox.IsEnabled = viewModel.CanWriteSleep;
+        var wasUpdating = _isUpdatingSelection;
+        _isUpdatingSelection = true;
+        try
+        {
+            PollingRateComboBox.IsEnabled = viewModel.CanWritePollingRate;
+            DpiNumberBox.IsEnabled = viewModel.CanWriteDpi;
+            DpiNumberBox.Minimum = viewModel.DpiMinimum;
+            DpiNumberBox.Maximum = viewModel.DpiMaximum;
+            DpiNumberBox.SmallChange = viewModel.DpiSmallChange;
+            DpiStageComboBox.IsEnabled = viewModel.CanWriteDpiStage;
+            DebounceNumberBox.IsEnabled = viewModel.CanWriteDebounce;
+            DebounceNumberBox.Minimum = viewModel.DebounceMinimum;
+            DebounceNumberBox.Maximum = viewModel.DebounceMaximum;
+            LodComboBox.IsEnabled = viewModel.CanWriteLod;
+            MotionSyncToggle.IsEnabled = viewModel.CanWriteMotionSync;
+            AngleSnapToggle.IsEnabled = viewModel.CanWriteAngleSnap;
+            RippleControlToggle.IsEnabled = viewModel.CanWriteRippleControl;
+            SleepComboBox.IsEnabled = viewModel.CanWriteSleep;
 
-        PollingRateCard.Visibility = ToVisibility(viewModel.CanReadPollingRate);
-        DpiCard.Visibility = ToVisibility(viewModel.CanReadDpi);
-        DpiStageCard.Visibility = ToVisibility(viewModel.CanReadDpiStage);
-        DebounceCard.Visibility = ToVisibility(viewModel.CanReadDebounce);
-        LodCard.Visibility = ToVisibility(viewModel.CanReadLod);
-        MotionSyncCard.Visibility = ToVisibility(viewModel.CanReadMotionSync);
-        AngleSnapCard.Visibility = ToVisibility(viewModel.CanReadAngleSnap);
-        RippleControlCard.Visibility = ToVisibility(viewModel.CanReadRippleControl);
-        SleepCard.Visibility = ToVisibility(viewModel.CanReadSleep);
+            PollingRateCard.Visibility = ToVisibility(viewModel.CanReadPollingRate);
+            DpiCard.Visibility = ToVisibility(viewModel.CanReadDpi);
+            DpiStageCard.Visibility = ToVisibility(viewModel.CanReadDpiStage);
+            DebounceCard.Visibility = ToVisibility(viewModel.CanReadDebounce);
+            LodCard.Visibility = ToVisibility(viewModel.CanReadLod);
+            MotionSyncCard.Visibility = ToVisibility(viewModel.CanReadMotionSync);
+            AngleSnapCard.Visibility = ToVisibility(viewModel.CanReadAngleSnap);
+            RippleControlCard.Visibility = ToVisibility(viewModel.CanReadRippleControl);
+            SleepCard.Visibility = ToVisibility(viewModel.CanReadSleep);
 
-        PerformanceSection.Visibility = ToVisibility(
-            viewModel.CanReadPollingRate
-            || viewModel.CanReadDpi
-            || viewModel.CanReadDpiStage
-            || viewModel.CanReadDebounce);
-        SensorSection.Visibility = ToVisibility(
-            viewModel.CanReadLod
-            || viewModel.CanReadMotionSync
-            || viewModel.CanReadAngleSnap
-            || viewModel.CanReadRippleControl);
-        PowerSection.Visibility = ToVisibility(viewModel.CanReadSleep);
+            PerformanceSection.Visibility = ToVisibility(
+                viewModel.CanReadPollingRate
+                || viewModel.CanReadDpi
+                || viewModel.CanReadDpiStage
+                || viewModel.CanReadDebounce);
+            SensorSection.Visibility = ToVisibility(
+                viewModel.CanReadLod
+                || viewModel.CanReadMotionSync
+                || viewModel.CanReadAngleSnap
+                || viewModel.CanReadRippleControl);
+            PowerSection.Visibility = ToVisibility(viewModel.CanReadSleep);
+
+            var busy = viewModel.IsApplyingDeviceSetting || viewModel.IsReadingDeviceSettings || viewModel.IsLoading;
+            RefreshSettingsButton.IsEnabled = !busy;
+            SettingsProgressPanel.Visibility = ToVisibility(busy);
+            SettingsProgressRing.IsActive = busy;
+            SettingsProgressText.Text = busy
+                ? Loc.T(viewModel.IsApplyingDeviceSetting ? "Applying mouse setting..." : "Reading mouse settings...")
+                : string.Empty;
+            UnsupportedSettingsPanel.Visibility = busy
+                ? Visibility.Collapsed
+                : viewModel.MouseSettingsUnsupportedVisibility;
+        }
+        finally
+        {
+            _isUpdatingSelection = wasUpdating;
+        }
     }
 
     private static Visibility ToVisibility(bool visible) =>
@@ -194,6 +249,7 @@ public sealed partial class MouseSettingsPage : Page
 
     private void SyncComboSelections()
     {
+        var wasUpdating = _isUpdatingSelection;
         _isUpdatingSelection = true;
         try
         {
@@ -204,7 +260,117 @@ public sealed partial class MouseSettingsPage : Page
         }
         finally
         {
-            _isUpdatingSelection = false;
+            _isUpdatingSelection = wasUpdating;
+        }
+    }
+
+    private void SyncEditableValues(string? propertyName = null)
+    {
+        if (_subscribedViewModel is not { } viewModel)
+        {
+            return;
+        }
+
+        var wasUpdating = _isUpdatingSelection;
+        _isUpdatingSelection = true;
+        try
+        {
+            if (propertyName is null or nameof(ViewModels.MainViewModel.DpiValue))
+            {
+                DpiNumberBox.Value = viewModel.DpiValue;
+            }
+
+            if (propertyName is null or nameof(ViewModels.MainViewModel.DebounceMsValue))
+            {
+                DebounceNumberBox.Value = viewModel.DebounceMsValue;
+            }
+
+            if (propertyName is null or nameof(ViewModels.MainViewModel.MotionSyncIsOn))
+            {
+                MotionSyncToggle.IsOn = viewModel.MotionSyncIsOn;
+            }
+
+            if (propertyName is null or nameof(ViewModels.MainViewModel.AngleSnapIsOn))
+            {
+                AngleSnapToggle.IsOn = viewModel.AngleSnapIsOn;
+            }
+
+            if (propertyName is null or nameof(ViewModels.MainViewModel.RippleControlIsOn))
+            {
+                RippleControlToggle.IsOn = viewModel.RippleControlIsOn;
+            }
+        }
+        finally
+        {
+            _isUpdatingSelection = wasUpdating;
+        }
+    }
+
+    private void DpiNumberBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    {
+        if (_isUpdatingSelection || _subscribedViewModel is not { CanWriteDpi: true } viewModel)
+        {
+            return;
+        }
+
+        if (double.IsFinite(args.NewValue))
+        {
+            viewModel.DpiValue = args.NewValue;
+        }
+
+        if (!viewModel.IsApplyingDeviceSetting)
+        {
+            SyncEditableValues(nameof(ViewModels.MainViewModel.DpiValue));
+        }
+    }
+
+    private void DebounceNumberBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    {
+        if (_isUpdatingSelection || _subscribedViewModel is not { CanWriteDebounce: true } viewModel)
+        {
+            return;
+        }
+
+        if (double.IsFinite(args.NewValue))
+        {
+            viewModel.DebounceMsValue = args.NewValue;
+        }
+
+        if (!viewModel.IsApplyingDeviceSetting)
+        {
+            SyncEditableValues(nameof(ViewModels.MainViewModel.DebounceMsValue));
+        }
+    }
+
+    private void MotionSyncToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_isUpdatingSelection && _subscribedViewModel is { CanWriteMotionSync: true } viewModel)
+        {
+            viewModel.MotionSyncIsOn = MotionSyncToggle.IsOn;
+        }
+    }
+
+    private void AngleSnapToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_isUpdatingSelection && _subscribedViewModel is { CanWriteAngleSnap: true } viewModel)
+        {
+            viewModel.AngleSnapIsOn = AngleSnapToggle.IsOn;
+        }
+    }
+
+    private void RippleControlToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (!_isUpdatingSelection && _subscribedViewModel is { CanWriteRippleControl: true } viewModel)
+        {
+            viewModel.RippleControlIsOn = RippleControlToggle.IsOn;
+        }
+    }
+
+    private async void RefreshSettingsButton_Click(object sender, RoutedEventArgs e)
+    {
+        if (!_isUpdatingSelection && _subscribedViewModel is { } viewModel)
+        {
+            await viewModel.RefreshDeviceSettingsAsync();
         }
     }
 
@@ -294,6 +460,8 @@ public sealed partial class MouseSettingsPage : Page
 
         DpiCard.Header = Loc.T("DPI");
         DpiCard.Description = Loc.T("Sensor resolution of the active profile");
+        AutomationProperties.SetName(DpiNumberBox, Loc.T("DPI"));
+        AutomationProperties.SetHelpText(DpiNumberBox, Loc.T("Sensor resolution of the active profile"));
 
         DpiStageCard.Header = Loc.T("DPI stage");
         DpiStageCard.Description = Loc.T("Switches the active DPI preset");
@@ -301,6 +469,8 @@ public sealed partial class MouseSettingsPage : Page
 
         DebounceCard.Header = Loc.T("Debounce");
         DebounceCard.Description = Loc.T("Click debounce time in milliseconds");
+        AutomationProperties.SetName(DebounceNumberBox, Loc.T("Debounce"));
+        AutomationProperties.SetHelpText(DebounceNumberBox, Loc.T("Click debounce time in milliseconds"));
 
         LodCard.Header = Loc.T("Lift-off distance");
         LodCard.Description = Loc.T("Height at which the sensor stops tracking when the mouse is lifted");
@@ -326,14 +496,28 @@ public sealed partial class MouseSettingsPage : Page
 
         SleepCard.Header = Loc.T("Sleep timer");
         SleepCard.Description = Loc.T("Idle time before the mouse sleeps to save battery");
+        AutomationProperties.SetName(SleepComboBox, Loc.T("Sleep timer"));
+        AutomationProperties.SetName(RefreshSettingsButton, Loc.T("Refresh settings"));
+    }
+
+    private void PageHeader_SizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        var wide = e.NewSize.Width >= 520;
+        Grid.SetColumnSpan(PageTitle, wide ? 1 : 2);
+        Grid.SetColumn(RefreshSettingsButton, wide ? 1 : 0);
+        Grid.SetColumnSpan(RefreshSettingsButton, wide ? 1 : 2);
+        Grid.SetRow(RefreshSettingsButton, wide ? 0 : 1);
+        RefreshSettingsButton.HorizontalAlignment = wide ? HorizontalAlignment.Right : HorizontalAlignment.Left;
+        PageHeader.RowSpacing = wide ? 0 : 16;
     }
 
     private void RootGrid_PointerPressed(object sender, PointerRoutedEventArgs e)
     {
         var source = e.OriginalSource as DependencyObject;
 
-        // Don't steal focus from inputs. Most controls (buttons, toggles, etc.) will naturally take focus on click.
-        if (FindAncestor<NumberBox>(source) is not null || FindAncestor<TextBox>(source) is not null)
+        if (FindAncestor<NumberBox>(source) is not null
+            || FindAncestor<TextBox>(source) is not null
+            || FindAncestor<ComboBox>(source) is not null)
         {
             return;
         }
@@ -345,8 +529,8 @@ public sealed partial class MouseSettingsPage : Page
 
         try
         {
-            FocusSink.Focus(FocusState.Programmatic);
-            e.Handled = true;
+            // A visible focus target commits NumberBox edits without an invisible keyboard tab stop.
+            e.Handled = RefreshSettingsButton.Focus(FocusState.Programmatic);
         }
         catch
         {

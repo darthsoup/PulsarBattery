@@ -6,7 +6,6 @@ using PulsarBattery.Tools;
 using PulsarBattery.ViewModels;
 using System;
 using System.ComponentModel;
-using System.Diagnostics;
 
 namespace PulsarBattery.Pages;
 
@@ -20,7 +19,13 @@ public sealed partial class DashboardPage : Page
     {
         InitializeComponent();
         RetryButton.Content = Loc.T("Retry");
+        LastUpdatedLabel.Text = $"{Loc.T("Last updated")}: ";
+        StaleDataInfoBar.Title = Loc.T("Device unavailable");
         AutomationProperties.SetName(RetryButton, Loc.T("Retry connection"));
+        AutomationProperties.SetName(RefreshButton, Loc.T("Refresh battery status"));
+        AutomationProperties.SetName(RefreshProgress, Loc.T("Updating..."));
+        AutomationProperties.SetName(BatteryBar, Loc.T("Battery level"));
+        ToolTipService.SetToolTip(RefreshButton, $"{Loc.T("Refresh battery status")} (F5)");
 
         Loaded += DashboardPage_Loaded;
         Unloaded += DashboardPage_Unloaded;
@@ -29,6 +34,7 @@ public sealed partial class DashboardPage : Page
 
     private void DashboardPage_Loaded(object sender, RoutedEventArgs e)
     {
+        UnsubscribeViewModel();
         if (ViewModel is { } viewModel)
         {
             viewModel.PropertyChanged += ViewModel_PropertyChanged;
@@ -39,7 +45,9 @@ public sealed partial class DashboardPage : Page
     }
 
     // The view model outlives this page (rebuilt on every navigation), so unhooking here prevents leaks.
-    private void DashboardPage_Unloaded(object sender, RoutedEventArgs e)
+    private void DashboardPage_Unloaded(object sender, RoutedEventArgs e) => UnsubscribeViewModel();
+
+    private void UnsubscribeViewModel()
     {
         if (_subscribedViewModel is { } viewModel)
         {
@@ -50,7 +58,9 @@ public sealed partial class DashboardPage : Page
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MainViewModel.BatteryVisualState))
+        if (e.PropertyName is nameof(MainViewModel.BatteryVisualState)
+            or nameof(MainViewModel.BatteryPercentage)
+            or nameof(MainViewModel.HasStaleData))
         {
             ApplyBatteryState();
         }
@@ -59,14 +69,33 @@ public sealed partial class DashboardPage : Page
     // The success/critical fills differ between light and dark.
     private void DashboardPage_ActualThemeChanged(FrameworkElement sender, object args) => ApplyBatteryState();
 
-    /// <summary>
-    /// Applied imperatively rather than bound so a runtime theme switch can
-    /// re-resolve the brushes; a binding would keep the stale theme's instances.
-    /// </summary>
+    // Re-resolve state brushes after theme changes so the previous theme's instances are not retained.
     private void ApplyBatteryState()
     {
+        var viewModel = ViewModel;
+        var isStale = viewModel?.HasStaleData == true;
+        BatteryLevelLabel.Text = isStale
+            ? "Last known battery level"
+            : viewModel?.BatteryVisualState == MainViewModel.BatteryState.Low
+                ? "Low Battery"
+                : "Battery level";
+
+        AutomationProperties.SetName(BatteryBar, Loc.T(BatteryLevelLabel.Text));
+        if (viewModel is not null)
+        {
+            AutomationProperties.SetName(PercentageText,
+                $"{Loc.T(BatteryLevelLabel.Text)}: {viewModel.BatteryPercentage}%");
+        }
+
         var resources = Application.Current.Resources;
-        switch (ViewModel?.BatteryVisualState)
+        if (isStale)
+        {
+            PercentageText.Foreground = (Brush)resources["TextFillColorSecondaryBrush"];
+            BatteryBar.Foreground = (Brush)resources["TextFillColorSecondaryBrush"];
+            return;
+        }
+
+        switch (viewModel?.BatteryVisualState)
         {
             case MainViewModel.BatteryState.Charging:
                 PercentageText.Foreground = (Brush)resources["SystemFillColorSuccessBrush"];
@@ -78,7 +107,7 @@ public sealed partial class DashboardPage : Page
                 break;
             default:
                 PercentageText.Foreground = (Brush)resources["AccentTextFillColorPrimaryBrush"];
-                BatteryBar.ClearValue(Control.ForegroundProperty); // restore the template's accent
+                BatteryBar.ClearValue(Control.ForegroundProperty);
                 break;
         }
     }
@@ -87,14 +116,14 @@ public sealed partial class DashboardPage : Page
     {
         try
         {
-            if (ViewModel is not null)
+            if (ViewModel is { CanRefresh: true } viewModel)
             {
-                await ViewModel.RetryConnectionAsync();
+                await viewModel.RetryConnectionAsync();
             }
         }
         catch (Exception ex)
         {
-            Debug.WriteLine($"[DashboardPage] RetryConnection_Click: {ex.Message}");
+            Log.Error(nameof(DashboardPage), ex);
         }
     }
 

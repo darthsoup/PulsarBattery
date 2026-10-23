@@ -9,14 +9,12 @@ using System.Threading.Tasks;
 
 namespace PulsarBattery.Services;
 
-/// <summary>
-/// Resolves product artwork without depending on a cMouse installation. Curated URLs point at Pulsar's
-/// public storefront CDN, downloads are cached locally, and packaged artwork is the offline fallback.
-/// </summary>
+/// <summary>Resolves cached official artwork with packaged images available for offline use.</summary>
 internal static class DeviceImageService
 {
     private const int MaximumImageBytes = 3 * 1024 * 1024;
     private const string CrazyLightFallback = "ms-appx:///Assets/Devices/X2-CrazyLight.png";
+    private static readonly uint[] PngCrcTable = CreatePngCrcTable();
 
     private static readonly HttpClient Http = new()
     {
@@ -30,12 +28,16 @@ internal static class DeviceImageService
 
     public static Uri? GetPackagedImage(string model)
     {
+        if (string.IsNullOrWhiteSpace(model))
+        {
+            return null;
+        }
+
         var value = model.Trim();
         return value switch
         {
-            "X2 CrazyLight" => new Uri(CrazyLightFallback),
-            "X2 V1" => new Uri("ms-appx:///Assets/Devices/X2v1.png"),
-            "X2 V3 eS" => new Uri("ms-appx:///Assets/Devices/X2v3-eS.png"),
+            _ when value.Equals("X2 V1", StringComparison.OrdinalIgnoreCase) => new Uri("ms-appx:///Assets/Devices/X2v1.png"),
+            _ when value.Equals("X2 V3 eS", StringComparison.OrdinalIgnoreCase) => new Uri("ms-appx:///Assets/Devices/X2v3-eS.png"),
             _ when value.StartsWith("X2 CL", StringComparison.OrdinalIgnoreCase)
                 || value.Contains("X2 CrazyLight", StringComparison.OrdinalIgnoreCase) => new Uri(CrazyLightFallback),
             _ => null,
@@ -169,6 +171,11 @@ internal static class DeviceImageService
         int? protocolModelId,
         CancellationToken cancellationToken)
     {
+        if (cancellationToken.IsCancellationRequested)
+        {
+            return null;
+        }
+
         var remote = GetOfficialImage(model, protocolModelId);
         if (remote is null)
         {
@@ -186,12 +193,16 @@ internal static class DeviceImageService
             return new Uri(cachePath);
         }
 
-        Directory.CreateDirectory(cacheDirectory);
         var temporaryPath = Path.Combine(cacheDirectory, $"{cacheName}.{Guid.NewGuid():N}.part");
 
         try
         {
-            using var response = await Http.GetAsync(remote, HttpCompletionOption.ResponseHeadersRead, cancellationToken)
+            Directory.CreateDirectory(cacheDirectory);
+            // ResponseHeadersRead ends HttpClient's timeout at the headers, so bound the body transfer too.
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(8));
+            var transferToken = timeout.Token;
+            using var response = await Http.GetAsync(remote, HttpCompletionOption.ResponseHeadersRead, transferToken)
                 .ConfigureAwait(false);
             response.EnsureSuccessStatusCode();
 
@@ -209,14 +220,14 @@ internal static class DeviceImageService
                 return null;
             }
 
-            await using (var input = await response.Content.ReadAsStreamAsync(cancellationToken).ConfigureAwait(false))
+            await using (var input = await response.Content.ReadAsStreamAsync(transferToken).ConfigureAwait(false))
             await using (var output = new FileStream(temporaryPath, FileMode.CreateNew, FileAccess.Write, FileShare.None, 81920, useAsync: true))
             {
                 var buffer = new byte[81920];
                 var total = 0;
                 while (true)
                 {
-                    var read = await input.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+                    var read = await input.ReadAsync(buffer, transferToken).ConfigureAwait(false);
                     if (read == 0)
                     {
                         break;
@@ -228,10 +239,16 @@ internal static class DeviceImageService
                         return null;
                     }
 
-                    await output.WriteAsync(buffer.AsMemory(0, read), cancellationToken).ConfigureAwait(false);
+                    await output.WriteAsync(buffer.AsMemory(0, read), transferToken).ConfigureAwait(false);
+                }
+
+                if (response.Content.Headers.ContentLength is long expectedLength && total != expectedLength)
+                {
+                    return null;
                 }
             }
 
+            transferToken.ThrowIfCancellationRequested();
             if (!HasValidPng(temporaryPath))
             {
                 return null;
@@ -267,7 +284,9 @@ internal static class DeviceImageService
             }
             catch (IOException)
             {
-                // A stale .part file is harmless and can be replaced later.
+            }
+            catch (UnauthorizedAccessException)
+            {
             }
         }
     }
@@ -305,21 +324,112 @@ internal static class DeviceImageService
     private static bool Contains(string value, string expected) =>
         value.Contains(expected, StringComparison.OrdinalIgnoreCase);
 
-    private static bool HasValidPng(string path)
+    internal static bool HasValidPng(string path)
     {
         try
         {
-            Span<byte> header = stackalloc byte[24];
             using var stream = File.OpenRead(path);
-            if (stream.Read(header) != header.Length ||
-                !header[..8].SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }))
+            if (stream.Length is < 57 or > MaximumImageBytes)
             {
                 return false;
             }
 
-            var width = BinaryPrimitives.ReadUInt32BigEndian(header[16..20]);
-            var height = BinaryPrimitives.ReadUInt32BigEndian(header[20..24]);
-            return width is > 0 and <= 4096 && height is > 0 and <= 4096;
+            var bytes = new byte[(int)stream.Length];
+            stream.ReadExactly(bytes);
+            ReadOnlySpan<byte> png = bytes;
+            if (!png[..8].SequenceEqual(new byte[] { 137, 80, 78, 71, 13, 10, 26, 10 }))
+            {
+                return false;
+            }
+
+            var offset = 8;
+            var imageDataStarted = false;
+            var hasImageData = false;
+            var imageDataEnded = false;
+            var hasPalette = false;
+            byte colorType = 0;
+            byte bitDepth = 0;
+            while (offset <= png.Length - 12)
+            {
+                var length = BinaryPrimitives.ReadUInt32BigEndian(png.Slice(offset, 4));
+                if (length > png.Length - offset - 12)
+                {
+                    return false;
+                }
+
+                var chunkType = png.Slice(offset + 4, 4);
+                var chunkData = png.Slice(offset + 8, (int)length);
+                var expectedCrc = BinaryPrimitives.ReadUInt32BigEndian(png.Slice(offset + 8 + (int)length, 4));
+                if (GetPngCrc(png.Slice(offset + 4, (int)length + 4)) != expectedCrc)
+                {
+                    return false;
+                }
+
+                if (offset == 8)
+                {
+                    if (!chunkType.SequenceEqual("IHDR"u8) || length != 13)
+                    {
+                        return false;
+                    }
+
+                    var width = BinaryPrimitives.ReadUInt32BigEndian(chunkData[..4]);
+                    var height = BinaryPrimitives.ReadUInt32BigEndian(chunkData[4..8]);
+                    bitDepth = chunkData[8];
+                    colorType = chunkData[9];
+                    var validDepth = colorType switch
+                    {
+                        0 => bitDepth is 1 or 2 or 4 or 8 or 16,
+                        2 or 4 or 6 => bitDepth is 8 or 16,
+                        3 => bitDepth is 1 or 2 or 4 or 8,
+                        _ => false,
+                    };
+                    if (width is 0 or > 4096 || height is 0 or > 4096 || !validDepth ||
+                        chunkData[10] != 0 || chunkData[11] != 0 || chunkData[12] > 1)
+                    {
+                        return false;
+                    }
+                }
+                else if (chunkType.SequenceEqual("IHDR"u8))
+                {
+                    return false;
+                }
+                else if (chunkType.SequenceEqual("IDAT"u8))
+                {
+                    if (imageDataEnded || (colorType == 3 && !hasPalette))
+                    {
+                        return false;
+                    }
+
+                    imageDataStarted = true;
+                    hasImageData |= length > 0;
+                }
+                else if (chunkType.SequenceEqual("IEND"u8))
+                {
+                    return length == 0 && hasImageData && offset + 12 == png.Length;
+                }
+                else
+                {
+                    imageDataEnded |= imageDataStarted;
+                    if (chunkType.SequenceEqual("PLTE"u8))
+                    {
+                        if (hasPalette || imageDataStarted || colorType is 0 or 4 || length is 0 or > 768 ||
+                            length % 3 != 0 || (colorType == 3 && length / 3 > (1 << bitDepth)))
+                        {
+                            return false;
+                        }
+
+                        hasPalette = true;
+                    }
+                    else if ((chunkType[0] & 0x20) == 0)
+                    {
+                        return false;
+                    }
+                }
+
+                offset += (int)length + 12;
+            }
+
+            return false;
         }
         catch (IOException)
         {
@@ -329,5 +439,33 @@ internal static class DeviceImageService
         {
             return false;
         }
+    }
+
+    private static uint GetPngCrc(ReadOnlySpan<byte> bytes)
+    {
+        var crc = uint.MaxValue;
+        foreach (var value in bytes)
+        {
+            crc = PngCrcTable[(crc ^ value) & 0xFF] ^ (crc >> 8);
+        }
+
+        return ~crc;
+    }
+
+    private static uint[] CreatePngCrcTable()
+    {
+        var table = new uint[256];
+        for (uint index = 0; index < table.Length; index++)
+        {
+            var value = index;
+            for (var bit = 0; bit < 8; bit++)
+            {
+                value = (value >> 1) ^ ((value & 1) != 0 ? 0xEDB88320u : 0);
+            }
+
+            table[index] = value;
+        }
+
+        return table;
     }
 }

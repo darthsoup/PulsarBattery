@@ -44,18 +44,25 @@ internal sealed record AppSettings
 
     public static AppSettings Sanitize(AppSettings settings)
     {
+        ArgumentNullException.ThrowIfNull(settings);
+
         return settings with
         {
-            PollIntervalMinutes = Math.Clamp(settings.PollIntervalMinutes, 1, 120),
-            LogIntervalMinutes = Math.Clamp(settings.LogIntervalMinutes, 1, 240),
+            PollIntervalMinutes = ClampFinite(settings.PollIntervalMinutes, 1, 120, 1),
+            LogIntervalMinutes = ClampFinite(settings.LogIntervalMinutes, 1, 240, 5),
             AlertThresholdUnlockedPercent = Math.Clamp(settings.AlertThresholdUnlockedPercent, 1, 100),
             AlertThresholdLockedPercent = Math.Clamp(settings.AlertThresholdLockedPercent, 1, 100),
-            AlertCooldownMinutes = Math.Clamp(settings.AlertCooldownMinutes, 0, 24 * 60),
+            AlertCooldownMinutes = ClampFinite(settings.AlertCooldownMinutes, 0, 24 * 60, 20),
             LowBatterySoundPath = string.IsNullOrWhiteSpace(settings.LowBatterySoundPath)
                 ? null
                 : settings.LowBatterySoundPath,
             Language = LocalizationService.NormalizeLocale(settings.Language),
         };
+    }
+
+    private static double ClampFinite(double value, double minimum, double maximum, double fallback)
+    {
+        return double.IsFinite(value) ? Math.Clamp(value, minimum, maximum) : fallback;
     }
 
     private static int ReadIntFromEnvironment(string name, int fallback)

@@ -12,9 +12,10 @@ Pulsar Battery is a small Windows app that keeps an eye on the battery of your P
 
 - Battery level, charging state and device info at a glance
 - Change mouse settings like DPI and polling rate directly from the app
-- Notifications when the battery runs low
+- Low-battery notifications based on fresh device readings
 - Tray icon showing the current battery percentage
-- Battery history over time
+- Battery history with up to 500 readings, backup recovery and CSV export
+- Manual refresh from the dashboard or tray, plus keyboard navigation
 - Optional start with Windows
 - Available in English and German
 
@@ -23,10 +24,12 @@ Pulsar Battery is a small Windows app that keeps an eye on the battery of your P
 | Device or family | VID | PID matching | Protocol | Settings support |
 |---|---|---|---|---|
 | Pulsar cMouse V1.31 CID-87 family | `0x3710` | 50 candidate PIDs | 17-byte reports | Read and write (verified on X2 CrazyLight; other models enabled but unverified) |
-| X2 V1 | `0x25A7` | `0xFA7B` wired, `0xFA7C` dongle | 17-byte reports | Read-only settings |
+| X2 V1 | `0x25A7` | `0xFA7B` wired, `0xFA7C` dongle | 17-byte reports | Read and write (vendor-derived; not verified on matching hardware) |
 | X2 V3 eS | `0x3710` | `0x3406` wired, `0x5403` dongle | 64-byte feature reports | Read and write |
 
 The cMouse entry is a snapshot of the devices listed by Pulsar cMouse V1.31, not a claim that every Pulsar mouse is supported. Several editions share the same underlying mouse and receiver, so Pulsar Battery identifies each device itself before applying settings rather than guessing from the USB PID alone.
+
+X2 V1 writes are marked `VendorDerived`, and the Mouse settings page displays an unverified-write warning. Protocol tests do not replace verification on matching hardware.
 
 The `0x5403` "8K Dongle" is a shared Pulsar accessory (also used by the X3 family), so other mice paired to it may work as well. Devices speaking the 64-byte protocol get the full Mouse settings page, firmware version, and live polling rate. The X2 V3 eS protocol was reverse-engineered for this project since eS models have no official software.
 
@@ -57,11 +60,19 @@ dotnet publish .\PulsarBattery\PulsarBattery.csproj -c Release -p:Platform=x64 -
 ```
 Output is in `PulsarBattery\bin\Publish\win-x64\` with `PulsarBattery.exe`.
 
-Protocol tests do not access HID hardware and can be run separately:
+The test suite covers protocols, device catalogs, settings, history storage, image handling and installation helpers without accessing HID hardware. It can be run separately from the WinUI app:
 
 ```
 dotnet test .\PulsarBattery.Device.Tests\PulsarBattery.Device.Tests.csproj -c Release
 ```
+
+## Keyboard shortcuts and history
+
+- `F5`: refresh the battery reading.
+- `Ctrl+1`, `Ctrl+2`, `Ctrl+3`, `Ctrl+4`: open Dashboard, Mouse settings, History and Settings.
+- History > Export CSV saves all retained readings with their timestamp, battery percentage, charging state and model.
+
+Settings and history are stored in `%LOCALAPPDATA%\PulsarBattery\`. History keeps the latest 500 valid readings and can recover from `history.json.bak` if the main file is damaged. Clearing history also removes the recovery copy.
 
 ## Startup (tray only)
 
@@ -87,7 +98,7 @@ Startup folder:
 
 ## Disclaimer
 
-PulsarBattery is an community project. It is not affiliated with Pulsar Gaming Gears and is neither supported nor sponsored by the company.
+PulsarBattery is a community project. It is not affiliated with Pulsar Gaming Gears and is neither supported nor sponsored by the company.
 
 ## Contributing
 

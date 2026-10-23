@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to coding agents working in this repository.
 
 ## Project
 
@@ -18,7 +18,7 @@ Publish output: `PulsarBattery\bin\Publish\win-x64\PulsarBattery.exe` (single fi
 
 `PulsarBattery.exe --background` (or `--tray`) starts without showing the window.
 
-Protocol, catalog, checksum and DPI-codec tests live in `PulsarBattery.Device.Tests`. CI (`.github/workflows/build.yml`) runs them before publishing; `release.yml` fires on `v*` tags and rewrites the version in `app.manifest` and `Package.appxmanifest` from the tag.
+Protocol, catalog, checksum, DPI-codec and app-service regression tests live in `PulsarBattery.Device.Tests`. CI (`.github/workflows/build.yml`) runs them before publishing; `release.yml` fires on `v*` tags and rewrites the version in `app.manifest` and `Package.appxmanifest` from the tag.
 
 ## Architecture
 
@@ -28,10 +28,10 @@ Three projects (`PulsarBattery.slnx`):
 
 **`PulsarBattery`**: WinUI 3 app, x64 only. No DI container; services are instantiated directly.
 
-**`PulsarBattery.Device.Tests`**: xUnit golden-frame, strict-parser, catalog and DPI round-trip tests. It never opens HID hardware.
+**`PulsarBattery.Device.Tests`**: xUnit golden-frame, strict-parser, catalog and DPI round-trip tests, plus source-linked app-service tests for storage, settings, device images and installation helpers. It never opens HID hardware and does not require starting WinUI.
 
 - `PulsarBatteryReader`: tries each `IHidBackend` in `_backends` order, returns first success. All reads serialized through the static `GlobalReadLock`.
-- `BatteryMonitor`: background `Task.Run` loop (5s tick). Owns its own reader, caches the last good status for 10 min, and only raises notifications. Never touches UI. Uses `GetForegroundWindow() == 0` as a workstation-lock heuristic, with a separate alert threshold while locked.
+- `BatteryMonitor`: background `Task.Run` loop (5s tick). Owns its own reader and alerts only from fresh, valid readings; unavailable readings stop the alert sound. Never touches UI. Uses `GetForegroundWindow() == 0` as a workstation-lock heuristic, with a separate alert threshold while locked. Timing and cooldowns use monotonic timestamps.
 - `MainViewModel`: a *second* polling loop, on a `DispatcherTimer`, driving all UI state plus history logging. Manual `INotifyPropertyChanged` (not CommunityToolkit `[ObservableProperty]`).
 - `AppSettingsService`: static wrapper over `AppSettings`, thread-safe via `lock (Gate)`.
 - `TrayIcon`: `H.NotifyIcon.WinUI`; created in `OnLaunched` after the window exists.
@@ -45,8 +45,9 @@ Both polling loops read the device independently. That is intentional, and `Glob
 
 ### Settings & storage
 - `AppSettings` is an immutable `record`. Mutate via `AppSettingsService.Update(s => s with { ... })`.
-- `AppSettings.Sanitize()` clamps ranges and normalizes `Language`; must run before persisting.
-- Persisted as JSON under `%LOCALAPPDATA%\PulsarBattery\` (`settings.json` via `SettingsStore`, `history.json` via `HistoryStore`, written atomically through a `.tmp` + `File.Move`). **Not** `ApplicationData.Current.LocalSettings`, because the app is unpackaged.
+- `AppSettings.Sanitize(settings)` clamps ranges and normalizes `Language`; must run before persisting.
+- Persisted as JSON under `%LOCALAPPDATA%\PulsarBattery\` (`settings.json` via `SettingsStore`, `history.json` via `HistoryStore`). Writes use unique temporary files, flush to disk and atomically replace the destination. **Not** `ApplicationData.Current.LocalSettings`, because the app is unpackaged.
+- `HistoryStore` validates, deduplicates and retains at most 500 readings. It recovers from `history.json.bak` without replacing a healthy backup with a corrupt primary. Clearing history also deletes the backup. History CSV export includes all retained readings and escapes spreadsheet formula prefixes.
 - `SelfInstallService` copies the exe to `%LOCALAPPDATA%\Programs\PulsarBattery` and relaunches with `--cleanup-source-exe`; `StartupRegistrationService` writes the `HKCU\...\CurrentVersion\Run` value with `--background`.
 
 ### JSON serialization
@@ -63,12 +64,12 @@ Every page uses the same shell: `ScrollViewer` → `Grid Padding="32,24,32,32"` 
 
 Two spacing traps, both hit in production and both documented inline where they apply:
 - **Page titles carry `Margin="0,0,0,-8"`.** `TitleTextBlockStyle` puts a 28px font in a 36px line height, so ~8px of slack sits below the glyphs and a `Spacing="24"` panel optically reads ~33px under the title but ~25px between sections. The negative margin cancels it. Do not remove it.
-- **A closed `InfoBar` still consumes `StackPanel.Spacing`.** `IsOpen="False"` collapses the template to 0px but leaves `Visibility="Visible"`, so the parent still allots a full gap. Three closed bars cost 72px on `MouseSettingsPage`. Bind `Visibility` to the same flag as `IsOpen` (`MouseSettingsPage.BoolToVisibility` via `x:Bind`). `SettingsPage.InstallInfoBar` still has this, worth ~12px.
+- **A closed `InfoBar` still consumes `StackPanel.Spacing`.** `IsOpen="False"` collapses the template to 0px but leaves `Visibility="Visible"`, so the parent still allots a full gap. Bind `Visibility` to the same flag as `IsOpen`, as on `MouseSettingsPage` and `SettingsPage.InstallInfoBar`.
 
 `SettingsPage.xaml` holds page-local `SettingsSectionHeaderStyle` and `SettingsNumberBoxStyle` in `Page.Resources`. The NumberBox style must stay unbased: WindowsAppSDK ships no `DefaultNumberBoxStyle` key. Put shared styles in `App.xaml`, never in a new `.xaml` under `Pages\` (see the csproj dual-entry rule below).
 
 ### Change-handler guards
-Pages are **not** cached (no `NavigationCacheMode` anywhere), so every visit reconstructs the page, and `NavigationView` has `SelectionFollowsFocus="Enabled"` so keyboard focus alone triggers that. `AppSettingsService.Update` then persists on a 750 ms debounce with no visible confirmation, so a stray handler silently corrupts `settings.json`.
+Pages are **not** cached (no `NavigationCacheMode` anywhere), so every visit reconstructs the page. `NavigationView` has `SelectionFollowsFocus="Disabled"`; keyboard focus alone must not navigate. `AppSettingsService.Update` persists on a 750 ms debounce, so programmatic control updates must not be mistaken for user edits.
 
 The house pattern, in `SettingsPage` and `MouseSettingsPage`: a `_isUpdating*` latch **initialised to `true`**, cleared at the end of `Loaded`, and **re-armed in `Unloaded`**; every handler early-returns while it is set. A constructor-scoped guard is not enough, because WinUI raises `SelectionChanged` / `Toggled` both when a control is templated and again when the page is torn down.
 
@@ -76,13 +77,15 @@ Consequences worth keeping:
 - Populate selection state in `Loaded`, not the constructor. `ViewModel` (`DataContext as MainViewModel`) is null in the constructor and only resolves by `Loading`. `ApplyLocalization()` is the exception and stays in the constructor so cards are not blank through first layout.
 - Never persist from a null or untagged selection. `LanguageComboBox` items are declared in XAML and the "Auto" item carries `Tag="auto"`, a UI-only sentinel mapping to a null `AppSettings.Language`; a null `Tag` made "user picked Auto" indistinguishable from "fired with no selection" and wiped the saved language.
 - `StartWithWindowsToggle` has **no** `IsOn` binding. A `Mode=OneWay` x:Bind pushes on load and raises `Toggled`, re-entering the autostart install flow. `IsOn` is only ever set through the latched `ApplyStartWithWindowsToggleState`.
+- Settings and mouse inputs use guarded synchronization and explicit handlers. Keep guards active during capability, range and value updates; reject non-finite numeric input and gate mouse edits on write capability and busy state.
+- `F5` refreshes battery status; `Ctrl+1` through `Ctrl+4` navigate to Dashboard, Mouse settings, History and Settings.
 
 ### Threading
 - UI updates from background threads: `DispatcherQueue.TryEnqueue(...)`.
 - HID reads: serialized by `PulsarBatteryReader.GlobalReadLock`.
 
 ### App lifecycle
-- `App.ExitApplication()` sets `IsExitRequested` before closing, so `Closed` handlers use this flag to tell tray-minimize from a real exit.
+- `App.ExitApplication()` sets `IsExitRequested`, cancels the monitor, awaits `MainWindow.StopAsync()` and flushes settings before disposing resources and closing. `MainViewModel.StopAsync()` stops timers, invalidates pending UI updates and waits for the final history save. Preserve this order so shutdown cannot lose the last readings or let a late callback restart polling.
 
 ### Code style
 - **No em dashes**, in code, comments, XML docs, commit messages or docs. Use a colon, a full stop, or parentheses instead.

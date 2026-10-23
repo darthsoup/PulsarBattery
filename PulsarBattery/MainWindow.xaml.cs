@@ -1,13 +1,17 @@
 using Microsoft.UI;
 using Microsoft.UI.Windowing;
 using Microsoft.UI.Xaml;
+using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
+using Microsoft.UI.Xaml.Input;
 using PulsarBattery.Pages;
 using PulsarBattery.Tools;
 using PulsarBattery.ViewModels;
 using System;
 using System.IO;
 using System.Reflection;
+using System.Threading.Tasks;
+using Windows.System;
 using WinRT.Interop;
 
 namespace PulsarBattery;
@@ -25,6 +29,8 @@ public sealed partial class MainWindow : Window
 
     private readonly MainViewModel _viewModel = new();
     private AppWindow? _appWindow;
+    private uint _windowDpi;
+    private bool _isStopping;
     private static string? _extractedEmbeddedIconPath;
 
     internal MainViewModel ViewModel => _viewModel;
@@ -48,18 +54,56 @@ public sealed partial class MainWindow : Window
         RootGrid.DataContext = _viewModel;
         _viewModel.Start();
 
-        DashboardItem.Content = Loc.T("Dashboard");
-        MouseItem.Content = Loc.T("Mouse");
-        HistoryItem.Content = Loc.T("History");
+        ConfigureNavigationItem(DashboardItem, "Dashboard", "Ctrl+1");
+        ConfigureNavigationItem(MouseItem, "Mouse", "Ctrl+2");
+        ConfigureNavigationItem(HistoryItem, "History", "Ctrl+3");
         NavView.Loaded += NavView_Loaded;
 
         Activated += MainWindow_Activated;
+        Closed += MainWindow_Closed;
 
         NavView.SelectedItem = DashboardItem;
         NavigateTo("dashboard");
     }
 
-    internal void Stop() => _viewModel.Stop();
+    internal void Stop()
+    {
+        _isStopping = true;
+        _viewModel.Stop();
+    }
+
+    internal Task StopAsync()
+    {
+        _isStopping = true;
+        return _viewModel.StopAsync();
+    }
+
+    internal void ShowAndActivate()
+    {
+        if (_isStopping || App.IsExitRequested)
+        {
+            return;
+        }
+
+        EfficiencyMode.Set(false);
+        EnsureAppWindowInitialized();
+        if (_appWindow?.Presenter is OverlappedPresenter { State: OverlappedPresenterState.Minimized } presenter)
+        {
+            presenter.Restore();
+        }
+
+        _appWindow?.Show();
+        Activate();
+    }
+
+    private static void ConfigureNavigationItem(NavigationViewItem item, string label, string shortcut)
+    {
+        var text = Loc.T(label);
+        item.Content = text;
+        AutomationProperties.SetName(item, text);
+        AutomationProperties.SetAcceleratorKey(item, shortcut);
+        ToolTipService.SetToolTip(item, $"{text} ({shortcut})");
+    }
 
     private void NavView_Loaded(object sender, RoutedEventArgs e)
     {
@@ -67,18 +111,35 @@ public sealed partial class MainWindow : Window
         // available once the NavigationView has loaded.
         if (NavView.SettingsItem is NavigationViewItem settingsItem)
         {
-            settingsItem.Content = Loc.T("Settings");
+            ConfigureNavigationItem(settingsItem, "Settings", "Ctrl+4");
         }
     }
 
     private void MainWindow_Activated(object sender, WindowActivatedEventArgs args)
     {
+        if (_isStopping || App.IsExitRequested)
+        {
+            return;
+        }
+
         var isActive = args.WindowActivationState != WindowActivationState.Deactivated;
         _viewModel.SetWindowActive(isActive);
         if (isActive)
         {
+            EfficiencyMode.Set(false);
             EnsureAppWindowInitialized();
             _viewModel.RefreshNow();
+        }
+    }
+
+    private void MainWindow_Closed(object sender, WindowEventArgs args)
+    {
+        Activated -= MainWindow_Activated;
+        NavView.Loaded -= NavView_Loaded;
+        if (_appWindow is not null)
+        {
+            _appWindow.Closing -= AppWindow_Closing;
+            _appWindow.Changed -= AppWindow_Changed;
         }
     }
 
@@ -94,21 +155,58 @@ public sealed partial class MainWindow : Window
             var hwnd = WindowNative.GetWindowHandle(this);
             var windowId = Microsoft.UI.Win32Interop.GetWindowIdFromWindow(hwnd);
             _appWindow = AppWindow.GetFromWindowId(windowId);
+            _appWindow.Closing += AppWindow_Closing;
+            _appWindow.Changed += AppWindow_Changed;
+        }
+        catch (Exception ex)
+        {
+            Log.Error(nameof(MainWindow), ex);
+            return;
+        }
 
-            _appWindow.Resize(new Windows.Graphics.SizeInt32(900, 820));
+        try
+        {
+            var hwnd = WindowNative.GetWindowHandle(this);
+            var scale = Math.Max(96u, GetDpiForWindow(hwnd)) / 96.0;
+            var workArea = DisplayArea.GetFromWindowId(_appWindow.Id, DisplayAreaFallback.Nearest).WorkArea;
+            var width = Math.Min((int)Math.Round(900 * scale), workArea.Width);
+            var height = Math.Min((int)Math.Round(820 * scale), workArea.Height);
+            _appWindow.MoveAndResize(new Windows.Graphics.RectInt32(
+                workArea.X + (workArea.Width - width) / 2,
+                workArea.Y + (workArea.Height - height) / 2,
+                width,
+                height));
+            UpdateMinimumWindowSize();
+        }
+        catch (Exception ex)
+        {
+            Log.Error(nameof(MainWindow), ex);
+        }
+    }
 
-            if (_appWindow.Presenter is OverlappedPresenter presenter)
+    private void AppWindow_Changed(AppWindow sender, AppWindowChangedEventArgs args) => UpdateMinimumWindowSize();
+
+    private void UpdateMinimumWindowSize()
+    {
+        try
+        {
+            var dpi = Math.Max(96u, GetDpiForWindow(WindowNative.GetWindowHandle(this)));
+            if (dpi == _windowDpi || _appWindow?.Presenter is not OverlappedPresenter presenter)
             {
-                // PreferredMinimum* takes physical pixels.
-                var scale = GetDpiForWindow(hwnd) / 96.0;
-                presenter.PreferredMinimumWidth = (int)(MinWindowWidthDip * scale);
-                presenter.PreferredMinimumHeight = (int)(MinWindowHeightDip * scale);
+                return;
             }
 
-            _appWindow.Closing += AppWindow_Closing;
+            _windowDpi = dpi;
+            var scale = dpi / 96.0;
+            var workArea = DisplayArea.GetFromWindowId(_appWindow.Id, DisplayAreaFallback.Nearest).WorkArea;
+            // AppWindow dimensions use physical pixels, unlike the page's logical dimensions.
+            presenter.PreferredMinimumWidth = Math.Min((int)Math.Ceiling(MinWindowWidthDip * scale), workArea.Width);
+            presenter.PreferredMinimumHeight = Math.Min((int)Math.Ceiling(MinWindowHeightDip * scale), workArea.Height);
         }
-        catch
+        catch (Exception ex)
         {
+            _windowDpi = 0;
+            Log.Error(nameof(MainWindow), ex);
         }
     }
 
@@ -190,45 +288,85 @@ public sealed partial class MainWindow : Window
 
     private void AppWindow_Closing(AppWindow sender, AppWindowClosingEventArgs args)
     {
+        if (App.IsShutdownComplete)
+        {
+            return;
+        }
+
+        args.Cancel = true;
         if (App.IsExitRequested)
         {
             return;
         }
 
-        var shouldMinimizeToTray = Services.AppSettingsService.Current.MinimizeToTrayOnClose;
-
-        if (shouldMinimizeToTray)
+        if (Services.AppSettingsService.Current.MinimizeToTrayOnClose && App.IsTrayAvailable)
         {
-            args.Cancel = true;
-
             try
             {
                 _viewModel.SetWindowActive(false);
                 sender.Hide();
                 EfficiencyMode.Set(true);
             }
-            catch
+            catch (Exception ex)
             {
+                Log.Error(nameof(MainWindow), ex);
             }
+
+            return;
         }
+
+        // Keep the dispatcher alive until the final history snapshot is persisted.
+        DispatcherQueue.TryEnqueue(App.ExitApplication);
     }
 
     private void NavView_SelectionChanged(NavigationView sender, NavigationViewSelectionChangedEventArgs args)
     {
+        if (_isStopping || App.IsExitRequested)
+        {
+            return;
+        }
+
         if (args.IsSettingsSelected)
         {
             NavigateTo("settings");
             return;
         }
 
-        var tag = (args.SelectedItemContainer?.Tag as string) ?? "dashboard";
-        NavigateTo(tag);
+        if (args.SelectedItemContainer?.Tag is string tag)
+        {
+            NavigateTo(tag);
+        }
     }
 
-    /// <summary>
-    /// Selecting the item (rather than navigating directly) keeps the
-    /// NavigationView highlight in sync via NavView_SelectionChanged.
-    /// </summary>
+    private void NavigationAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        if (_isStopping || App.IsExitRequested)
+        {
+            return;
+        }
+
+        NavView.SelectedItem = sender.Key switch
+        {
+            VirtualKey.Number1 => DashboardItem,
+            VirtualKey.Number2 => MouseItem,
+            VirtualKey.Number3 => HistoryItem,
+            VirtualKey.Number4 => NavView.SettingsItem,
+            _ => NavView.SelectedItem
+        };
+        args.Handled = true;
+    }
+
+    private void RefreshAccelerator_Invoked(KeyboardAccelerator sender, KeyboardAcceleratorInvokedEventArgs args)
+    {
+        if (!_isStopping && !App.IsExitRequested)
+        {
+            _viewModel.RefreshNow();
+        }
+
+        args.Handled = true;
+    }
+
+    /// <summary>Selecting the item also updates the navigation highlight.</summary>
     internal void SelectHistoryTab() => NavView.SelectedItem = HistoryItem;
 
     private void NavigateTo(string tag)

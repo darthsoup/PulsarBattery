@@ -21,7 +21,6 @@ namespace PulsarBattery.ViewModels;
 
 public sealed class MainViewModel : INotifyPropertyChanged
 {
-    private const int MaxHistoryEntries = 500;
     private const int DefaultHistoryPageSize = 50;
     private const double MinimumPollIntervalMinutes = 1.0;
     private const double HistorySaveIntervalSeconds = 15.0;
@@ -34,15 +33,19 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private readonly PulsarBatteryReader _batteryReader;
     private readonly HistoryStore _historyStore;
-    private readonly DispatcherQueue _dispatcherQueue;
     private readonly DispatcherTimer _pollTimer;
     private readonly DispatcherTimer _historySaveTimer;
     private readonly SemaphoreSlim _historySaveLock;
     private readonly SemaphoreSlim _batteryUpdateLock;
-    private readonly SemaphoreSlim _deviceSettingsWriteLock;
 
     private DateTimeOffset _lastLoggedTime;
     private bool _isHistoryLoaded;
+    private Task? _historyLoadTask;
+    private bool _isPopulatingHistory;
+    private int _historyRevision;
+    private int _savedHistoryRevision;
+    private bool _isRunning;
+    private int _lifecycleVersion;
     private bool _isLoading;
     private bool _hasInitialData;
     private bool _noDeviceFound;
@@ -114,13 +117,29 @@ public sealed class MainViewModel : INotifyPropertyChanged
         private set => SetProperty(ref _noDeviceFound, value);
     }
 
-    public Visibility LoadingVisibility => IsLoading && !HasInitialData && !NoDeviceFound ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility LoadingVisibility => IsLoading && !HasInitialData ? Visibility.Visible : Visibility.Collapsed;
 
-    public Visibility ContentVisibility => HasInitialData && !NoDeviceFound ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility ContentVisibility => HasInitialData ? Visibility.Visible : Visibility.Collapsed;
 
-    public Visibility NoDeviceVisibility => NoDeviceFound && !IsLoading ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility NoDeviceVisibility => NoDeviceFound && !HasInitialData && !IsLoading ? Visibility.Visible : Visibility.Collapsed;
 
     public Visibility RefreshingVisibility => IsLoading && HasInitialData ? Visibility.Visible : Visibility.Collapsed;
+
+    public bool IsDeviceConnected => HasInitialData && !NoDeviceFound;
+
+    public bool CanRefresh => _isRunning && _isHistoryLoaded && !IsLoading && !IsReadingDeviceSettings && !IsApplyingDeviceSetting;
+
+    public bool HasStaleData => HasInitialData && NoDeviceFound;
+
+    public Visibility StaleDataVisibility => HasStaleData ? Visibility.Visible : Visibility.Collapsed;
+
+    public string StaleDataText => Loc.T("The mouse is unavailable. Showing the last successful reading. Move the mouse, check the receiver, or connect the USB cable.");
+
+    public string DeviceStatusText => IsLoading
+        ? Loc.T("Reading battery status...")
+        : NoDeviceFound ? Loc.T("Device unavailable")
+        : IsDeviceConnected ? Loc.T("Connected")
+        : Loc.T("No data yet");
 
     public int BatteryPercentage
     {
@@ -168,11 +187,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
     /// Drives the hero card's state colors; Low mirrors <see cref="TrayIconState"/>.IsLow.
     /// </summary>
     public BatteryState BatteryVisualState =>
-        IsCharging ? BatteryState.Charging
-        : HasInitialData && BatteryPercentage < AlertThresholdUnlockedPercent ? BatteryState.Low
+        !IsDeviceConnected ? BatteryState.Normal
+        : IsCharging ? BatteryState.Charging
+        : BatteryPercentage < AlertThresholdUnlockedPercent ? BatteryState.Low
         : BatteryState.Normal;
 
-    public Visibility ChargingGlyphVisibility => IsCharging ? Visibility.Visible : Visibility.Collapsed;
+    public Visibility ChargingGlyphVisibility => IsDeviceConnected && IsCharging ? Visibility.Visible : Visibility.Collapsed;
 
     /// <summary>
     /// Snapshot for <see cref="Services.TrayIconRenderer"/>; the icon itself
@@ -180,14 +200,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
     /// </summary>
     public TrayIconState TrayIconState => new(
         ShowBattery: ShowBatteryInTray,
-        HasData: HasInitialData,
+        HasData: IsDeviceConnected,
         Percentage: BatteryPercentage,
         IsCharging: IsCharging,
-        IsLow: HasInitialData && !IsCharging && BatteryPercentage < AlertThresholdUnlockedPercent);
+        IsLow: IsDeviceConnected && !IsCharging && BatteryPercentage < AlertThresholdUnlockedPercent);
 
-    public string TrayTooltipText => HasInitialData
-        ? $"{ModelName} — {BatteryPercentage}% · {ChargingStateText}"
-        : "Pulsar Battery";
+    public string TrayTooltipText => IsDeviceConnected
+        ? $"{ModelName} · {BatteryPercentage}% · {ChargingStateText}"
+        : HasStaleData
+            ? $"{ModelName} · {Loc.T("Device unavailable")} · {LastUpdatedText}"
+            : "Pulsar Battery";
 
     private void NotifyTrayProperties()
     {
@@ -407,12 +429,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
         get => _deviceSettings?.DebounceMs ?? 0;
         set
         {
-            if (_isRefreshingDeviceSettings || !CanWriteDebounce || double.IsNaN(value) || _deviceSettings?.DebounceMs is null)
+            if (_isRefreshingDeviceSettings || !CanWriteDebounce || !double.IsFinite(value) || _deviceSettings?.DebounceMs is null)
             {
                 return;
             }
 
-            var ms = Math.Clamp((int)Math.Round(value), (int)DebounceMinimum, (int)DebounceMaximum);
+            var ms = (int)Math.Round(Math.Clamp(value, DebounceMinimum, DebounceMaximum));
             if (_deviceSettings.DebounceMs == ms)
             {
                 return;
@@ -427,12 +449,12 @@ public sealed class MainViewModel : INotifyPropertyChanged
         get => _deviceSettings?.Dpi ?? 0;
         set
         {
-            if (_isRefreshingDeviceSettings || !CanWriteDpi || double.IsNaN(value) || _deviceSettings?.Dpi is null)
+            if (_isRefreshingDeviceSettings || !CanWriteDpi || !double.IsFinite(value) || _deviceSettings?.Dpi is null)
             {
                 return;
             }
 
-            var dpi = NormalizeDpi((int)Math.Round(value), _deviceSettings.Dpi.Value);
+            var dpi = NormalizeDpi((int)Math.Round(Math.Clamp(value, DpiMinimum, DpiMaximum)), _deviceSettings.Dpi.Value);
             if (dpi is null)
             {
                 SetMouseSettingsError(Loc.T("Setting could not be applied"));
@@ -494,7 +516,9 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _deviceSettingsCapabilities?.CanRead(field) == true;
 
     private bool CanWrite(DeviceSettingField field) =>
-        !_isApplyingDeviceSetting
+        _isRunning
+        && IsDeviceConnected
+        && !_isApplyingDeviceSetting
         && !_isReadingDeviceSettings
         && !IsLoading
         && _deviceSettingsCapabilities?.CanWrite(field) == true;
@@ -598,16 +622,53 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public async Task RefreshDeviceSettingsAsync()
     {
+        if (!IsDeviceConnected)
+        {
+            await UpdateBatteryStatusAsync();
+            if (!IsDeviceConnected)
+            {
+                return;
+            }
+        }
+
+        if (!_isRunning || !_isHistoryLoaded || !await _batteryUpdateLock.WaitAsync(0))
+        {
+            return;
+        }
+
+        var lifecycleVersion = _lifecycleVersion;
         BeginDeviceSettingsRead();
         try
         {
             _hasAttemptedDeviceSettingsForCurrentIdentity = true;
             var snapshot = await ReadDeviceSettingsAsync();
+            if (!IsCurrentLifecycle(lifecycleVersion))
+            {
+                return;
+            }
+
             UpdateDeviceSettings(snapshot);
+            if (snapshot is null)
+            {
+                SetMouseSettingsError(Loc.T("Mouse settings could not be read. Wake the mouse and try again."));
+            }
+            else
+            {
+                ClearMouseSettingsError();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(nameof(MainViewModel), ex);
+            if (IsCurrentLifecycle(lifecycleVersion))
+            {
+                SetMouseSettingsError(Loc.T("Mouse settings could not be read. Wake the mouse and try again."));
+            }
         }
         finally
         {
             EndDeviceSettingsRead();
+            _batteryUpdateLock.Release();
         }
     }
 
@@ -622,7 +683,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     }
 
     public string LastUpdatedText => _lastUpdated.HasValue
-        ? _lastUpdated.Value.ToString("T", CultureInfo.CurrentCulture)
+        ? _lastUpdated.Value.ToString("G", CultureInfo.CurrentCulture)
         : Loc.T("No data yet");
 
     public string HistoryCountText => string.Format(Loc.T("{0} entries"), History.Count);
@@ -632,6 +693,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         get => _pollIntervalMinutes;
         set
         {
+            if (!double.IsFinite(value))
+            {
+                return;
+            }
+
             var clampedMinutes = Math.Clamp(value, MinimumPollIntervalMinutes, 120);
             if (SetProperty(ref _pollIntervalMinutes, clampedMinutes))
             {
@@ -646,6 +712,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         get => _logIntervalMinutes;
         set
         {
+            if (!double.IsFinite(value))
+            {
+                return;
+            }
+
             var clampedMinutes = Math.Clamp(value, 1.0, 240);
             if (SetProperty(ref _logIntervalMinutes, clampedMinutes))
             {
@@ -700,6 +771,11 @@ public sealed class MainViewModel : INotifyPropertyChanged
         get => _alertCooldownMinutes;
         set
         {
+            if (!double.IsFinite(value))
+            {
+                return;
+            }
+
             var clampedMinutes = Math.Clamp(value, 0, 24 * 60);
             if (SetProperty(ref _alertCooldownMinutes, clampedMinutes))
             {
@@ -795,11 +871,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
     {
         _batteryReader = new PulsarBatteryReader();
         _historyStore = new HistoryStore();
-        _dispatcherQueue = DispatcherQueue.GetForCurrentThread()
+        _ = DispatcherQueue.GetForCurrentThread()
             ?? throw new InvalidOperationException($"{nameof(MainViewModel)} must be constructed on the UI thread.");
         _historySaveLock = new SemaphoreSlim(1, 1);
         _batteryUpdateLock = new SemaphoreSlim(1, 1);
-        _deviceSettingsWriteLock = new SemaphoreSlim(1, 1);
         _lastLoggedTime = DateTimeOffset.MinValue;
         _modelName = DefaultModelName;
 
@@ -833,25 +908,76 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _pollTimer = CreatePollTimer();
         _historySaveTimer = CreateHistorySaveTimer();
 
-        History.CollectionChanged += (_, _) => UpdateHistoryPagination();
+        History.CollectionChanged += (_, _) =>
+        {
+            if (_isPopulatingHistory)
+            {
+                return;
+            }
+
+            _historyRevision++;
+            UpdateHistoryPagination();
+        };
         UpdateHistoryPagination();
     }
 
     public void Start()
     {
-        _ = LoadHistoryAsync();
-        _ = UpdateBatteryStatusAsync();
-        _pollTimer.Start();
-        _historySaveTimer.Start();
+        if (_isRunning)
+        {
+            return;
+        }
+
+        _isRunning = true;
+        var lifecycleVersion = ++_lifecycleVersion;
+        IsLoading = true;
+        _ = InitializeAsync(lifecycleVersion);
     }
 
     public void Stop()
     {
+        _ = StopAsync();
+    }
+
+    public async Task StopAsync()
+    {
+        if (_isRunning)
+        {
+            _isRunning = false;
+            _lifecycleVersion++;
+        }
+
         _pollTimer.Stop();
         _historySaveTimer.Stop();
         _deviceImageLoadCancellation?.Cancel();
-        _ = SaveHistoryAsync();
+        IsLoading = false;
+        NotifyCanWriteProperties();
+        await _batteryUpdateLock.WaitAsync();
+        _batteryUpdateLock.Release();
+        await SaveHistoryAsync(waitForPendingSave: true);
     }
+
+    private async Task InitializeAsync(int lifecycleVersion)
+    {
+        await EnsureHistoryLoadedAsync();
+        if (!IsCurrentLifecycle(lifecycleVersion))
+        {
+            return;
+        }
+
+        _pollTimer.Start();
+        _historySaveTimer.Start();
+        await _batteryUpdateLock.WaitAsync();
+        _batteryUpdateLock.Release();
+        if (!IsCurrentLifecycle(lifecycleVersion))
+        {
+            return;
+        }
+
+        await UpdateBatteryStatusAsync();
+    }
+
+    private bool IsCurrentLifecycle(int lifecycleVersion) => _isRunning && _lifecycleVersion == lifecycleVersion;
 
     private void BeginDeviceImageUpdate(string model, int? protocolModelId = null)
     {
@@ -922,6 +1048,10 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
         {
+            if (ReferenceEquals(_deviceImageLoadCancellation, cancellation))
+            {
+                _deviceImageLoadFailed = true;
+            }
         }
         catch (Exception ex)
         {
@@ -947,7 +1077,28 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void SetDeviceImage(Uri? imageUri)
     {
-        _deviceImage = imageUri is null ? null : new BitmapImage(imageUri);
+        if (imageUri is null)
+        {
+            _deviceImage = null;
+        }
+        else
+        {
+            var bitmap = new BitmapImage();
+            bitmap.ImageFailed += (_, _) =>
+            {
+                if (!ReferenceEquals(_deviceImage, bitmap))
+                {
+                    return;
+                }
+
+                _deviceImageLoadFailed = true;
+                var fallback = DeviceImageService.GetPackagedImage(_deviceImageModel ?? ModelName);
+                SetDeviceImage(fallback != imageUri ? fallback : null);
+            };
+            _deviceImage = bitmap;
+            bitmap.UriSource = imageUri;
+        }
+
         OnPropertyChanged(nameof(DeviceImage));
         OnPropertyChanged(nameof(DeviceImageVisibility));
     }
@@ -986,19 +1137,21 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     public async Task ClearHistoryAsync()
     {
-        if (!_isHistoryLoaded)
+        await EnsureHistoryLoadedAsync();
+        await _historySaveLock.WaitAsync();
+        try
         {
-            _isHistoryLoaded = true;
-        }
-
-        await EnqueueAsync(() =>
-        {
+            // Keep the visible history intact until the durable clear succeeds.
+            await _historyStore.SaveAsync(Array.Empty<BatteryReading>());
             History.Clear();
             _lastLoggedTime = DateTimeOffset.MinValue;
-        });
-
-        SetCurrentHistoryPage(1);
-        await SaveHistoryAsync();
+            SetCurrentHistoryPage(1);
+            _savedHistoryRevision = _historyRevision;
+        }
+        finally
+        {
+            _historySaveLock.Release();
+        }
     }
 
     private DispatcherTimer CreatePollTimer()
@@ -1019,78 +1172,37 @@ public sealed class MainViewModel : INotifyPropertyChanged
         return timer;
     }
 
-    private Task EnqueueAsync(Action action)
-    {
-        var tcs = new TaskCompletionSource<object?>(TaskCreationOptions.RunContinuationsAsynchronously);
-
-        if (!_dispatcherQueue.TryEnqueue(() =>
-        {
-            try
-            {
-                action();
-                tcs.TrySetResult(null);
-            }
-            catch (Exception ex)
-            {
-                tcs.TrySetException(ex);
-            }
-        }))
-        {
-            tcs.TrySetCanceled();
-        }
-
-        return tcs.Task;
-    }
+    private Task EnsureHistoryLoadedAsync() => _historyLoadTask ??= LoadHistoryAsync();
 
     private async Task LoadHistoryAsync()
     {
-        if (_isHistoryLoaded)
-        {
-            return;
-        }
-
-        _isHistoryLoaded = true;
-
         try
         {
-            var historicalReadings = await _historyStore.LoadAsync().ConfigureAwait(false);
-            
-            if (historicalReadings.Count > 0)
+            var historicalReadings = await _historyStore.LoadAsync();
+            _isPopulatingHistory = true;
+            try
             {
-                await PopulateHistoryCollectionAsync(historicalReadings);
-                
-                await EnqueueAsync(() =>
+                foreach (var reading in historicalReadings.Take(HistoryStore.MaxEntries))
                 {
-                    var mostRecent = historicalReadings[0];
-                    BatteryPercentage = mostRecent.Percentage;
-                    IsCharging = mostRecent.IsCharging;
-                    ModelName = mostRecent.Model;
-                    BeginDeviceImageUpdate(mostRecent.Model);
-                    _lastUpdated = mostRecent.Timestamp;
-                    HasInitialData = true;
-                    OnPropertyChanged(nameof(ChargingStateText));
-                    OnPropertyChanged(nameof(BatteryDetailText));
-                    OnPropertyChanged(nameof(LastUpdatedText));
-                    OnPropertyChanged(nameof(BatteryVisualState));
-                    OnPropertyChanged(nameof(ChargingGlyphVisibility));
-                });
+                    History.Add(reading);
+                }
+            }
+            finally
+            {
+                _isPopulatingHistory = false;
             }
         }
         catch (Exception ex)
         {
             Log.Error(nameof(MainViewModel), ex);
         }
-    }
-
-    private async Task PopulateHistoryCollectionAsync(IReadOnlyList<BatteryReading> readings)
-    {
-        await EnqueueAsync(() =>
+        finally
         {
-            foreach (var reading in readings)
-            {
-                History.Add(reading);
-            }
-        });
+            _isHistoryLoaded = true;
+            _savedHistoryRevision = _historyRevision;
+            UpdateHistoryPagination();
+            OnPropertyChanged(nameof(CanRefresh));
+        }
     }
 
     private void UpdateHistoryPagination()
@@ -1139,17 +1251,33 @@ public sealed class MainViewModel : INotifyPropertyChanged
         }
     }
 
-    private async Task SaveHistoryAsync()
+    private async Task SaveHistoryAsync(bool waitForPendingSave = false)
     {
-        if (!_isHistoryLoaded || !await TryAcquireSaveLockAsync())
+        if (!_isHistoryLoaded)
+        {
+            return;
+        }
+
+        if (waitForPendingSave)
+        {
+            await _historySaveLock.WaitAsync();
+        }
+        else if (!await _historySaveLock.WaitAsync(0))
         {
             return;
         }
 
         try
         {
+            if (_savedHistoryRevision == _historyRevision)
+            {
+                return;
+            }
+
+            var revision = _historyRevision;
             var snapshot = CreateHistorySnapshot();
-            await _historyStore.SaveAsync(snapshot).ConfigureAwait(false);
+            await _historyStore.SaveAsync(snapshot);
+            _savedHistoryRevision = revision;
         }
         catch (Exception ex)
         {
@@ -1159,11 +1287,6 @@ public sealed class MainViewModel : INotifyPropertyChanged
         {
             _historySaveLock.Release();
         }
-    }
-
-    private async Task<bool> TryAcquireSaveLockAsync()
-    {
-        return await _historySaveLock.WaitAsync(0).ConfigureAwait(false);
     }
 
     private BatteryReading[] CreateHistorySnapshot()
@@ -1178,18 +1301,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private async Task UpdateBatteryStatusAsync()
     {
-        if (!await _batteryUpdateLock.WaitAsync(0))
+        if (!_isRunning || !_isHistoryLoaded || !await _batteryUpdateLock.WaitAsync(0))
         {
             return;
         }
 
+        var lifecycleVersion = _lifecycleVersion;
         try
         {
             IsLoading = true;
-            NoDeviceFound = false;
             StatusText = Loc.T("Reading battery status...");
 
             var batteryStatus = await ReadBatteryStatusAsync();
+            if (!IsCurrentLifecycle(lifecycleVersion))
+            {
+                return;
+            }
 
             if (batteryStatus is null)
             {
@@ -1197,18 +1324,27 @@ public sealed class MainViewModel : INotifyPropertyChanged
                 UpdateDeviceSettings(null);
                 StatusText = Loc.T("No Pulsar mouse detected");
                 NoDeviceFound = true;
-                IsLoading = false;
                 return;
             }
 
             var settingsIdentityChanged = DeviceSettingsIdentityChanged(batteryStatus);
-            UpdateBatteryProperties(batteryStatus);
             if (settingsIdentityChanged)
             {
+                UpdateDeviceSettings(null);
+                ClearMouseSettingsError();
                 _deviceSettingsModel = batteryStatus.Model;
                 _deviceSettingsProtocolModelId = batteryStatus.ProtocolModelId;
                 _hasDeviceSettingsIdentity = true;
                 _hasAttemptedDeviceSettingsForCurrentIdentity = false;
+            }
+
+            UpdateBatteryProperties(batteryStatus);
+            HasInitialData = true;
+            NoDeviceFound = false;
+
+            if (ShouldLogCurrentReading(batteryStatus))
+            {
+                LogBatteryReading(batteryStatus);
             }
 
             var shouldReadSettings = _isWindowActive
@@ -1218,26 +1354,34 @@ public sealed class MainViewModel : INotifyPropertyChanged
             {
                 _hasAttemptedDeviceSettingsForCurrentIdentity = true;
                 var snapshot = await ReadDeviceSettingsAsync();
+                if (!IsCurrentLifecycle(lifecycleVersion))
+                {
+                    return;
+                }
+
                 UpdateDeviceSettings(snapshot);
             }
 
             StatusText = Loc.T("Updated");
-            HasInitialData = true;
-            NoDeviceFound = false;
-            IsLoading = false;
-
-            if (ShouldLogCurrentReading())
-            {
-                LogBatteryReading(batteryStatus);
-            }
         }
         catch (Exception ex)
         {
             Log.Error(nameof(MainViewModel), ex);
+            if (IsCurrentLifecycle(lifecycleVersion))
+            {
+                ResetDeviceSettingsIdentity();
+                UpdateDeviceSettings(null);
+                NoDeviceFound = true;
+                StatusText = Loc.T("Unable to read battery status. Please try again.");
+            }
         }
         finally
         {
-            IsLoading = false;
+            if (IsCurrentLifecycle(lifecycleVersion))
+            {
+                IsLoading = false;
+            }
+
             _batteryUpdateLock.Release();
         }
     }
@@ -1342,12 +1486,27 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private async Task ApplyDeviceSettingAsync(DeviceSettings changes)
     {
-        await _deviceSettingsWriteLock.WaitAsync();
+        if (!_isRunning || !IsDeviceConnected || !await _batteryUpdateLock.WaitAsync(0))
+        {
+            return;
+        }
+
+        var lifecycleVersion = _lifecycleVersion;
         SetApplyingDeviceSetting(true);
         try
         {
             var applied = await Task.Run(() => _batteryReader.ApplyDeviceSettings(changes));
+            if (!IsCurrentLifecycle(lifecycleVersion))
+            {
+                return;
+            }
+
             var snapshot = await ReadDeviceSettingsAsync();
+            if (!IsCurrentLifecycle(lifecycleVersion))
+            {
+                return;
+            }
+
             UpdateDeviceSettings(snapshot);
             _hasAttemptedDeviceSettingsForCurrentIdentity = true;
 
@@ -1367,12 +1526,15 @@ public sealed class MainViewModel : INotifyPropertyChanged
         catch (Exception ex)
         {
             Log.Error(nameof(MainViewModel), ex);
-            SetMouseSettingsError(Loc.T("Setting could not be applied"));
+            if (IsCurrentLifecycle(lifecycleVersion))
+            {
+                SetMouseSettingsError(Loc.T("Setting could not be applied"));
+            }
         }
         finally
         {
             SetApplyingDeviceSetting(false);
-            _deviceSettingsWriteLock.Release();
+            _batteryUpdateLock.Release();
         }
     }
 
@@ -1421,6 +1583,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void NotifyCanWriteProperties()
     {
+        OnPropertyChanged(nameof(CanRefresh));
         OnPropertyChanged(nameof(CanWritePollingRate));
         OnPropertyChanged(nameof(CanWriteDebounce));
         OnPropertyChanged(nameof(CanWriteMotionSync));
@@ -1491,9 +1654,16 @@ public sealed class MainViewModel : INotifyPropertyChanged
         NotifyTrayProperties();
     }
 
-    private bool ShouldLogCurrentReading()
+    private bool ShouldLogCurrentReading(PulsarBatteryReader.BatteryStatus status)
     {
-        if (IsFirstLog())
+        if (IsFirstLog() || History.Count == 0)
+        {
+            return true;
+        }
+
+        var previous = History[0];
+        if (previous.IsCharging != status.IsCharging
+            || !string.Equals(previous.Model, status.Model, StringComparison.Ordinal))
         {
             return true;
         }
@@ -1509,7 +1679,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private bool HasLogIntervalElapsed()
     {
         var timeSinceLastLog = DateTimeOffset.Now - _lastLoggedTime;
-        return timeSinceLastLog >= TimeSpan.FromMinutes(LogIntervalMinutes);
+        return timeSinceLastLog < TimeSpan.Zero || timeSinceLastLog >= TimeSpan.FromMinutes(LogIntervalMinutes);
     }
 
     private void LogBatteryReading(PulsarBatteryReader.BatteryStatus status)
@@ -1524,7 +1694,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
 
     private void TrimHistoryToMaxEntries()
     {
-        while (History.Count > MaxHistoryEntries)
+        while (History.Count > HistoryStore.MaxEntries)
         {
             History.RemoveAt(History.Count - 1);
         }
@@ -1557,12 +1727,18 @@ public sealed class MainViewModel : INotifyPropertyChanged
             OnPropertyChanged(nameof(ContentVisibility));
             OnPropertyChanged(nameof(NoDeviceVisibility));
             OnPropertyChanged(nameof(RefreshingVisibility));
+            OnPropertyChanged(nameof(IsDeviceConnected));
+            OnPropertyChanged(nameof(HasStaleData));
+            OnPropertyChanged(nameof(StaleDataVisibility));
+            OnPropertyChanged(nameof(DeviceStatusText));
+            NotifyCanWriteProperties();
         }
 
-        if (propertyName == nameof(HasInitialData))
+        if (propertyName == nameof(HasInitialData) || propertyName == nameof(NoDeviceFound))
         {
             NotifyTrayProperties();
             OnPropertyChanged(nameof(BatteryVisualState));
+            OnPropertyChanged(nameof(ChargingGlyphVisibility));
         }
         
         return true;

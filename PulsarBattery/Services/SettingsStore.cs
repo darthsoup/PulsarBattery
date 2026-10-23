@@ -13,18 +13,18 @@ internal sealed class SettingsStore
     private const string ApplicationFolderName = "PulsarBattery";
     private const string TemporaryFileExtension = ".tmp";
 
+    // Concurrent MoveFileEx replacements can fail on Windows, even with unique source files.
+    private static readonly SemaphoreSlim FileAccessLock = new(1, 1);
     private readonly string _filePath;
-    private readonly SemaphoreSlim _fileAccessLock;
 
     public SettingsStore(string? filePath = null)
     {
         _filePath = filePath ?? GetDefaultSettingsFilePath();
-        _fileAccessLock = new SemaphoreSlim(1, 1);
     }
 
     public async Task<AppSettings?> TryLoadAsync(CancellationToken cancellationToken = default)
     {
-        await _fileAccessLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        await FileAccessLock.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -33,11 +33,18 @@ internal sealed class SettingsStore
                 return null;
             }
 
-            await using var stream = File.OpenRead(_filePath);
-            return await JsonSerializer.DeserializeAsync(
+            await using var stream = new FileStream(
+                _filePath, FileMode.Open, FileAccess.Read, FileShare.Read | FileShare.Delete,
+                bufferSize: 4096, options: FileOptions.Asynchronous | FileOptions.SequentialScan);
+            var settings = await JsonSerializer.DeserializeAsync(
                 stream,
                 SettingsJsonContext.Default.AppSettings,
                 cancellationToken).ConfigureAwait(false);
+            return settings is null ? null : AppSettings.Sanitize(settings);
+        }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
         }
         catch (Exception ex)
         {
@@ -47,13 +54,14 @@ internal sealed class SettingsStore
         }
         finally
         {
-            _fileAccessLock.Release();
+            FileAccessLock.Release();
         }
     }
 
     public async Task SaveAsync(AppSettings settings, CancellationToken cancellationToken = default)
     {
-        await _fileAccessLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        settings = AppSettings.Sanitize(settings);
+        await FileAccessLock.WaitAsync(cancellationToken).ConfigureAwait(false);
 
         try
         {
@@ -62,7 +70,7 @@ internal sealed class SettingsStore
         }
         finally
         {
-            _fileAccessLock.Release();
+            FileAccessLock.Release();
         }
     }
 
@@ -70,14 +78,33 @@ internal sealed class SettingsStore
     {
         var temporaryFilePath = GetTemporaryFilePath();
 
-        await WriteToTemporaryFileAsync(settings, temporaryFilePath, cancellationToken).ConfigureAwait(false);
-        ReplaceFileWithTemporary(temporaryFilePath);
+        try
+        {
+            await WriteToTemporaryFileAsync(settings, temporaryFilePath, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+            ReplaceFileWithTemporary(temporaryFilePath);
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(temporaryFilePath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Log.Error(nameof(SettingsStore), ex);
+            }
+        }
     }
 
     private static async Task WriteToTemporaryFileAsync(AppSettings settings, string temporaryFilePath, CancellationToken cancellationToken)
     {
-        await using var stream = File.Create(temporaryFilePath);
+        await using var stream = new FileStream(
+            temporaryFilePath, FileMode.CreateNew, FileAccess.Write, FileShare.None,
+            bufferSize: 4096, options: FileOptions.Asynchronous);
         await JsonSerializer.SerializeAsync(stream, settings, SettingsJsonContext.Default.AppSettings, cancellationToken).ConfigureAwait(false);
+        await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+        stream.Flush(flushToDisk: true);
     }
 
     private void ReplaceFileWithTemporary(string temporaryFilePath)
@@ -97,7 +124,7 @@ internal sealed class SettingsStore
 
     private string GetTemporaryFilePath()
     {
-        return _filePath + TemporaryFileExtension;
+        return _filePath + "." + Guid.NewGuid().ToString("N") + TemporaryFileExtension;
     }
 
     private static string GetDefaultSettingsFilePath()

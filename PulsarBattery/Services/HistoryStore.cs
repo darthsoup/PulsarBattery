@@ -3,6 +3,7 @@ using PulsarBattery.Tools;
 using System;
 using System.Collections.Generic;
 using System.IO;
+using System.Linq;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
@@ -11,35 +12,42 @@ namespace PulsarBattery.Services;
 
 internal sealed class HistoryStore
 {
-    private const string HistoryFileName = "history.json";
-    private const string ApplicationFolderName = "PulsarBattery";
-    private const string TemporaryFileExtension = ".tmp";
+    internal const int MaxEntries = 500;
+    private const long MaxFileSizeBytes = 2 * 1024 * 1024;
+    private const int MaxModelNameLength = 256;
 
     private readonly string _filePath;
-    private readonly SemaphoreSlim _fileAccessLock;
+    private readonly SemaphoreSlim _fileAccessLock = new(1, 1);
+    private bool _canBackUpPrimary;
 
     public HistoryStore(string? filePath = null)
     {
-        _filePath = filePath ?? GetDefaultHistoryFilePath();
-        _fileAccessLock = new SemaphoreSlim(1, 1);
+        _filePath = filePath ?? Path.Combine(
+            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
+            "PulsarBattery", "history.json");
     }
 
     public async Task<IReadOnlyList<BatteryReading>> LoadAsync(CancellationToken cancellationToken = default)
     {
         await _fileAccessLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        
+
         try
         {
-            if (!File.Exists(_filePath))
+            _canBackUpPrimary = false;
+            var readings = await TryReadHistoryFileAsync(_filePath, cancellationToken).ConfigureAwait(false);
+            if (readings is not null)
             {
-                return Array.Empty<BatteryReading>();
+                _canBackUpPrimary = true;
+                return readings;
             }
 
-            return await DeserializeHistoryFileAsync(cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            Log.Error(nameof(HistoryStore), ex);
+            var backup = await TryReadHistoryFileAsync(BackupFilePath, cancellationToken).ConfigureAwait(false);
+            if (backup is not null)
+            {
+                Log.Warn(nameof(HistoryStore), "Recovered battery history from backup.");
+                return backup;
+            }
+
             return Array.Empty<BatteryReading>();
         }
         finally
@@ -50,16 +58,25 @@ internal sealed class HistoryStore
 
     public async Task SaveAsync(IReadOnlyCollection<BatteryReading> readings, CancellationToken cancellationToken = default)
     {
+        ArgumentNullException.ThrowIfNull(readings);
+        cancellationToken.ThrowIfCancellationRequested();
+        var snapshot = Normalize(readings);
+        if (readings.Count > 0 && snapshot.Count == 0)
+        {
+            throw new InvalidDataException("Battery history contains no valid readings.");
+        }
+
         await _fileAccessLock.WaitAsync(cancellationToken).ConfigureAwait(false);
-        
+
         try
         {
-            EnsureDirectoryExists();
-            await WriteHistoryFileAtomicallyAsync(readings, cancellationToken);
-        }
-        catch (Exception ex)
-        {
-            Log.Error(nameof(HistoryStore), ex);
+            var directory = Path.GetDirectoryName(_filePath);
+            if (!string.IsNullOrEmpty(directory))
+            {
+                Directory.CreateDirectory(directory);
+            }
+
+            await WriteHistoryFileAtomicallyAsync(snapshot, cancellationToken).ConfigureAwait(false);
         }
         finally
         {
@@ -67,65 +84,110 @@ internal sealed class HistoryStore
         }
     }
 
-    private async Task<IReadOnlyList<BatteryReading>> DeserializeHistoryFileAsync(CancellationToken cancellationToken)
+    private string BackupFilePath => _filePath + ".bak";
+
+    private async Task<List<BatteryReading>?> TryReadHistoryFileAsync(string path, CancellationToken cancellationToken)
     {
-        await using var stream = File.OpenRead(_filePath);
-        var readings = await JsonSerializer.DeserializeAsync(
-            stream,
-            CompactJsonContext.Default.ListBatteryReading,
-            cancellationToken).ConfigureAwait(false);
-
-        return readings ?? new List<BatteryReading>();
-    }
-
-    private async Task WriteHistoryFileAtomicallyAsync(IReadOnlyCollection<BatteryReading> readings, CancellationToken cancellationToken)
-    {
-        var temporaryFilePath = GetTemporaryFilePath();
-        
-        await WriteToTemporaryFileAsync(readings, temporaryFilePath, cancellationToken);
-        ReplaceFileWithTemporary(temporaryFilePath);
-    }
-
-    private async Task WriteToTemporaryFileAsync(IReadOnlyCollection<BatteryReading> readings, string temporaryFilePath, CancellationToken cancellationToken)
-    {
-        // The source-generated type info is for List<BatteryReading>; any other collection binds the
-        // non-generic overload, which casts to List at runtime and throws for arrays.
-        var list = readings as List<BatteryReading> ?? new List<BatteryReading>(readings);
-
-        await using var stream = File.Create(temporaryFilePath);
-        await JsonSerializer.SerializeAsync(stream, list, CompactJsonContext.Default.ListBatteryReading, cancellationToken).ConfigureAwait(false);
-    }
-
-    private void ReplaceFileWithTemporary(string temporaryFilePath)
-    {
-        // Move is atomic; Copy + Delete could leave a torn history file on crash.
-        File.Move(temporaryFilePath, _filePath, overwrite: true);
-    }
-
-    private void EnsureDirectoryExists()
-    {
-        var directory = Path.GetDirectoryName(_filePath);
-        if (!string.IsNullOrEmpty(directory))
+        cancellationToken.ThrowIfCancellationRequested();
+        try
         {
-            Directory.CreateDirectory(directory);
+            await using var stream = new FileStream(path, FileMode.Open, FileAccess.Read, FileShare.Read,
+                bufferSize: 4096, FileOptions.Asynchronous | FileOptions.SequentialScan);
+            if (stream.Length > MaxFileSizeBytes)
+            {
+                throw new InvalidDataException("Battery history exceeds the maximum file size.");
+            }
+
+            var readings = await JsonSerializer.DeserializeAsync(
+                stream, CompactJsonContext.Default.ListBatteryReading, cancellationToken).ConfigureAwait(false);
+            if (readings is null)
+            {
+                throw new InvalidDataException("Battery history must contain an array of readings.");
+            }
+
+            var normalized = Normalize(readings);
+            if (readings.Count > 0 && normalized.Count == 0)
+            {
+                throw new InvalidDataException("Battery history contains no valid readings.");
+            }
+
+            return normalized;
+        }
+        catch (FileNotFoundException)
+        {
+            return null;
+        }
+        catch (DirectoryNotFoundException)
+        {
+            return null;
+        }
+        catch (Exception ex) when (ex is IOException or UnauthorizedAccessException or JsonException or InvalidDataException)
+        {
+            Log.Error(nameof(HistoryStore), ex);
+            return null;
         }
     }
 
-    private string GetTemporaryFilePath()
+    private static List<BatteryReading> Normalize(IEnumerable<BatteryReading> readings)
     {
-        return _filePath + TemporaryFileExtension;
+        var latestAllowedTimestamp = DateTimeOffset.UtcNow.AddDays(1);
+        return readings
+            .Where(reading => reading is not null &&
+                reading.Percentage is >= 0 and <= 100 &&
+                reading.Timestamp >= DateTimeOffset.UnixEpoch &&
+                reading.Timestamp <= latestAllowedTimestamp &&
+                !string.IsNullOrWhiteSpace(reading.Model) &&
+                reading.Model.Length <= MaxModelNameLength)
+            .Select(reading => reading with { Model = reading.Model.Trim() })
+            .Distinct()
+            .OrderByDescending(reading => reading.Timestamp)
+            .Take(MaxEntries)
+            .ToList();
     }
 
-    private static string GetDefaultHistoryFilePath()
+    private async Task WriteHistoryFileAtomicallyAsync(List<BatteryReading> readings, CancellationToken cancellationToken)
     {
-        var appDataDirectory = GetApplicationDataDirectory();
-        return Path.Combine(appDataDirectory, HistoryFileName);
-    }
+        var temporaryFilePath = _filePath + "." + Guid.NewGuid().ToString("N") + ".tmp";
+        try
+        {
+            await using (var stream = new FileStream(temporaryFilePath, FileMode.CreateNew, FileAccess.Write,
+                FileShare.None, bufferSize: 4096, FileOptions.Asynchronous))
+            {
+                await JsonSerializer.SerializeAsync(stream, readings,
+                    CompactJsonContext.Default.ListBatteryReading, cancellationToken).ConfigureAwait(false);
+                await stream.FlushAsync(cancellationToken).ConfigureAwait(false);
+                stream.Flush(flushToDisk: true);
+            }
 
-    private static string GetApplicationDataDirectory()
-    {
-        return Path.Combine(
-            Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),
-            ApplicationFolderName);
+            cancellationToken.ThrowIfCancellationRequested();
+            if (readings.Count == 0)
+            {
+                // Clearing history must also remove recovery data so deleted readings cannot reappear.
+                File.Delete(BackupFilePath);
+                File.Move(temporaryFilePath, _filePath, overwrite: true);
+            }
+            else if (_canBackUpPrimary && File.Exists(_filePath))
+            {
+                File.Replace(temporaryFilePath, _filePath, BackupFilePath, ignoreMetadataErrors: true);
+            }
+            else
+            {
+                // A failed primary load must never replace a healthy backup with the corrupt file.
+                File.Move(temporaryFilePath, _filePath, overwrite: true);
+            }
+
+            _canBackUpPrimary = true;
+        }
+        finally
+        {
+            try
+            {
+                File.Delete(temporaryFilePath);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                Log.Error(nameof(HistoryStore), ex);
+            }
+        }
     }
 }

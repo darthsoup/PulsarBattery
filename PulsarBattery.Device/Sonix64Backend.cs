@@ -24,6 +24,8 @@ public sealed class Sonix64Backend : IHidBackend
     private string? _firmwareVersion;
     private string? _firmwareDevicePath;
     private string? _lastDevicePath;
+    private string? _settingsDevicePath;
+    private DeviceSettingField _writableFields;
     private int _firmwareAttemptsLeft = 3;
 
     public Sonix64Backend(DeviceDescriptor descriptor)
@@ -71,6 +73,8 @@ public sealed class Sonix64Backend : IHidBackend
 
     public DeviceSettingsSnapshot? ReadSettingsSnapshot(bool debug)
     {
+        _settingsDevicePath = null;
+        _writableFields = DeviceSettingField.None;
         return WithConfigInterface(debug, allowDeviceSwitch: false, (stream, dbg) =>
         {
             var settings = new DeviceSettings(
@@ -89,21 +93,16 @@ public sealed class Sonix64Backend : IHidBackend
                 return null;
             }
 
-            var fields = DeviceSettingField.None;
-            if (settings.PollingRateHz is not null) fields |= DeviceSettingField.PollingRate;
-            if (settings.DebounceMs is not null) fields |= DeviceSettingField.Debounce;
-            if (settings.MotionSync is not null) fields |= DeviceSettingField.MotionSync;
-            if (settings.Dpi is not null) fields |= DeviceSettingField.Dpi;
-            if (settings.DpiStage is not null) fields |= DeviceSettingField.DpiStage;
-            if (settings.LodMm10 is not null) fields |= DeviceSettingField.Lod;
-            if (settings.AngleSnap is not null) fields |= DeviceSettingField.AngleSnap;
-            if (settings.RippleControl is not null) fields |= DeviceSettingField.RippleControl;
+            var fields = GetPresentFields(settings);
+            var writableFields = GetWritableFields(settings);
+            _settingsDevicePath = stream.Device.DevicePath;
+            _writableFields = writableFields;
 
             return new DeviceSettingsSnapshot(
                 settings,
                 new DeviceSettingsCapabilities(
-                    fields,
-                    fields,
+                    Readable: fields,
+                    Writable: writableFields,
                     PollingRates,
                     LodValues,
                     DpiRanges,
@@ -115,66 +114,101 @@ public sealed class Sonix64Backend : IHidBackend
         });
     }
 
-    public bool SupportsSettingsWrite => true;
+    public bool SupportsSettingsWrite => _writableFields != DeviceSettingField.None
+        && string.Equals(_settingsDevicePath, _lastDevicePath, StringComparison.OrdinalIgnoreCase);
 
     public bool ApplySettings(DeviceSettings changes, bool debug)
     {
-        if (_lastDevicePath is null || changes.SleepSeconds is not null)
+        if (_lastDevicePath is null || !SupportsSettingsWrite || !ValidateChanges(changes, _writableFields))
         {
             return false;
         }
 
         var result = WithConfigInterface(debug, allowDeviceSwitch: false, (stream, dbg) =>
         {
-            var allApplied = true;
-
-            if (changes.MotionSync is bool motionSync)
+            if (changes.MotionSync is bool motionSync && !Sonix64Protocol.WriteMotionSync(stream, motionSync, dbg))
             {
-                allApplied &= Sonix64Protocol.WriteMotionSync(stream, motionSync, dbg);
+                return (object)false;
             }
 
-            if (changes.AngleSnap is bool angleSnap)
+            if (changes.AngleSnap is bool angleSnap && !Sonix64Protocol.WriteAngleSnap(stream, angleSnap, dbg))
             {
-                allApplied &= Sonix64Protocol.WriteAngleSnap(stream, angleSnap, dbg);
+                return (object)false;
             }
 
-            if (changes.RippleControl is bool ripple)
+            if (changes.RippleControl is bool ripple && !Sonix64Protocol.WriteRippleControl(stream, ripple, dbg))
             {
-                allApplied &= Sonix64Protocol.WriteRippleControl(stream, ripple, dbg);
+                return (object)false;
             }
 
-            if (changes.DebounceMs is int debounce)
+            if (changes.DebounceMs is int debounce && !Sonix64Protocol.WriteDebounceMs(stream, debounce, dbg))
             {
-                allApplied &= Sonix64Protocol.WriteDebounceMs(stream, debounce, dbg);
+                return (object)false;
             }
 
-            if (changes.LodMm10 is int lod)
+            if (changes.LodMm10 is int lod && !Sonix64Protocol.WriteLodMm10(stream, lod, dbg))
             {
-                allApplied &= Sonix64Protocol.WriteLodMm10(stream, lod, dbg);
+                return (object)false;
             }
 
-            if (changes.DpiStage is int stage)
+            // A failed stage switch must stop the batch before DPI can target the previous stage.
+            if (changes.DpiStage is int stage && !Sonix64Protocol.WriteDpiStage(stream, stage, dbg))
             {
-                allApplied &= Sonix64Protocol.WriteDpiStage(stream, stage, dbg);
+                return (object)false;
             }
 
-            if (changes.Dpi is int dpi)
+            if (changes.Dpi is int dpi && !Sonix64Protocol.WriteDpi(stream, dpi, dbg))
             {
-                allApplied &= Sonix64Protocol.WriteDpi(stream, dpi, dbg);
+                return (object)false;
             }
 
-            if (changes.PollingRateHz is int pollingRate)
+            if (changes.PollingRateHz is int pollingRate && !Sonix64Protocol.WritePollingRateHz(stream, pollingRate, dbg))
             {
-                // Accepted-but-deferred is possible here; the caller re-reads
-                // settings afterwards and surfaces any mismatch.
-                allApplied &= Sonix64Protocol.WritePollingRateHz(stream, pollingRate, dbg);
+                return (object)false;
             }
 
-            // Box the bool so the generic null-on-failure contract holds.
-            return (object)allApplied;
+            return (object)true;
         });
 
         return result is true;
+    }
+
+    internal static bool ValidateChanges(DeviceSettings changes, DeviceSettingField writableFields)
+    {
+        var requestedFields = GetPresentFields(changes);
+        return (requestedFields & writableFields) == requestedFields
+            && changes.SleepSeconds is null
+            && (changes.PollingRateHz is not int polling || PollingRates.Contains(polling))
+            && (changes.DebounceMs is not int debounce || debounce is >= 0 and <= 30)
+            && (changes.Dpi is not int dpi || DpiRanges.Any(range => range.Contains(dpi)))
+            && (changes.DpiStage is not int stage || stage is >= 1 and <= 8)
+            && (changes.LodMm10 is not int lod || LodValues.Contains(lod));
+    }
+
+    internal static DeviceSettingField GetWritableFields(DeviceSettings settings)
+    {
+        var fields = GetPresentFields(settings) & ~DeviceSettingField.Sleep;
+        if (settings.PollingRateHz is int polling && !PollingRates.Contains(polling)) fields &= ~DeviceSettingField.PollingRate;
+        if (settings.DebounceMs is int debounce && debounce is < 0 or > 30) fields &= ~DeviceSettingField.Debounce;
+        if (settings.Dpi is int dpi && !DpiRanges.Any(range => range.Contains(dpi))) fields &= ~DeviceSettingField.Dpi;
+        if (settings.DpiStage is int stage && stage is < 1 or > 8) fields &= ~DeviceSettingField.DpiStage;
+        if (settings.LodMm10 is int lod && !LodValues.Contains(lod)) fields &= ~DeviceSettingField.Lod;
+        return fields;
+    }
+
+    private static DeviceSettingField GetPresentFields(DeviceSettings settings)
+    {
+        var fields = DeviceSettingField.None;
+        if (settings.PollingRateHz is not null) fields |= DeviceSettingField.PollingRate;
+        if (settings.DebounceMs is not null) fields |= DeviceSettingField.Debounce;
+        if (settings.MotionSync is not null) fields |= DeviceSettingField.MotionSync;
+        if (settings.Dpi is not null) fields |= DeviceSettingField.Dpi;
+        if (settings.DpiStage is not null) fields |= DeviceSettingField.DpiStage;
+        if (settings.LodMm10 is not null) fields |= DeviceSettingField.Lod;
+        if (settings.AngleSnap is not null) fields |= DeviceSettingField.AngleSnap;
+        if (settings.RippleControl is not null) fields |= DeviceSettingField.RippleControl;
+        if (settings.SleepSeconds is not null) fields |= DeviceSettingField.Sleep;
+        return fields;
     }
 
     private string? ReadFirmwareVersionCached(HidStream stream, bool debug)

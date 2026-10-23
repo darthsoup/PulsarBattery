@@ -1,3 +1,4 @@
+using CommunityToolkit.WinUI.Controls;
 using Microsoft.UI.Xaml;
 using Microsoft.UI.Xaml.Automation;
 using Microsoft.UI.Xaml.Controls;
@@ -19,32 +20,26 @@ namespace PulsarBattery.Pages;
 
 public sealed partial class SettingsPage : Page
 {
-    /// <summary>
-    /// UI-only sentinel for the "follow the system language" item. Maps to a null
-    /// <see cref="AppSettings.Language"/> on disk.
-    /// </summary>
+    // A non-null tag distinguishes the system-language choice from an absent selection.
     private const string AutoLanguageTag = "auto";
 
     public string AppVersion { get; } = GetAppVersion();
 
     private ViewModels.MainViewModel? ViewModel => DataContext as ViewModels.MainViewModel;
 
-    /// <summary>
-    /// Armed from construction until <see cref="SettingsPage_Loaded"/> completes, and re-armed on unload.
-    /// Toggled fires for programmatic changes too, which must never reach the autostart install flow.
-    /// </summary>
+    // Guards stay armed through template creation and teardown, which also raise change events.
     private bool _isUpdatingStartWithWindowsToggle = true;
 
-    /// <summary>
-    /// Same latch for the language ComboBox. WinUI raises SelectionChanged both while the
-    /// ComboBox is being realized and again while it is torn down; neither may persist.
-    /// </summary>
     private bool _isUpdatingLanguageSelection = true;
+    private bool _isUpdatingSettings = true;
+    private bool _isChangingAutostart;
+    private bool _isChoosingSound;
 
-    /// <summary>
-    /// Cached so Unloaded can always unsubscribe: the inherited DataContext may already be gone.
-    /// </summary>
+    // The inherited DataContext may already be gone when Unloaded fires.
     private ViewModels.MainViewModel? _subscribedViewModel;
+
+    public static Visibility BoolToVisibility(bool value)
+        => value ? Visibility.Visible : Visibility.Collapsed;
 
     private static string GetAppVersion()
     {
@@ -70,6 +65,9 @@ public sealed partial class SettingsPage : Page
 
     private void SettingsPage_Loaded(object sender, RoutedEventArgs e)
     {
+        _isUpdatingSettings = true;
+        _isUpdatingStartWithWindowsToggle = true;
+        _isUpdatingLanguageSelection = true;
         if (ViewModel is { } viewModel)
         {
             _subscribedViewModel = viewModel;
@@ -77,6 +75,7 @@ public sealed partial class SettingsPage : Page
             viewModel.PropertyChanged += ViewModel_PropertyChanged;
 
             ApplyStartWithWindowsToggleState(viewModel.StartWithWindows);
+            SyncSettingsControls(viewModel);
         }
 
         _isUpdatingLanguageSelection = true;
@@ -91,35 +90,110 @@ public sealed partial class SettingsPage : Page
 
         // Cleared last: everything above mutates controls that raise change events.
         _isUpdatingStartWithWindowsToggle = false;
+        _isUpdatingSettings = false;
     }
 
     private void SettingsPage_Unloaded(object sender, RoutedEventArgs e)
     {
+        _isUpdatingSettings = true;
+        _isUpdatingStartWithWindowsToggle = true;
+        _isUpdatingLanguageSelection = true;
+
         if (_subscribedViewModel is { } viewModel)
         {
             viewModel.PropertyChanged -= ViewModel_PropertyChanged;
             _subscribedViewModel = null;
         }
-
-        // Re-arm: tearing the page down re-enters ToggleSwitch.Toggled and
-        // ComboBox.SelectionChanged, and neither may persist anything.
-        _isUpdatingStartWithWindowsToggle = true;
-        _isUpdatingLanguageSelection = true;
     }
 
     private void ViewModel_PropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName is nameof(ViewModels.MainViewModel.StartWithWindows)
-            && ViewModel is { } viewModel)
+        if (ViewModel is not { } viewModel || !ReferenceEquals(sender, _subscribedViewModel))
+        {
+            return;
+        }
+
+        if (e.PropertyName is nameof(ViewModels.MainViewModel.StartWithWindows))
         {
             ApplyStartWithWindowsToggleState(viewModel.StartWithWindows);
         }
+
+        SyncSettingsControls(viewModel, e.PropertyName);
     }
 
-    /// <summary>
-    /// Selects the item whose Tag matches the persisted language, falling back to "auto".
-    /// Callers must hold <see cref="_isUpdatingLanguageSelection"/>.
-    /// </summary>
+    private void SyncSettingsControls(ViewModels.MainViewModel viewModel, string? propertyName = null)
+    {
+        var wasUpdating = _isUpdatingSettings;
+        _isUpdatingSettings = true;
+        try
+        {
+            if (propertyName is null or nameof(ViewModels.MainViewModel.PollIntervalMinutes))
+                PollIntervalNumberBox.Value = viewModel.PollIntervalMinutes;
+            if (propertyName is null or nameof(ViewModels.MainViewModel.LogIntervalMinutes))
+                LogIntervalNumberBox.Value = viewModel.LogIntervalMinutes;
+            if (propertyName is null or nameof(ViewModels.MainViewModel.AlertThresholdUnlockedPercent))
+                AlertThresholdUnlockedNumberBox.Value = viewModel.AlertThresholdUnlockedPercent;
+            if (propertyName is null or nameof(ViewModels.MainViewModel.AlertThresholdLockedPercent))
+                AlertThresholdLockedNumberBox.Value = viewModel.AlertThresholdLockedPercent;
+            if (propertyName is null or nameof(ViewModels.MainViewModel.AlertCooldownMinutes))
+                AlertCooldownNumberBox.Value = viewModel.AlertCooldownMinutes;
+            if (propertyName is null or nameof(ViewModels.MainViewModel.EnableBeeps))
+                EnableBeepsToggle.IsOn = viewModel.EnableBeeps;
+            if (propertyName is null or nameof(ViewModels.MainViewModel.MinimizeToTrayOnClose))
+                MinimizeToTrayToggle.IsOn = viewModel.MinimizeToTrayOnClose;
+            if (propertyName is null or nameof(ViewModels.MainViewModel.ShowBatteryInTray))
+                ShowBatteryInTrayToggle.IsOn = viewModel.ShowBatteryInTray;
+            if (propertyName is null or nameof(ViewModels.MainViewModel.LowBatterySoundPath))
+                ClearSoundButton.IsEnabled = !string.IsNullOrWhiteSpace(viewModel.LowBatterySoundPath);
+        }
+        finally
+        {
+            _isUpdatingSettings = wasUpdating;
+        }
+    }
+
+    private void SettingsNumberBox_ValueChanged(NumberBox sender, NumberBoxValueChangedEventArgs args)
+    {
+        if (_isUpdatingSettings || ViewModel is not { } viewModel)
+        {
+            return;
+        }
+
+        // An empty NumberBox yields NaN; keep the saved value instead of persisting it.
+        if (double.IsFinite(args.NewValue))
+        {
+            var value = Math.Clamp(args.NewValue, sender.Minimum, sender.Maximum);
+            if (sender == PollIntervalNumberBox)
+                viewModel.PollIntervalMinutes = value;
+            else if (sender == LogIntervalNumberBox)
+                viewModel.LogIntervalMinutes = value;
+            else if (sender == AlertThresholdUnlockedNumberBox)
+                viewModel.AlertThresholdUnlockedPercent = (int)Math.Round(value);
+            else if (sender == AlertThresholdLockedNumberBox)
+                viewModel.AlertThresholdLockedPercent = (int)Math.Round(value);
+            else if (sender == AlertCooldownNumberBox)
+                viewModel.AlertCooldownMinutes = value;
+        }
+
+        SyncSettingsControls(viewModel);
+    }
+
+    private void SettingsToggle_Toggled(object sender, RoutedEventArgs e)
+    {
+        if (_isUpdatingSettings || ViewModel is not { } viewModel)
+        {
+            return;
+        }
+
+        if (ReferenceEquals(sender, EnableBeepsToggle))
+            viewModel.EnableBeeps = EnableBeepsToggle.IsOn;
+        else if (ReferenceEquals(sender, MinimizeToTrayToggle))
+            viewModel.MinimizeToTrayOnClose = MinimizeToTrayToggle.IsOn;
+        else if (ReferenceEquals(sender, ShowBatteryInTrayToggle))
+            viewModel.ShowBatteryInTray = ShowBatteryInTrayToggle.IsOn;
+    }
+
+    // Callers hold the language-selection guard while restoring persisted state.
     private void SyncLanguageSelection()
     {
         var language = AppSettingsService.Current.Language ?? AutoLanguageTag;
@@ -166,6 +240,8 @@ public sealed partial class SettingsPage : Page
 
     private void ApplyLocalization()
     {
+        AutomationProperties.SetName(RootScrollViewer, Loc.T("Settings"));
+
         PollIntervalCard.Header = Loc.T("Battery check interval");
         PollIntervalCard.Description = Loc.T("How often the app polls the device and updates the dashboard");
         AutomationProperties.SetName(PollIntervalNumberBox, Loc.T("Battery check interval"));
@@ -245,21 +321,24 @@ public sealed partial class SettingsPage : Page
     {
         var source = e.OriginalSource as DependencyObject;
 
-        // Don't steal focus from inputs. Most controls (buttons, toggles, etc.) will naturally take focus on click.
         if (FindAncestor<NumberBox>(source) is not null || FindAncestor<TextBox>(source) is not null)
         {
             return;
         }
 
-        if (FindAncestor<ButtonBase>(source) is not null || FindAncestor<ToggleSwitch>(source) is not null)
+        if (FindAncestor<ButtonBase>(source) is not null
+            || FindAncestor<ToggleSwitch>(source) is not null
+            || FindAncestor<ComboBox>(source) is not null
+            || FindAncestor<SettingsCard>(source) is not null
+            || FindAncestor<SettingsExpander>(source) is not null)
         {
             return;
         }
 
         try
         {
-            FocusSink.Focus(FocusState.Programmatic);
-            e.Handled = true;
+            // Focus a visible scroll surface so committing an edit adds no invisible tab stop.
+            e.Handled = RootScrollViewer.Focus(FocusState.Programmatic);
         }
         catch
         {
@@ -291,6 +370,13 @@ public sealed partial class SettingsPage : Page
 
     private async void ChooseLowBatterySound_Click(object sender, RoutedEventArgs e)
     {
+        if (_isChoosingSound || _isUpdatingSettings)
+        {
+            return;
+        }
+
+        _isChoosingSound = true;
+        ChooseSoundButton.IsEnabled = false;
         try
         {
             if (DataContext is not ViewModels.MainViewModel viewModel)
@@ -314,7 +400,7 @@ public sealed partial class SettingsPage : Page
             InitializeWithWindow.Initialize(picker, WindowNative.GetWindowHandle(window));
 
             var file = await picker.PickSingleFileAsync();
-            if (file is not null)
+            if (file is not null && IsLoaded && ReferenceEquals(ViewModel, viewModel))
             {
                 viewModel.LowBatterySoundPath = file.Path;
             }
@@ -322,6 +408,11 @@ public sealed partial class SettingsPage : Page
         catch (Exception ex)
         {
             Debug.WriteLine($"[SettingsPage] ChooseLowBatterySound_Click: {ex.Message}");
+        }
+        finally
+        {
+            _isChoosingSound = false;
+            ChooseSoundButton.IsEnabled = true;
         }
     }
 
@@ -350,6 +441,14 @@ public sealed partial class SettingsPage : Page
 
     private async void StartWithWindowsToggle_Toggled(object sender, RoutedEventArgs e)
     {
+        if (_isUpdatingStartWithWindowsToggle || _isChangingAutostart)
+        {
+            return;
+        }
+
+        _isChangingAutostart = true;
+        StartWithWindowsToggle.IsEnabled = false;
+        InstallInfoBar.IsOpen = false;
         try
         {
             await HandleStartWithWindowsToggledAsync();
@@ -357,6 +456,20 @@ public sealed partial class SettingsPage : Page
         catch (Exception ex)
         {
             Debug.WriteLine($"[SettingsPage] StartWithWindowsToggle_Toggled: {ex.Message}");
+            if (IsLoaded)
+            {
+                ShowInstallInfoBar(InfoBarSeverity.Error, Loc.T("Installation failed"), ex.Message);
+            }
+        }
+        finally
+        {
+            if (ViewModel is { } viewModel)
+            {
+                ApplyStartWithWindowsToggleState(viewModel.StartWithWindows);
+            }
+
+            StartWithWindowsToggle.IsEnabled = true;
+            _isChangingAutostart = false;
         }
     }
 
@@ -388,15 +501,13 @@ public sealed partial class SettingsPage : Page
             }
 
             var confirmed = await ShowAutostartInstallDialogAsync();
-            if (!confirmed)
+            if (!confirmed || !IsLoaded || !ReferenceEquals(ViewModel, viewModel))
             {
                 ApplyStartWithWindowsToggleState(viewModel.StartWithWindows);
                 return;
             }
 
-            StartWithWindowsToggle.IsEnabled = false;
-            var result = SelfInstallService.InstallCurrentBuildAndEnableAutostart();
-            StartWithWindowsToggle.IsEnabled = true;
+            var result = await Task.Run(SelfInstallService.InstallCurrentBuildAndEnableAutostart);
 
             if (!result.Success)
             {

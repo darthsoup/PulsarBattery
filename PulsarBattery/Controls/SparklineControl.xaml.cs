@@ -13,19 +13,24 @@ using Windows.Foundation;
 
 namespace PulsarBattery.Controls;
 
-/// <summary>
-/// Trend sparkline over the last 24 hours. Mixed-model history draws as one line and gaps are not broken;
-/// it shows the shape, the History page has the detail.
-/// </summary>
 public sealed partial class SparklineControl : UserControl
 {
     private const int MaxPlotPoints = 240;
+    private const double PlotInset = 3;
     private static readonly TimeSpan PlotWindow = TimeSpan.FromHours(24);
 
-    // Deliberately non-generic: a BatteryReading-typed DP makes XamlTypeInfo emit setters for the
-    // record's init-only properties (CS8852).
+    // A BatteryReading-typed DP makes XamlTypeInfo emit setters for the record's init-only properties.
     public static readonly DependencyProperty ReadingsProperty =
         DependencyProperty.Register(nameof(Readings), typeof(IEnumerable), typeof(SparklineControl), new PropertyMetadata(null, OnReadingsChanged));
+
+    public static readonly DependencyProperty ModelNameProperty =
+        DependencyProperty.Register(nameof(ModelName), typeof(string), typeof(SparklineControl), new PropertyMetadata(string.Empty, OnPlotOptionsChanged));
+
+    public static readonly DependencyProperty LogIntervalMinutesProperty =
+        DependencyProperty.Register(nameof(LogIntervalMinutes), typeof(double), typeof(SparklineControl), new PropertyMetadata(5.0, OnPlotOptionsChanged));
+
+    public static readonly DependencyProperty PollIntervalMinutesProperty =
+        DependencyProperty.Register(nameof(PollIntervalMinutes), typeof(double), typeof(SparklineControl), new PropertyMetadata(1.0, OnPlotOptionsChanged));
 
     public IEnumerable? Readings
     {
@@ -33,13 +38,33 @@ public sealed partial class SparklineControl : UserControl
         set => SetValue(ReadingsProperty, value);
     }
 
+    public string ModelName
+    {
+        get => (string)GetValue(ModelNameProperty);
+        set => SetValue(ModelNameProperty, value);
+    }
+
+    public double LogIntervalMinutes
+    {
+        get => (double)GetValue(LogIntervalMinutesProperty);
+        set => SetValue(LogIntervalMinutesProperty, value);
+    }
+
+    public double PollIntervalMinutes
+    {
+        get => (double)GetValue(PollIntervalMinutesProperty);
+        set => SetValue(PollIntervalMinutesProperty, value);
+    }
+
+    private readonly DispatcherTimer _refreshTimer;
     private INotifyCollectionChanged? _subscribed;
     private bool _redrawQueued;
 
     public SparklineControl()
     {
         InitializeComponent();
-        AutomationProperties.SetName(this, Loc.T("Battery trend"));
+        _refreshTimer = new DispatcherTimer { Interval = TimeSpan.FromMinutes(1) };
+        _refreshTimer.Tick += (_, _) => Redraw();
         Loaded += OnLoaded;
         Unloaded += OnUnloaded;
     }
@@ -54,15 +79,23 @@ public sealed partial class SparklineControl : UserControl
         }
     }
 
+    private static void OnPlotOptionsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+        => ((SparklineControl)d).Redraw();
+
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
         Subscribe();
+        _refreshTimer.Start();
         Redraw();
     }
 
-    // The bound collection outlives this control (pages are rebuilt on every navigation), so unhooking
-    // here prevents handler leaks.
-    private void OnUnloaded(object sender, RoutedEventArgs e) => Unsubscribe();
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        // History outlives pages, so detach both sources of updates when navigation removes the control.
+        Unsubscribe();
+        _refreshTimer.Stop();
+        _redrawQueued = false;
+    }
 
     private void Subscribe()
     {
@@ -85,143 +118,209 @@ public sealed partial class SparklineControl : UserControl
 
     private void OnReadingsCollectionChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
-        // History seeding adds up to 500 items one by one, so coalesce to a single redraw.
+        // History seeding adds up to 500 items individually; render the completed batch once.
         if (_redrawQueued)
         {
             return;
         }
 
         _redrawQueued = true;
-        DispatcherQueue.TryEnqueue(() =>
+        if (!DispatcherQueue.TryEnqueue(() =>
         {
             _redrawQueued = false;
             Redraw();
-        });
+        }))
+        {
+            _redrawQueued = false;
+        }
     }
 
     private void PlotHost_SizeChanged(object sender, SizeChangedEventArgs e) => Redraw();
 
     private void Redraw()
     {
-        double width = PlotHost.ActualWidth;
-        double height = PlotHost.ActualHeight;
-        if (width <= 0 || height <= 0)
+        if (!IsLoaded)
         {
             return;
         }
 
-        var windowed = CollectWindowedReadings();
-        if (windowed.Count < 2)
+        double width = PlotHost.ActualWidth;
+        double height = PlotHost.ActualHeight;
+        if (width <= PlotInset * 2 || height <= PlotInset * 2)
+        {
+            return;
+        }
+
+        var windowed = CollectWindowedReadings(DateTimeOffset.Now);
+        if (windowed.Count == 0)
         {
             EmptyText.Visibility = Visibility.Visible;
-            TrendLine.Points = new PointCollection();
+            ScaleLabels.Visibility = Visibility.Collapsed;
+            ReferenceLine.Visibility = Visibility.Collapsed;
+            TrendLine.Data = null;
             FillPath.Data = null;
+            ReadingMarkers.Data = null;
             StartLabel.Text = string.Empty;
             EndLabel.Text = string.Empty;
+            SetAccessibleSummary(Loc.T("No readings in the last 24 hours"));
             return;
         }
 
         EmptyText.Visibility = Visibility.Collapsed;
+        ScaleLabels.Visibility = Visibility.Visible;
+        ReferenceLine.Visibility = Visibility.Visible;
 
-        // Labels use the raw endpoints; downsampled bucket means are close enough
-        // that the axis scale below stays visually identical.
-        StartLabel.Text = windowed[0].Timestamp.ToLocalTime().ToString("t", CultureInfo.CurrentCulture);
-        EndLabel.Text = windowed[^1].Timestamp.ToLocalTime().ToString("t", CultureInfo.CurrentCulture);
+        var first = windowed[0];
+        var last = windowed[^1];
+        string timeFormat = first.Timestamp.ToLocalTime().Date == last.Timestamp.ToLocalTime().Date ? "t" : "g";
+        StartLabel.Text = first.Timestamp.ToLocalTime().ToString(timeFormat, CultureInfo.CurrentCulture);
+        EndLabel.Text = windowed.Count > 1 ? last.Timestamp.ToLocalTime().ToString(timeFormat, CultureInfo.CurrentCulture) : string.Empty;
 
-        var points = Downsample(windowed, MaxPlotPoints);
+        double span = (last.Timestamp - first.Timestamp).TotalSeconds;
+        Point ToPoint(BatteryReading reading) => new(
+            span > 0 ? PlotInset + (reading.Timestamp - first.Timestamp).TotalSeconds / span * (width - PlotInset * 2) : width / 2,
+            PlotInset + (1 - reading.Percentage / 100.0) * (height - PlotInset * 2));
 
-        var t0 = points[0].Timestamp;
-        var t1 = points[^1].Timestamp;
-        double span = Math.Max((t1 - t0).TotalSeconds, 1.0);
-
-        var line = new PointCollection();
-        foreach (var (timestamp, percentage) in points)
+        var lines = new PathGeometry();
+        var fills = new PathGeometry();
+        var markers = new GeometryGroup();
+        var segments = SplitSegments(windowed);
+        int minimum = 100;
+        int maximum = 0;
+        foreach (var reading in windowed)
         {
-            double x = (timestamp - t0).TotalSeconds / span * width;
-            // Fixed 0-100 scale keeps the sparkline honest across redraws.
-            double y = height - percentage / 100.0 * height;
-            line.Add(new Point(x, y));
+            minimum = Math.Min(minimum, reading.Percentage);
+            maximum = Math.Max(maximum, reading.Percentage);
         }
 
-        TrendLine.Points = line;
-        FillPath.Data = BuildFillGeometry(line, height);
+        foreach (var segment in segments)
+        {
+            var points = Downsample(segment, MaxPlotPoints);
+            var start = ToPoint(points[0]);
+            if (points.Count == 1)
+            {
+                markers.Children.Add(new EllipseGeometry { Center = start, RadiusX = PlotInset, RadiusY = PlotInset });
+                continue;
+            }
+
+            var line = new PathFigure { StartPoint = start, IsFilled = false };
+            var fill = new PathFigure { StartPoint = new Point(start.X, height - PlotInset), IsClosed = true };
+            fill.Segments.Add(new LineSegment { Point = start });
+            for (int i = 1; i < points.Count; i++)
+            {
+                var point = ToPoint(points[i]);
+                line.Segments.Add(new LineSegment { Point = point });
+                fill.Segments.Add(new LineSegment { Point = point });
+            }
+
+            fill.Segments.Add(new LineSegment { Point = new Point(ToPoint(points[^1]).X, height - PlotInset) });
+            lines.Figures.Add(line);
+            fills.Figures.Add(fill);
+        }
+
+        if (segments[^1].Count > 1)
+        {
+            markers.Children.Add(new EllipseGeometry { Center = ToPoint(last), RadiusX = PlotInset, RadiusY = PlotInset });
+        }
+
+        TrendLine.Data = lines;
+        FillPath.Data = fills;
+        ReadingMarkers.Data = markers;
+        SetAccessibleSummary(string.Format(CultureInfo.CurrentCulture,
+            Loc.T("{0} readings. Latest {1}% at {2}. Lowest {3}%, highest {4}%."),
+            windowed.Count, last.Percentage, last.Timestamp.ToLocalTime().ToString("g", CultureInfo.CurrentCulture), minimum, maximum));
     }
 
-    /// <summary>Readings newest-first in, oldest-first within the plot window out.</summary>
-    private List<(DateTimeOffset Timestamp, double Percentage)> CollectWindowedReadings()
+    private void SetAccessibleSummary(string summary)
     {
-        var result = new List<(DateTimeOffset, double)>();
+        AutomationProperties.SetName(this, $"{Loc.T("Battery trend")}. {summary}");
+        ToolTipService.SetToolTip(this, summary);
+    }
+
+    private List<BatteryReading> CollectWindowedReadings(DateTimeOffset now)
+    {
+        var ordered = new SortedDictionary<DateTimeOffset, BatteryReading>();
         if (Readings is not { } readings)
         {
-            return result;
+            return new List<BatteryReading>();
         }
 
-        var cutoff = DateTimeOffset.Now - PlotWindow;
+        var cutoff = now - PlotWindow;
         foreach (var item in readings)
         {
-            if (item is not BatteryReading reading)
+            if (item is not BatteryReading reading
+                || reading.Timestamp < cutoff || reading.Timestamp > now
+                || reading.Percentage is < 0 or > 100
+                || (!string.IsNullOrWhiteSpace(ModelName) && !string.Equals(reading.Model, ModelName, StringComparison.Ordinal)))
             {
                 continue;
             }
 
-            if (reading.Timestamp < cutoff)
-            {
-                break;
-            }
-
-            result.Add((reading.Timestamp, reading.Percentage));
+            // Keep the first observation for equal instants; collection order is newest first.
+            ordered.TryAdd(reading.Timestamp, reading);
         }
 
-        result.Reverse();
-        return result;
+        return new List<BatteryReading>(ordered.Values);
     }
 
-    private static List<(DateTimeOffset Timestamp, double Percentage)> Downsample(List<(DateTimeOffset Timestamp, double Percentage)> points, int maxPoints)
+    private List<List<BatteryReading>> SplitSegments(List<BatteryReading> readings)
+    {
+        double poll = double.IsFinite(PollIntervalMinutes) ? Math.Clamp(PollIntervalMinutes, 1, 120) : 1;
+        double log = double.IsFinite(LogIntervalMinutes) ? Math.Clamp(LogIntervalMinutes, 1, 240) : 5;
+        var maximumGap = TimeSpan.FromMinutes(Math.Max(15, Math.Ceiling(log / poll) * poll * 3));
+        var segments = new List<List<BatteryReading>> { new() { readings[0] } };
+        for (int i = 1; i < readings.Count; i++)
+        {
+            var previous = readings[i - 1];
+            var current = readings[i];
+            if (current.Timestamp - previous.Timestamp > maximumGap
+                || !string.Equals(current.Model, previous.Model, StringComparison.Ordinal))
+            {
+                segments.Add(new List<BatteryReading>());
+            }
+
+            segments[^1].Add(current);
+        }
+
+        return segments;
+    }
+
+    private static List<BatteryReading> Downsample(List<BatteryReading> points, int maxPoints)
     {
         if (points.Count <= maxPoints)
         {
             return points;
         }
 
-        var result = new List<(DateTimeOffset, double)>(maxPoints);
-        double bucketSize = (double)points.Count / maxPoints;
-        for (int i = 0; i < maxPoints; i++)
+        // Preserve endpoints and each bucket's extrema so brief charge spikes are not averaged away.
+        int bucketCount = (maxPoints - 2) / 2;
+        var result = new List<BatteryReading>(maxPoints) { points[0] };
+        for (int i = 0; i < bucketCount; i++)
         {
-            int start = (int)(i * bucketSize);
-            int end = Math.Max(Math.Min((int)((i + 1) * bucketSize), points.Count), start + 1);
-
-            double percentageSum = 0;
-            double tickSum = 0;
-            for (int j = start; j < end; j++)
+            int start = 1 + (int)((long)i * (points.Count - 2) / bucketCount);
+            int end = 1 + (int)((long)(i + 1) * (points.Count - 2) / bucketCount);
+            int minimumIndex = start;
+            int maximumIndex = start;
+            for (int j = start + 1; j < end; j++)
             {
-                percentageSum += points[j].Percentage;
-                tickSum += points[j].Timestamp.UtcTicks;
+                if (points[j].Percentage < points[minimumIndex].Percentage)
+                {
+                    minimumIndex = j;
+                }
+                if (points[j].Percentage > points[maximumIndex].Percentage)
+                {
+                    maximumIndex = j;
+                }
             }
 
-            int count = end - start;
-            result.Add((new DateTimeOffset((long)(tickSum / count), TimeSpan.Zero), percentageSum / count));
+            result.Add(points[Math.Min(minimumIndex, maximumIndex)]);
+            if (minimumIndex != maximumIndex)
+            {
+                result.Add(points[Math.Max(minimumIndex, maximumIndex)]);
+            }
         }
 
+        result.Add(points[^1]);
         return result;
-    }
-
-    private static PathGeometry BuildFillGeometry(PointCollection line, double height)
-    {
-        var figure = new PathFigure
-        {
-            StartPoint = new Point(line[0].X, height),
-            IsClosed = true,
-        };
-
-        foreach (var point in line)
-        {
-            figure.Segments.Add(new LineSegment { Point = point });
-        }
-
-        figure.Segments.Add(new LineSegment { Point = new Point(line[^1].X, height) });
-
-        var geometry = new PathGeometry();
-        geometry.Figures.Add(figure);
-        return geometry;
     }
 }

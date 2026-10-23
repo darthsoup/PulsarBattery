@@ -1,6 +1,6 @@
 using System;
 using System.Collections.Generic;
-using System.Linq;
+using System.Diagnostics;
 using HidSharp;
 
 namespace PulsarBattery.Device;
@@ -83,7 +83,14 @@ internal static class Legacy17Protocol
     public const byte CmdOnline = 0x03;
 
     public static byte[] BuildEepromReadPacket(byte reportId, ushort address, byte length)
-        => BuildPacket(reportId, CmdGetEeprom, [0x00, (byte)(address >> 8), (byte)(address & 0xFF), length]);
+    {
+        if (length > MaxDataLength)
+        {
+            throw new ArgumentOutOfRangeException(nameof(length), "An EEPROM response carries at most 10 data bytes.");
+        }
+
+        return BuildPacket(reportId, CmdGetEeprom, [0x00, (byte)(address >> 8), (byte)(address & 0xFF), length]);
+    }
 
     /// <summary>
     /// Builds a non-flash command frame: status and address zero, length without routing flags, data at byte 6.
@@ -246,7 +253,12 @@ internal static class Legacy17Protocol
     /// </summary>
     public static byte[]? ParseEepromPairs(IReadOnlyList<byte> payload, int expectedPairs)
     {
-        if (payload.Count < 6 || payload[2] != 0x00 || payload[5] < expectedPairs * 2)
+        if (expectedPairs is < 0 or > MaxDataLength / 2
+            || !HasValidChecksum(payload)
+            || payload[1] != CmdGetEeprom
+            || payload[2] != 0x00
+            || payload[5] > MaxDataLength
+            || payload[5] < expectedPairs * 2)
         {
             return null;
         }
@@ -289,12 +301,18 @@ internal static class Legacy17Protocol
         int baseStep,
         DpiExponentScaling scaling = DpiExponentScaling.Unknown)
     {
-        var at = 6 + (stageWithinBlock * 4);
-        if (payload.Count < at + 4)
+        if (stageWithinBlock is < 0 or > 1
+            || baseStep <= 0
+            || !HasValidChecksum(payload)
+            || payload[1] != CmdGetEeprom
+            || payload[2] != 0x00
+            || payload[5] > MaxDataLength
+            || payload[5] < (stageWithinBlock + 1) * 4)
         {
             return null;
         }
 
+        var at = 6 + (stageWithinBlock * 4);
         var x = payload[at];
         var y = payload[at + 1];
         var attributes = payload[at + 2];
@@ -303,7 +321,14 @@ internal static class Legacy17Protocol
             return null;
         }
 
-        var dpi = ((x | (((attributes >> 2) & 0b11) << 8)) + 1) * baseStep;
+        var xRaw = x | (((attributes >> 2) & 0b11) << 8);
+        var yRaw = y | (((attributes >> 6) & 0b11) << 8);
+        if (xRaw != yRaw || (attributes & 0b11) != ((attributes >> 4) & 0b11))
+        {
+            return null;
+        }
+
+        var dpi = ((long)xRaw + 1) * baseStep;
 
         if ((attributes & 0b10) != 0)
         {
@@ -326,13 +351,14 @@ internal static class Legacy17Protocol
             dpi *= 2;
         }
 
-        return dpi is > 0 and <= 42000 ? dpi : null;
+        return dpi is > 0 and <= 42000 ? (int)dpi : null;
     }
 
     public static byte[] BuildInfoPacket(byte reportId, ReadOnlySpan<byte> challenge)
     {
         // [id, 0x01, 0, 0, 0, len=8, c0..c3, 0, 0, 0, 0, 0, 0, checksum]
         Span<byte> payload = stackalloc byte[8];
+        payload.Clear();
         payload[3] = InfoPayloadLength;
         challenge[..4].CopyTo(payload[4..]);
         return BuildPacket(reportId, CmdInfo, payload);
@@ -346,7 +372,10 @@ internal static class Legacy17Protocol
         IReadOnlyList<byte> payload,
         ReadOnlySpan<byte> challenge)
     {
-        if (payload.Count < 14 || challenge.Length < 4 || payload[2] != 0x00)
+        if (challenge.Length < 4
+            || !HasValidChecksum(payload)
+            || payload[1] != CmdInfo
+            || payload[2] != 0x00)
         {
             return null;
         }
@@ -371,10 +400,15 @@ internal static class Legacy17Protocol
 
     public static byte[] BuildPacket(byte reportId, byte cmd, ReadOnlySpan<byte> payload = default)
     {
-        var packet = new byte[17];
+        if (payload.Length > FrameLength - 3)
+        {
+            throw new ArgumentOutOfRangeException(nameof(payload), "A legacy 17-byte frame carries at most 14 payload bytes.");
+        }
+
+        var packet = new byte[FrameLength];
         packet[0] = reportId;
         packet[1] = cmd;
-        payload.CopyTo(packet.AsSpan(2));
+        payload.CopyTo(packet.AsSpan(2, FrameLength - 3));
         packet[16] = Checksum(packet.AsSpan(0, 16));
         return packet;
     }
@@ -395,7 +429,7 @@ internal static class Legacy17Protocol
     /// </summary>
     public static (int battery, bool charging, int? voltageMv)? ParseBatteryPayload(IReadOnlyList<byte> payload)
     {
-        if (payload.Count < 8)
+        if (!HasValidChecksum(payload) || payload[1] != CmdBattery || payload[2] != 0x00)
         {
             return null;
         }
@@ -434,7 +468,9 @@ internal static class Legacy17Protocol
     /// </summary>
     public static string? ParseVersionPayload(IReadOnlyList<byte> payload)
     {
-        if (payload.Count < 8 || payload[2] != 0x00)
+        if (!HasValidChecksum(payload)
+            || payload[1] is not (CmdVersion or CmdDongleVersion)
+            || payload[2] != 0x00)
         {
             return null;
         }
@@ -455,7 +491,7 @@ internal static class Legacy17Protocol
     /// </summary>
     public static int? ParseSignalPayload(IReadOnlyList<byte> payload)
     {
-        if (payload.Count < 7 || payload[2] != 0x00)
+        if (!HasValidChecksum(payload) || payload[1] != CmdRssi || payload[2] != 0x00)
         {
             return null;
         }
@@ -478,21 +514,26 @@ internal static class Legacy17Protocol
         int maxLength)
     {
         var packet = BuildPacket(reportId, CmdOnline);
-        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+        var started = Stopwatch.GetTimestamp();
 
-        while (DateTime.UtcNow < deadline)
+        while (Stopwatch.GetElapsedTime(started).TotalSeconds < timeoutSeconds)
         {
             HidHelpers.SendReport(writer, packet, transport);
-            var response = ReadResponse(reader, CmdOnline, 0.4, validReportIds, reportId, null, debug, maxLength);
+            var remainingSeconds = timeoutSeconds - Stopwatch.GetElapsedTime(started).TotalSeconds;
+            var response = ReadResponse(reader, CmdOnline, Math.Min(0.4, remainingSeconds), validReportIds, reportId, null, debug, maxLength);
 
             // data[5] is the mouse's own reachability and data[9] falls back to
             // zero once the receiver has finished talking to it.
-            if (response is not null && response.Length > 10 && response[6] == 0x01 && response[10] == 0x00)
+            if (response is not null && response[2] == 0x00 && response[6] == 0x01 && response[10] == 0x00)
             {
                 return true;
             }
 
-            System.Threading.Thread.Sleep(20);
+            var remainingMs = (timeoutSeconds - Stopwatch.GetElapsedTime(started).TotalSeconds) * 1000;
+            if (remainingMs >= 1)
+            {
+                System.Threading.Thread.Sleep((int)Math.Min(20, remainingMs));
+            }
         }
 
         if (debug)
@@ -504,8 +545,8 @@ internal static class Legacy17Protocol
     }
 
     /// <summary>
-    /// Reads input reports until one matches the expected command. Bare 16-byte reports (report ID
-    /// stripped by the OS) are re-prefixed with <paramref name="normalizeReportId"/>.
+    /// Reads checksummed reports until the command and optional filter match. For bare 16-byte reports,
+    /// the checksum recovers an accepted report ID, preferring <paramref name="normalizeReportId"/>.
     /// </summary>
     public static byte[]? ReadResponse(
         HidStream reader,
@@ -516,25 +557,37 @@ internal static class Legacy17Protocol
         Func<byte, bool>? bareReportFilter,
         bool debug,
         int maxLength,
-        int idleSleepMs = 0)
+        int idleSleepMs = 0,
+        Func<byte[], bool>? responseFilter = null)
     {
-        var deadline = DateTime.UtcNow.AddSeconds(timeoutSeconds);
+        var started = Stopwatch.GetTimestamp();
 
-        while (DateTime.UtcNow < deadline)
+        while (true)
         {
-            var data = HidHelpers.ReadWithTimeout(reader, maxLength, 250);
+            var remainingMs = (timeoutSeconds - Stopwatch.GetElapsedTime(started).TotalSeconds) * 1000;
+            if (remainingMs <= 0 || !double.IsFinite(remainingMs))
+            {
+                return null;
+            }
+
+            var readTimeoutMs = (int)Math.Clamp(Math.Ceiling(remainingMs), 1, 250);
+            var data = HidHelpers.ReadWithTimeout(reader, maxLength, readTimeoutMs);
             if (data is null || data.Length == 0)
             {
                 if (idleSleepMs > 0)
                 {
-                    System.Threading.Thread.Sleep(idleSleepMs);
+                    remainingMs = (timeoutSeconds - Stopwatch.GetElapsedTime(started).TotalSeconds) * 1000;
+                    if (remainingMs >= 1)
+                    {
+                        System.Threading.Thread.Sleep((int)Math.Min(idleSleepMs, remainingMs));
+                    }
                 }
 
                 continue;
             }
 
-            var payload = Normalize(data, normalizeReportId, bareReportFilter);
-            if (payload.Length < 7 || !validReportIds.Contains(payload[0]))
+            var payload = Normalize(data, normalizeReportId, validReportIds, bareReportFilter);
+            if (!HasValidChecksum(payload) || !validReportIds.Contains(payload[0]))
             {
                 continue;
             }
@@ -549,17 +602,41 @@ internal static class Legacy17Protocol
                 continue;
             }
 
-            return payload;
+            if (responseFilter is null || responseFilter(payload))
+            {
+                return payload;
+            }
         }
-
-        return null;
     }
 
-    private static byte[] Normalize(byte[] data, byte normalizeReportId, Func<byte, bool>? bareReportFilter)
+    internal static byte[] Normalize(
+        byte[] data,
+        byte normalizeReportId,
+        ISet<byte> validReportIds,
+        Func<byte, bool>? bareReportFilter)
     {
         if (data.Length == 16 && (bareReportFilter is null || bareReportFilter(data[0])))
         {
-            return new[] { normalizeReportId }.Concat(data).ToArray();
+            var normalized = new byte[FrameLength];
+            data.CopyTo(normalized, 1);
+            normalized[0] = normalizeReportId;
+            if (validReportIds.Contains(normalizeReportId) && HasValidChecksum(normalized))
+            {
+                return normalized;
+            }
+
+            // The checksum includes the report ID, so it identifies a stripped ID among accepted IDs.
+            foreach (var candidate in validReportIds)
+            {
+                normalized[0] = candidate;
+                if (HasValidChecksum(normalized))
+                {
+                    return normalized;
+                }
+            }
+
+            normalized[0] = normalizeReportId;
+            return normalized;
         }
 
         return data;

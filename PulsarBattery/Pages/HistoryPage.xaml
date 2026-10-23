@@ -15,165 +15,161 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Sticky header: stays put while the list below scrolls, so the
-             pagination/clear controls are always reachable without scrolling
-             back up. -->
+        <!-- Keep pagination and export reachable while the history scrolls. -->
         <Grid Grid.Row="0" Padding="32,24,32,16">
             <StackPanel Spacing="16" MaxWidth="1000">
+                <controls:TranslatedTextBlock Text="History"
+                                              TextStyle="{ThemeResource TitleTextBlockStyle}"
+                                              Margin="0,0,0,-8" />
+                <controls:TranslatedTextBlock Text="Recorded battery readings, newest first."
+                                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                              TextWrapping="Wrap" />
 
-                <controls:TranslatedTextBlock Text="History" TextStyle="{ThemeResource TitleTextBlockStyle}" />
-
-                <Grid>
+                <Grid ColumnSpacing="16">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
-
-                    <StackPanel Spacing="4"
-                                VerticalAlignment="Center">
-                        <TextBlock Text="{x:Bind ViewModel.HistoryCountText, Mode=OneWay}"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                   Style="{ThemeResource CaptionTextBlockStyle}" />
-                    </StackPanel>
-
-                    <StackPanel Grid.Column="1"
-                                Orientation="Horizontal"
-                                Spacing="8"
-                                VerticalAlignment="Center">
-                        <Button x:Name="PreviousButton"
-                                Click="PreviousPage_Click"
-                                IsEnabled="{x:Bind ViewModel.CanGoToPreviousHistoryPage, Mode=OneWay}" />
-                        <TextBlock Text="{x:Bind ViewModel.HistoryPageText, Mode=OneWay}"
-                                   Style="{ThemeResource CaptionTextBlockStyle}"
-                                   VerticalAlignment="Center"
-                                   Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        <Button x:Name="NextButton"
-                                Click="NextPage_Click"
-                                IsEnabled="{x:Bind ViewModel.CanGoToNextHistoryPage, Mode=OneWay}" />
-                        <Button x:Name="ClearButton"
-                                Click="ClearHistory_Click" />
+                    <TextBlock Text="{x:Bind ViewModel.HistoryCountText, Mode=OneWay}"
+                               TextWrapping="Wrap"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               Style="{ThemeResource CaptionTextBlockStyle}"
+                               VerticalAlignment="Center" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" Spacing="8">
+                        <Button x:Name="ExportButton" Click="ExportHistory_Click" IsEnabled="False">
+                            <StackPanel Orientation="Horizontal" Spacing="8">
+                                <FontIcon Glyph="&#xE74E;" FontSize="14" AutomationProperties.AccessibilityView="Raw" />
+                                <controls:TranslatedTextBlock Text="Export CSV" />
+                            </StackPanel>
+                        </Button>
+                        <Button x:Name="ClearButton" Click="ClearHistory_Click" IsEnabled="False" />
                     </StackPanel>
                 </Grid>
 
+                <Grid ColumnSpacing="12">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <Button x:Name="PreviousButton"
+                            Click="PreviousPage_Click"
+                            IsEnabled="{x:Bind ViewModel.CanGoToPreviousHistoryPage, Mode=OneWay}" />
+                    <TextBlock x:Name="PageNumberText"
+                               Grid.Column="1"
+                               Text="{x:Bind ViewModel.HistoryPageText, Mode=OneWay}"
+                               Style="{ThemeResource CaptionTextBlockStyle}"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Center"
+                               Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                               AutomationProperties.LiveSetting="Polite" />
+                    <Button x:Name="NextButton"
+                            Grid.Column="2"
+                            Click="NextPage_Click"
+                            IsEnabled="{x:Bind ViewModel.CanGoToNextHistoryPage, Mode=OneWay}" />
+                </Grid>
+
+                <InfoBar x:Name="ActionInfoBar"
+                         IsOpen="False"
+                         Visibility="Collapsed"
+                         IsClosable="True"
+                         Closed="ActionInfoBar_Closed"
+                         AutomationProperties.LiveSetting="Polite" />
             </StackPanel>
         </Grid>
 
-        <ScrollViewer Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
+        <ScrollViewer x:Name="HistoryScrollViewer" Grid.Row="1" HorizontalScrollBarVisibility="Disabled">
             <Grid Padding="32,0,32,32">
-            <StackPanel Spacing="16" MaxWidth="1000">
-
-                <ListView ItemsSource="{x:Bind ViewModel.PagedHistory, Mode=OneWay}"
-                          SelectionMode="None"
-                          IsItemClickEnabled="False"
-                          Background="Transparent"
-                          Padding="0">
-                    <ListView.ItemContainerStyle>
-                        <Style TargetType="ListViewItem">
-                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-                            <Setter Property="Padding" Value="0" />
-                            <Setter Property="Margin" Value="0,0,0,8" />
-                            <Setter Property="MinHeight" Value="0" />
-                        </Style>
-                    </ListView.ItemContainerStyle>
-                    
-                    <ListView.ItemTemplate>
-                        <DataTemplate x:DataType="models:BatteryReading">
-                            <Border Style="{StaticResource PulsarCardStyle}"
-                                    Padding="16">
-                                <Grid ColumnSpacing="16">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-
-                                    <FontIcon Grid.Column="0"
-                                              Glyph="&#xE823;" 
-                                              FontSize="16"
-                                              Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                              VerticalAlignment="Center" />
-
-                                    <TextBlock Grid.Column="1" 
-                                               Text="{x:Bind FormattedTimestamp}"
-                                               Style="{ThemeResource BodyTextBlockStyle}"
-                                               VerticalAlignment="Center" />
-
-                                    <StackPanel Grid.Column="2" 
-                                                Orientation="Horizontal" 
-                                                Spacing="6"
-                                                VerticalAlignment="Center">
-                                        <FontIcon Glyph="&#xE83F;" 
-                                                  FontSize="14"
-                                                  Foreground="{ThemeResource AccentFillColorDefaultBrush}" />
-                                        <TextBlock Style="{ThemeResource BodyStrongTextBlockStyle}"
-                                                   VerticalAlignment="Center">
-                                            <Run Text="{x:Bind Percentage}" /><Run Text="%" />
-                                        </TextBlock>
-                                    </StackPanel>
-
-                                    <Border Grid.Column="3"
-                                            Background="{ThemeResource SubtleFillColorSecondaryBrush}"
-                                            CornerRadius="4"
-                                            Padding="8,4"
-                                            VerticalAlignment="Center">
-                                        <StackPanel Orientation="Horizontal" Spacing="4">
-                                            <FontIcon Glyph="&#xEBAA;" 
-                                                      FontSize="12"
-                                                      Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                                            <TextBlock Text="{x:Bind ChargingStatus}"
+                <StackPanel Spacing="16" MaxWidth="1000">
+                    <ListView x:Name="HistoryList"
+                              ItemsSource="{x:Bind ViewModel.PagedHistory, Mode=OneWay}"
+                              SelectionMode="None"
+                              IsItemClickEnabled="False"
+                              Background="Transparent"
+                              Padding="0">
+                        <ListView.ItemContainerStyle>
+                            <Style TargetType="ListViewItem">
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Padding" Value="0" />
+                                <Setter Property="Margin" Value="0,0,0,8" />
+                                <Setter Property="MinHeight" Value="0" />
+                            </Style>
+                        </ListView.ItemContainerStyle>
+                        <ListView.ItemTemplate>
+                            <DataTemplate x:DataType="models:BatteryReading">
+                                <Border Style="{StaticResource PulsarCardStyle}" Padding="16">
+                                    <Grid ColumnSpacing="16">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <FontIcon Glyph="&#xE823;"
+                                                  AutomationProperties.AccessibilityView="Raw"
+                                                  FontSize="16"
+                                                  Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                  VerticalAlignment="Center" />
+                                        <StackPanel Grid.Column="1" Spacing="4" VerticalAlignment="Center">
+                                            <TextBlock Text="{x:Bind FormattedTimestamp}"
+                                                       Style="{ThemeResource BodyTextBlockStyle}"
+                                                       TextWrapping="Wrap" />
+                                            <TextBlock Text="{x:Bind Model}"
+                                                       ToolTipService.ToolTip="{x:Bind Model}"
                                                        Style="{ThemeResource CaptionTextBlockStyle}"
                                                        Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                       VerticalAlignment="Center" />
+                                                       TextTrimming="CharacterEllipsis" />
                                         </StackPanel>
-                                    </Border>
+                                        <StackPanel Grid.Column="2" Spacing="4" VerticalAlignment="Center">
+                                            <TextBlock Style="{ThemeResource BodyStrongTextBlockStyle}"
+                                                       HorizontalAlignment="Right">
+                                                <Run Text="{x:Bind Percentage}" /><Run Text="%" />
+                                            </TextBlock>
+                                            <StackPanel Orientation="Horizontal" Spacing="4">
+                                                <controls:TranslatedTextBlock Text="Charging:"
+                                                                              TextStyle="{ThemeResource CaptionTextBlockStyle}"
+                                                                              Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                                <TextBlock Text="{x:Bind ChargingStatus}"
+                                                           Style="{ThemeResource CaptionTextBlockStyle}"
+                                                           Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </Grid>
+                                </Border>
+                            </DataTemplate>
+                        </ListView.ItemTemplate>
+                    </ListView>
 
-                                    <TextBlock Grid.Column="4" 
-                                               Text="{x:Bind Model}" 
-                                               Style="{ThemeResource CaptionTextBlockStyle}"
-                                               Foreground="{ThemeResource TextFillColorTertiaryBrush}"
-                                               TextTrimming="CharacterEllipsis"
-                                               MaxWidth="200"
-                                               VerticalAlignment="Center" />
-                                </Grid>
+                    <Border Style="{StaticResource PulsarCardStyle}"
+                            Padding="24,48"
+                            MinHeight="260"
+                            Visibility="{x:Bind ViewModel.HistoryEmptyVisibility, Mode=OneWay}">
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center" Spacing="16">
+                            <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}"
+                                    CornerRadius="28"
+                                    Width="56"
+                                    Height="56"
+                                    HorizontalAlignment="Center">
+                                <FontIcon Glyph="&#xE81C;"
+                                          AutomationProperties.AccessibilityView="Raw"
+                                          FontSize="28"
+                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
                             </Border>
-                        </DataTemplate>
-                    </ListView.ItemTemplate>
-                </ListView>
-
-                <Border Style="{StaticResource PulsarCardStyle}"
-                        Padding="60,80"
-                        MinHeight="300"
-                        Visibility="{x:Bind ViewModel.HistoryEmptyVisibility, Mode=OneWay}">
-                    <StackPanel HorizontalAlignment="Center"
-                                VerticalAlignment="Center"
-                                Spacing="16">
-                        <Border Background="{ThemeResource SubtleFillColorSecondaryBrush}"
-                                CornerRadius="28"
-                                Width="56"
-                                Height="56"
-                                HorizontalAlignment="Center">
-                            <FontIcon Glyph="&#xE81C;" 
-                                      FontSize="28"
-                                      Foreground="{ThemeResource TextFillColorSecondaryBrush}" />
-                        </Border>
-                        <controls:TranslatedTextBlock Text="No history yet"
-                                                      TextStyle="{ThemeResource SubtitleTextBlockStyle}"
-                                                      HorizontalAlignment="Center" />
-                        <controls:TranslatedTextBlock Text="Battery readings will appear here as your Pulsar mouse is monitored over time."
-                                                      TextStyle="{ThemeResource CaptionTextBlockStyle}"
-                                                      Foreground="{ThemeResource TextFillColorSecondaryBrush}"
-                                                      TextAlignment="Center"
-                                                      TextWrapping="Wrap"
-                                                      HorizontalAlignment="Center"
-                                                      MaxWidth="400" />
-                    </StackPanel>
-                </Border>
-
-            </StackPanel>
+                            <controls:TranslatedTextBlock Text="No history yet"
+                                                          TextWrapping="Wrap"
+                                                          TextAlignment="Center"
+                                                          TextStyle="{ThemeResource SubtitleTextBlockStyle}"
+                                                          HorizontalAlignment="Center" />
+                            <controls:TranslatedTextBlock Text="Battery readings will appear here as your Pulsar mouse is monitored over time."
+                                                          TextStyle="{ThemeResource CaptionTextBlockStyle}"
+                                                          Foreground="{ThemeResource TextFillColorSecondaryBrush}"
+                                                          TextAlignment="Center"
+                                                          TextWrapping="Wrap"
+                                                          HorizontalAlignment="Center"
+                                                          MaxWidth="400" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
             </Grid>
         </ScrollViewer>
-
     </Grid>
 </Page>
