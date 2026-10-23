@@ -45,6 +45,10 @@ Steps:
 2. Set configuration to `Debug` and platform to `x64`.
 3. Set `PulsarBattery` as the startup project, then run.
 
+### Tray dependency pin
+
+`H.NotifyIcon.WinUI` is pinned to the prerelease `2.5.0-beta.3` because stable `2.4.1` can ignore the first tray-menu request, especially after a background start. The pinned version includes upstream fixes for [explicitly opening the flyout on every request](https://github.com/HavenDV/H.NotifyIcon/commit/1c1eea68a9127f5a3452ff9dc37b927a932edea0) and [loading the menu host before measuring and displaying it](https://github.com/HavenDV/H.NotifyIcon/commit/e254c9a193e2d860693d0494a8b4bdd6b39a6d84). Replace this prerelease pin with a stable version containing both fixes, then remove this note.
+
 ## Standalone publish (single-file)
 
 The publish profiles are set up to bundle the .NET runtime and Windows App SDK into the app and produce a single main `.exe`.

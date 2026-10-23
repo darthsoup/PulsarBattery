@@ -41,7 +41,7 @@
   <ItemGroup>
     <EmbeddedResource Include="Assets\icon.ico" LogicalName="PulsarBattery.Assets.icon.ico" />
     <PackageReference Include="CommunityToolkit.WinUI.Controls.SettingsControls" Version="8.2.251219" />
-    <PackageReference Include="H.NotifyIcon.WinUI" Version="2.4.1" />
+    <PackageReference Include="H.NotifyIcon.WinUI" Version="2.5.0-beta.3" />
     <PackageReference Include="Microsoft.Windows.SDK.BuildTools" Version="10.0.28000.2526" />
     <PackageReference Include="Microsoft.WindowsAppSDK" Version="2.4.0" />
     <!-- Direct reference (same version the metapackage resolves) only to get

@@ -140,7 +140,7 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
             return;
         }
 
-        // H.NotifyIcon 2.4.1 receives WM_CONTEXTMENU but does not open its WinUI flyout.
+        // H.NotifyIcon 2.5.0-beta.3 still only raises an event for WM_CONTEXTMENU; open the flyout here.
         _dispatcherQueue?.TryEnqueue(() =>
         {
             if (_disposed)
