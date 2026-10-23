@@ -117,6 +117,7 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
             _messageWindow = TaskbarIcon.TrayIcon.MessageWindow;
             _messageWindow.TaskbarCreated += MessageWindow_IconRefreshNeeded;
             _messageWindow.DpiChanged += MessageWindow_IconRefreshNeeded;
+            _messageWindow.KeyboardEventReceived += MessageWindow_KeyboardEventReceived;
         }
         catch (Exception ex)
         {
@@ -130,6 +131,32 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
     {
         // Raised on the message-loop thread; only marshal, do no work here.
         _dispatcherQueue?.TryEnqueue(HealTrayIcon);
+    }
+
+    private void MessageWindow_KeyboardEventReceived(object? sender, H.NotifyIcon.Core.MessageWindow.KeyboardEventReceivedEventArgs e)
+    {
+        if (_disposed || e.KeyboardEvent != H.NotifyIcon.Core.KeyboardEvent.ContextMenu)
+        {
+            return;
+        }
+
+        // H.NotifyIcon 2.4.1 receives WM_CONTEXTMENU but does not open its WinUI flyout.
+        _dispatcherQueue?.TryEnqueue(() =>
+        {
+            if (_disposed)
+            {
+                return;
+            }
+
+            try
+            {
+                TaskbarIcon.ShowContextMenu(e.Point);
+            }
+            catch (Exception ex)
+            {
+                Log.Error(nameof(TrayIcon), ex);
+            }
+        });
     }
 
     private void RefreshTimer_Tick(DispatcherQueueTimer sender, object args) => HealTrayIcon();
@@ -293,6 +320,7 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
         {
             _messageWindow.TaskbarCreated -= MessageWindow_IconRefreshNeeded;
             _messageWindow.DpiChanged -= MessageWindow_IconRefreshNeeded;
+            _messageWindow.KeyboardEventReceived -= MessageWindow_KeyboardEventReceived;
             _messageWindow = null;
         }
 
