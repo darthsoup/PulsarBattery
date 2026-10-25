@@ -31,7 +31,7 @@ Three projects (`PulsarBattery.slnx`):
 **`PulsarBattery.Device.Tests`**: xUnit golden-frame, strict-parser, catalog and DPI round-trip tests, plus source-linked app-service tests for storage, settings, device images and installation helpers. It never opens HID hardware and does not require starting WinUI.
 
 - `PulsarBatteryReader`: tries each `IHidBackend` in `_backends` order, returns first success. All reads serialized through the static `GlobalReadLock`.
-- `BatteryMonitor`: background `Task.Run` loop (5s tick). Owns its own reader and alerts only from fresh, valid readings; unavailable readings stop the alert sound. Never touches UI. Uses `GetForegroundWindow() == 0` as a workstation-lock heuristic, with a separate alert threshold while locked. Timing and cooldowns use monotonic timestamps.
+- `BatteryMonitor`: background `Task.Run` loop (5s tick). Owns its own reader and alerts only from fresh, valid readings; unavailable readings stop the alert sound. Never touches UI. Uses `SystemEvents.SessionSwitch` to wake immediately on workstation lock/unlock and reconciles WTS session state on each 5s tick. Selects the current lock threshold after HID reads; the 10s post-lock window starts at the lock event. Timing and cooldowns use monotonic timestamps. The hidden app keeps normal process priority while EcoQoS remains enabled.
 - `MainViewModel`: a *second* polling loop, on a `DispatcherTimer`, driving all UI state plus history logging. Manual `INotifyPropertyChanged` (not CommunityToolkit `[ObservableProperty]`).
 - `AppSettingsService`: static wrapper over `AppSettings`, thread-safe via `lock (Gate)`.
 - `TrayIcon`: `H.NotifyIcon.WinUI`; created in `OnLaunched` after the window exists.

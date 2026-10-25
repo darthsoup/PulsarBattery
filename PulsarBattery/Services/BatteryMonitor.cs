@@ -1,5 +1,6 @@
+using Microsoft.Win32;
+using PulsarBattery.Tools;
 using System;
-using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Threading;
 using System.Threading.Tasks;
@@ -8,23 +9,52 @@ namespace PulsarBattery.Services;
 
 public sealed class BatteryMonitor : IDisposable
 {
-    private const int WorkstationLockConfirmationDelaySeconds = 2;
     private const int PostLockMonitoringWindowSeconds = 10;
     private const int MonitoringLoopDelaySeconds = 5;
     private const double MinimumPollIntervalMinutes = 0.1;
 
-    private readonly PulsarBatteryReader _batteryReader;
-    private readonly CancellationTokenSource _cancellationTokenSource;
+    private readonly Func<PulsarBatteryReader.BatteryStatus?> _readBatteryStatus;
+    private readonly Func<AppSettings> _getSettings;
+    private readonly Func<PulsarBatteryReader.BatteryStatus, int, bool> _notifyLowBattery;
+    private readonly Action _stopLowBatterySound;
+    private readonly TimeProvider _timeProvider;
+    private readonly bool _observeSessionEvents;
+    private readonly CancellationTokenSource _cancellationTokenSource = new();
+    private readonly SemaphoreSlim _sessionChanged = new(0, 1);
     private readonly object _lifecycleGate = new();
     private Task? _monitorTask;
     private bool _disposed;
+    private bool _sessionEventsRegistered;
+    private bool _isWorkstationLocked;
+    private bool _lockCheckPending;
+    private long _sessionVersion;
+    private long? _lockedTimestamp;
     private long? _lastLowBatteryAlertTimestamp;
 
     public BatteryMonitor()
+        : this(CreateBatteryReader(), () => AppSettingsService.Current,
+            (status, threshold) => NotificationHelper.NotifyLowBattery(status.Percentage, threshold, status.Model),
+            NotificationHelper.StopLowBatterySound, observeSessionEvents: true)
     {
-        _batteryReader = new PulsarBatteryReader();
-        _cancellationTokenSource = new CancellationTokenSource();
     }
+
+    internal BatteryMonitor(
+        Func<PulsarBatteryReader.BatteryStatus?> readBatteryStatus,
+        Func<AppSettings> getSettings,
+        Func<PulsarBatteryReader.BatteryStatus, int, bool> notifyLowBattery,
+        Action stopLowBatterySound,
+        TimeProvider? timeProvider = null,
+        bool observeSessionEvents = false)
+    {
+        _readBatteryStatus = readBatteryStatus;
+        _getSettings = getSettings;
+        _notifyLowBattery = notifyLowBattery;
+        _stopLowBatterySound = stopLowBatterySound;
+        _timeProvider = timeProvider ?? TimeProvider.System;
+        _observeSessionEvents = observeSessionEvents;
+    }
+
+    internal Task Completion => _monitorTask ?? Task.CompletedTask;
 
     public void Start()
     {
@@ -51,43 +81,68 @@ public sealed class BatteryMonitor : IDisposable
             }
 
             _disposed = true;
+            if (_sessionEventsRegistered)
+            {
+                SystemEvents.SessionSwitch -= OnSessionSwitch;
+                _sessionEventsRegistered = false;
+            }
+
             _cancellationTokenSource.Cancel();
             if (_monitorTask is null)
             {
-                _cancellationTokenSource.Dispose();
+                DisposeWaitResources();
             }
             else
             {
-                // A synchronous HID read can outlive shutdown; release its token source after the loop exits.
+                // A synchronous HID read can outlive shutdown; release wait resources after the loop exits.
                 _ = _monitorTask.ContinueWith(
-                    _ => _cancellationTokenSource.Dispose(),
-                    CancellationToken.None,
-                    TaskContinuationOptions.ExecuteSynchronously,
-                    TaskScheduler.Default);
+                    _ => DisposeWaitResources(), CancellationToken.None,
+                    TaskContinuationOptions.ExecuteSynchronously, TaskScheduler.Default);
             }
         }
     }
 
+    private void DisposeWaitResources()
+    {
+        _sessionChanged.Dispose();
+        _cancellationTokenSource.Dispose();
+    }
+
     private async Task MonitorBatteryAsync(CancellationToken cancellationToken)
     {
-        long? lastUnlockedTimestamp = null;
-        long? lastCheckTimestamp = null;
+        if (_observeSessionEvents)
+        {
+            SubscribeToSessionChanges();
+        }
 
+        long? lastCheckTimestamp = null;
         while (!cancellationToken.IsCancellationRequested)
         {
             try
             {
-                var isWorkstationLocked = await ConfirmWorkstationIsLockedAsync(cancellationToken);
+                // SystemEvents can miss WTS registration during Windows startup; reconcile on the normal tick.
+                if (_observeSessionEvents)
+                {
+                    RefreshSessionState();
+                }
 
-                if (isWorkstationLocked)
+                bool shouldCheck;
+                lock (_lifecycleGate)
                 {
-                    HandleLockedWorkstation(lastUnlockedTimestamp, cancellationToken);
+                    shouldCheck = _isWorkstationLocked
+                        ? _lockCheckPending || (_lockedTimestamp is long lockedAt &&
+                            _timeProvider.GetElapsedTime(lockedAt) < TimeSpan.FromSeconds(PostLockMonitoringWindowSeconds))
+                        : lastCheckTimestamp is null ||
+                            _timeProvider.GetElapsedTime(lastCheckTimestamp.Value) >= GetCurrentPollInterval();
                 }
-                else
+
+                if (shouldCheck)
                 {
-                    lastUnlockedTimestamp = Stopwatch.GetTimestamp();
-                    lastCheckTimestamp = HandleUnlockedWorkstation(lastCheckTimestamp, cancellationToken);
+                    CheckBatteryStatus(cancellationToken);
+                    lastCheckTimestamp = _timeProvider.GetTimestamp();
                 }
+
+                await _sessionChanged.WaitAsync(TimeSpan.FromSeconds(MonitoringLoopDelaySeconds), cancellationToken);
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
@@ -95,96 +150,144 @@ public sealed class BatteryMonitor : IDisposable
             }
             catch (Exception ex)
             {
-                Debug.WriteLine($"Battery monitor iteration failed: {ex}");
+                Log.Error(nameof(BatteryMonitor), $"Battery monitor iteration failed: {ex}");
+                try
+                {
+                    await _sessionChanged.WaitAsync(TimeSpan.FromSeconds(MonitoringLoopDelaySeconds), cancellationToken);
+                }
+                catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+                {
+                    break;
+                }
+            }
+        }
+    }
+
+    private void SubscribeToSessionChanges()
+    {
+        lock (_lifecycleGate)
+        {
+            if (_disposed)
+            {
+                return;
             }
 
             try
             {
-                await Task.Delay(TimeSpan.FromSeconds(MonitoringLoopDelaySeconds), cancellationToken);
+                // Subscribe on the worker so session delivery does not wait for the UI dispatcher.
+                SystemEvents.SessionSwitch += OnSessionSwitch;
+                _sessionEventsRegistered = true;
             }
-            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            catch (Exception ex)
             {
-                break;
+                Log.Error(nameof(BatteryMonitor), $"Session event registration failed: {ex}");
+            }
+        }
+
+        RefreshSessionState();
+    }
+
+    private void RefreshSessionState()
+    {
+        long version;
+        lock (_lifecycleGate)
+        {
+            version = _sessionVersion;
+        }
+
+        var isLocked = ReadSessionLockState();
+        lock (_lifecycleGate)
+        {
+            if (!_disposed && version == _sessionVersion && isLocked is bool locked)
+            {
+                OnWorkstationLockChanged(locked);
             }
         }
     }
 
-    private async Task<bool> ConfirmWorkstationIsLockedAsync(CancellationToken cancellationToken)
+    private void OnSessionSwitch(object sender, SessionSwitchEventArgs args)
     {
-        if (!IsWorkstationLocked())
+        if (args.Reason is SessionSwitchReason.SessionLock or SessionSwitchReason.SessionUnlock)
         {
-            return false;
-        }
-
-        await Task.Delay(TimeSpan.FromSeconds(WorkstationLockConfirmationDelaySeconds), cancellationToken);
-        return IsWorkstationLocked();
-    }
-
-    private void HandleLockedWorkstation(long? lastUnlockedTimestamp, CancellationToken cancellationToken)
-    {
-        if (lastUnlockedTimestamp is not null &&
-            Stopwatch.GetElapsedTime(lastUnlockedTimestamp.Value) < TimeSpan.FromSeconds(PostLockMonitoringWindowSeconds))
-        {
-            var threshold = AppSettingsService.Current.AlertThresholdLockedPercent;
-            CheckBatteryStatus(threshold, cancellationToken);
+            OnWorkstationLockChanged(args.Reason == SessionSwitchReason.SessionLock);
         }
     }
 
-    private long? HandleUnlockedWorkstation(long? lastCheckTimestamp, CancellationToken cancellationToken)
+    internal void OnWorkstationLockChanged(bool isLocked)
     {
-        var pollInterval = GetCurrentPollInterval();
-
-        if (lastCheckTimestamp is null || Stopwatch.GetElapsedTime(lastCheckTimestamp.Value) >= pollInterval)
+        lock (_lifecycleGate)
         {
-            var threshold = AppSettingsService.Current.AlertThresholdUnlockedPercent;
-            CheckBatteryStatus(threshold, cancellationToken);
-            return Stopwatch.GetTimestamp();
-        }
+            if (_disposed)
+            {
+                return;
+            }
 
-        return lastCheckTimestamp;
+            _sessionVersion++;
+            if (_isWorkstationLocked == isLocked)
+            {
+                return;
+            }
+
+            _isWorkstationLocked = isLocked;
+            _lockedTimestamp = isLocked ? _timeProvider.GetTimestamp() : null;
+            _lockCheckPending = isLocked;
+            if (_sessionChanged.CurrentCount == 0)
+            {
+                _sessionChanged.Release();
+            }
+
+            Log.Info(nameof(BatteryMonitor), isLocked ? "Session locked; battery check requested." : "Session unlocked.");
+        }
     }
 
     private TimeSpan GetCurrentPollInterval()
     {
-        var configuredMinutes = AppSettingsService.Current.PollIntervalMinutes;
+        var configuredMinutes = _getSettings().PollIntervalMinutes;
         var intervalMinutes = double.IsFinite(configuredMinutes)
             ? Math.Clamp(configuredMinutes, MinimumPollIntervalMinutes, 24 * 60)
             : MinimumPollIntervalMinutes;
         return TimeSpan.FromMinutes(intervalMinutes);
     }
 
-    private void CheckBatteryStatus(int batteryThreshold, CancellationToken cancellationToken)
+    private void CheckBatteryStatus(CancellationToken cancellationToken)
     {
         cancellationToken.ThrowIfCancellationRequested();
-        var status = _batteryReader.ReadBatteryStatus();
+        var started = _timeProvider.GetTimestamp();
+        var status = _readBatteryStatus();
         cancellationToken.ThrowIfCancellationRequested();
-        
-        // Cached levels are useful for display, but must never warn for a disconnected or sleeping mouse.
-        if (status is null || status.Percentage is < 0 or > 100)
-        {
-            Debug.WriteLine("Battery status not available");
-            NotificationHelper.StopLowBatterySound();
-            return;
-        }
 
         lock (_lifecycleGate)
         {
             cancellationToken.ThrowIfCancellationRequested();
-            HandleLowBatteryWarning(status, batteryThreshold);
+            _lockCheckPending = false;
+            _sessionChanged.Wait(0);
+            var settings = _getSettings();
+            // A lock/unlock may arrive during HID I/O; choose the threshold only after the fresh read.
+            var threshold = _isWorkstationLocked
+                ? settings.AlertThresholdLockedPercent
+                : settings.AlertThresholdUnlockedPercent;
+            Log.Info(nameof(BatteryMonitor), $"Battery check completed in {_timeProvider.GetElapsedTime(started).TotalMilliseconds:F0} ms; locked={_isWorkstationLocked}, threshold={threshold}, level={status?.Percentage.ToString() ?? "unavailable"}.");
+
+            // Cached levels are useful for display, but must never warn for a disconnected or sleeping mouse.
+            if (status is null || status.Percentage is < 0 or > 100)
+            {
+                _stopLowBatterySound();
+                return;
+            }
+
+            HandleLowBatteryWarning(status, threshold, settings);
         }
     }
 
-    private void HandleLowBatteryWarning(PulsarBatteryReader.BatteryStatus status, int batteryThreshold)
+    private void HandleLowBatteryWarning(PulsarBatteryReader.BatteryStatus status, int batteryThreshold, AppSettings settings)
     {
         if (status.IsCharging)
         {
             _lastLowBatteryAlertTimestamp = null;
-            NotificationHelper.StopLowBatterySound();
+            _stopLowBatterySound();
             return;
         }
 
-        Debug.WriteLine($"Battery: NotCharging {status.Percentage}% threshold {batteryThreshold}");
-        var settings = AppSettingsService.Current;
         if (status.Percentage >= Math.Max(settings.AlertThresholdUnlockedPercent, settings.AlertThresholdLockedPercent))
         {
             _lastLowBatteryAlertTimestamp = null;
@@ -195,30 +298,54 @@ public sealed class BatteryMonitor : IDisposable
             return;
         }
 
-        if (IsLowBatteryAlertAllowed(_lastLowBatteryAlertTimestamp))
+        var cooldown = TimeSpan.FromMinutes(double.IsFinite(settings.AlertCooldownMinutes)
+            ? Math.Clamp(settings.AlertCooldownMinutes, 0, 24 * 60)
+            : 20);
+        if (_lastLowBatteryAlertTimestamp is null ||
+            _timeProvider.GetElapsedTime(_lastLowBatteryAlertTimestamp.Value) >= cooldown)
         {
-            Debug.WriteLine("Warning: Battery level is below threshold and not charging!");
-            if (NotificationHelper.NotifyLowBattery(status.Percentage, batteryThreshold, status.Model))
+            if (_notifyLowBattery(status, batteryThreshold))
             {
-                _lastLowBatteryAlertTimestamp = Stopwatch.GetTimestamp();
+                _lastLowBatteryAlertTimestamp = _timeProvider.GetTimestamp();
+                Log.Info(nameof(BatteryMonitor), "Low-battery notification submitted.");
             }
         }
     }
 
-    private static bool IsLowBatteryAlertAllowed(long? lastAlertTimestamp)
+    private static Func<PulsarBatteryReader.BatteryStatus?> CreateBatteryReader()
     {
-        var cooldownMinutes = AppSettingsService.Current.AlertCooldownMinutes;
-        var cooldown = TimeSpan.FromMinutes(double.IsFinite(cooldownMinutes)
-            ? Math.Clamp(cooldownMinutes, 0, 24 * 60)
-            : 20);
-        return lastAlertTimestamp is null || Stopwatch.GetElapsedTime(lastAlertTimestamp.Value) >= cooldown;
+        var reader = new PulsarBatteryReader();
+        return () => reader.ReadBatteryStatus();
     }
 
-    private static bool IsWorkstationLocked()
+    private static bool? ReadSessionLockState()
     {
-        return GetForegroundWindow() == IntPtr.Zero;
+        const int WtsSessionInfoEx = 25;
+        if (!WTSQuerySessionInformationW(IntPtr.Zero, -1, WtsSessionInfoEx, out var buffer, out var size))
+        {
+            return null;
+        }
+
+        try
+        {
+            // WTSINFOEXW: level at 0, eight-byte-aligned union at 8, SessionFlags at 16 (x64).
+            if (size < 20 || Marshal.ReadInt32(buffer) != 1)
+            {
+                return null;
+            }
+
+            return Marshal.ReadInt32(buffer, 16) switch { 0 => true, 1 => false, _ => null };
+        }
+        finally
+        {
+            WTSFreeMemory(buffer);
+        }
     }
 
-    [DllImport("user32.dll")]
-    private static extern IntPtr GetForegroundWindow();
+    [DllImport("wtsapi32.dll", ExactSpelling = true, SetLastError = true)]
+    [return: MarshalAs(UnmanagedType.Bool)]
+    private static extern bool WTSQuerySessionInformationW(IntPtr server, int sessionId, int infoClass, out IntPtr buffer, out int bytesReturned);
+
+    [DllImport("wtsapi32.dll", ExactSpelling = true)]
+    private static extern void WTSFreeMemory(IntPtr buffer);
 }

@@ -4,7 +4,7 @@ using System.Runtime.InteropServices;
 namespace PulsarBattery.Tools;
 
 /// <summary>
-/// Toggles Windows EcoQoS for this process: power throttling plus idle priority while hidden in the tray.
+/// Toggles Windows EcoQoS while keeping HID reads and battery alarms at normal scheduling priority.
 /// </summary>
 internal static class EfficiencyMode
 {
@@ -21,7 +21,6 @@ internal static class EfficiencyMode
     private const uint PROCESS_POWER_THROTTLING_CURRENT_VERSION = 1;
     private const uint PROCESS_POWER_THROTTLING_EXECUTION_SPEED = 0x1;
 
-    private const uint IDLE_PRIORITY_CLASS = 0x40;
     private const uint NORMAL_PRIORITY_CLASS = 0x20;
 
     [DllImport("kernel32.dll", SetLastError = true)]
@@ -46,7 +45,8 @@ internal static class EfficiencyMode
 
             var process = GetCurrentProcess();
             SetProcessInformation(process, ProcessPowerThrottling, ref state, (uint)Marshal.SizeOf<PROCESS_POWER_THROTTLING_STATE>());
-            SetPriorityClass(process, enabled ? IDLE_PRIORITY_CLASS : NORMAL_PRIORITY_CLASS);
+            // Idle priority can postpone lock-screen battery checks behind other processes.
+            SetPriorityClass(process, NORMAL_PRIORITY_CLASS);
         }
         catch
         {
