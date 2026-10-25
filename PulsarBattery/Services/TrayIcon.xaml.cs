@@ -280,11 +280,13 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
         var window = _window;
         window?.DispatcherQueue.TryEnqueue(() =>
         {
-            if (_disposed)
+            if (_disposed || global::PulsarBattery.App.IsExitRequested)
             {
                 return;
             }
 
+            // SecondWindow owns a separate flyout; close its host before transferring foreground focus.
+            TaskbarIcon.CloseContextMenu();
             if (window is global::PulsarBattery.MainWindow mainWindow)
             {
                 mainWindow.ShowAndActivate();
