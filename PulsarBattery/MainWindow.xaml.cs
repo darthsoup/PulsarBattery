@@ -27,6 +27,10 @@ public sealed partial class MainWindow : Window
     [System.Runtime.InteropServices.DllImport("user32.dll")]
     private static extern uint GetDpiForWindow(IntPtr hWnd);
 
+    [System.Runtime.InteropServices.DllImport("user32.dll")]
+    [return: System.Runtime.InteropServices.MarshalAs(System.Runtime.InteropServices.UnmanagedType.Bool)]
+    private static extern bool SetForegroundWindow(IntPtr hWnd);
+
     private readonly MainViewModel _viewModel = new();
     private AppWindow? _appWindow;
     private uint _windowDpi;
@@ -94,6 +98,8 @@ public sealed partial class MainWindow : Window
 
         _appWindow?.Show();
         Activate();
+        // Activate alone can leave the window behind the foreground app after a tray menu click.
+        _ = SetForegroundWindow(WindowNative.GetWindowHandle(this));
     }
 
     private static void ConfigureNavigationItem(NavigationViewItem item, string label, string shortcut)
