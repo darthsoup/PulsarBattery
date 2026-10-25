@@ -166,52 +166,43 @@ internal static class NotificationHelper
     {
         lock (Gate)
         {
-            if (!EnsureRegistered())
+            if (_shuttingDown)
             {
                 return false;
+            }
+
+            var settings = AppSettingsService.Current;
+            StopLowBatterySound();
+            var soundUri = settings.EnableBeeps ? GetLowBatterySoundUri(settings.LowBatterySoundPath) : null;
+            // Play the configured alarm independently of Windows toast suppression while locked.
+            var soundStarted = soundUri is not null && PlayLowBatterySound(soundUri);
+            if (!EnsureRegistered())
+            {
+                return soundStarted;
             }
 
             try
             {
                 var title = Loc.T("Low Battery");
-
                 var deviceLine = string.IsNullOrWhiteSpace(model)
                     ? string.Format(Loc.T("Battery: {0}%"), batteryPercentage)
                     : $"{model}: {batteryPercentage}%";
-
                 var statusLine = string.Format(Loc.T("Not charging (threshold: {0}%)"), thresholdPercent);
-                var settings = AppSettingsService.Current;
-                var customSoundUri = settings.EnableBeeps
-                    ? GetCustomLowBatterySoundUri(settings.LowBatterySoundPath)
-                    : null;
-
-                var builder = new AppNotificationBuilder()
+                var notification = new AppNotificationBuilder()
                     .AddText(title)
                     .AddText(deviceLine)
-                    .AddText(statusLine);
-                if (!settings.EnableBeeps || customSoundUri is not null)
-                {
-                    builder.MuteAudio();
-                }
-                else
-                {
-                    builder.SetAudioEvent(AppNotificationSoundEvent.Alarm2);
-                }
+                    .AddText(statusLine)
+                    .MuteAudio()
+                    .BuildNotification();
 
-                var notification = builder.BuildNotification();
                 AppNotificationManager.Default.Show(notification);
-                StopLowBatterySound();
-                if (customSoundUri is not null)
-                {
-                    PlayCustomLowBatterySound(customSoundUri);
-                }
-
+                Log.Info(nameof(NotificationHelper), $"Low-battery banner submitted; sound enabled={settings.EnableBeeps}, playback requested={soundStarted}.");
                 return true;
             }
             catch (Exception ex)
             {
                 Log.Error(nameof(NotificationHelper), $"Low-battery notification failed: {ex}");
-                return false;
+                return soundStarted;
             }
         }
     }
@@ -239,7 +230,7 @@ internal static class NotificationHelper
         }
     }
 
-    private static void PlayCustomLowBatterySound(Uri soundUri)
+    private static bool PlayLowBatterySound(Uri soundUri)
     {
         try
         {
@@ -247,19 +238,63 @@ internal static class NotificationHelper
             {
                 _alertPlayer = new MediaPlayer
                 {
-                    AudioCategory = MediaPlayerAudioCategory.Alerts
+                    AudioCategory = MediaPlayerAudioCategory.Alerts,
+                    AutoPlay = false,
+                    IsLoopingEnabled = false,
+                };
+                _alertPlayer.CommandManager.IsEnabled = false;
+                _alertPlayer.MediaOpened += (_, _) => Log.Info(nameof(NotificationHelper), "Low-battery sound opened.");
+                _alertPlayer.PlaybackSession.PlaybackStateChanged += (session, _) =>
+                {
+                    try
+                    {
+                        Log.Info(nameof(NotificationHelper), $"Low-battery audio state={session.PlaybackState}.");
+                    }
+                    catch (Exception ex)
+                    {
+                        Log.Warn(nameof(NotificationHelper), $"Audio state unavailable during teardown: {ex.Message}");
+                    }
                 };
                 _alertPlayer.MediaFailed += (_, args) =>
-                    Log.Error(nameof(NotificationHelper), $"Low-battery sound playback failed: {args.ErrorMessage}");
+                    Log.Error(nameof(NotificationHelper), $"Low-battery sound playback failed: {args.ErrorMessage}; error={args.ExtendedErrorCode}");
             }
 
             _alertPlayer.Source = MediaSource.CreateFromUri(soundUri);
             _alertPlayer.Play();
+            try
+            {
+                Log.Info(nameof(NotificationHelper), $"Low-battery sound requested; sound level={_alertPlayer.AudioStateMonitor.SoundLevel}.");
+            }
+            catch (Exception ex)
+            {
+                Log.Warn(nameof(NotificationHelper), $"Sound started; audio-level diagnostics unavailable: {ex.Message}");
+            }
+
+            return true;
         }
         catch (Exception ex)
         {
             Log.Error(nameof(NotificationHelper), $"Low-battery sound failed: {ex}");
+            return false;
         }
+    }
+
+    private static Uri? GetLowBatterySoundUri(string? customPath)
+    {
+        var customSound = GetCustomLowBatterySoundUri(customPath);
+        if (customSound is not null)
+        {
+            return customSound;
+        }
+
+        var defaultPath = Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.Windows), "Media", "Alarm02.wav");
+        var defaultSound = GetCustomLowBatterySoundUri(defaultPath);
+        if (defaultSound is null)
+        {
+            Log.Warn(nameof(NotificationHelper), "The default low-battery sound file is unavailable.");
+        }
+
+        return defaultSound;
     }
 
     private static Uri? GetCustomLowBatterySoundUri(string? customPath)

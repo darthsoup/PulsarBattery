@@ -9,6 +9,7 @@
   </PropertyGroup>
 
   <ItemGroup>
+    <PackageReference Include="Microsoft.Win32.SystemEvents" Version="10.0.11" />
     <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.14.0" />
     <PackageReference Include="xunit" Version="2.9.3" />
     <PackageReference Include="xunit.runner.visualstudio" Version="3.1.5">
@@ -26,6 +27,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\PulsarBattery\Services\BatteryMonitor.cs" Link="App\BatteryMonitor.cs" />
     <Compile Include="..\PulsarBattery\Services\AppSettings.cs" Link="App\AppSettings.cs" />
     <Compile Include="..\PulsarBattery\Services\AppSettingsService.cs" Link="App\AppSettingsService.cs" />
     <Compile Include="..\PulsarBattery\Services\SettingsStore.cs" Link="App\SettingsStore.cs" />

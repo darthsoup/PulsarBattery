@@ -74,7 +74,9 @@ internal sealed partial class TrayIcon : UserControl, IDisposable, INotifyProper
         }
 
         _shellCreateRequested = true;
-        TaskbarIcon.ForceCreate(enablesEfficiencyMode);
+        // The library's efficiency mode also lowers process priority, delaying HID reads and alarms.
+        TaskbarIcon.ForceCreate(enablesEfficiencyMode: false);
+        EfficiencyMode.Set(enablesEfficiencyMode);
 
         // Forced render as belt and braces, in case the library's stored-handle behaviour ever changes.
         UpdateTrayIcon(force: true);
