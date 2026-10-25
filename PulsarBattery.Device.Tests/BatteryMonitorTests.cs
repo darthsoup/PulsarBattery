@@ -108,6 +108,32 @@ public sealed class BatteryMonitorTests
     }
 
     [Fact]
+    public async Task FailedNotificationCanRetryImmediatelyAndSuccessfulRetryStartsCooldown()
+    {
+        await using var fixture = new MonitorFixture { AcceptNotifications = false };
+        fixture.Monitor.Start();
+        var firstRead = await fixture.NextReadAsync();
+        firstRead.Complete(Status(1));
+        Assert.Equal(5, (await fixture.NextAlertAsync()).Threshold);
+
+        fixture.AcceptNotifications = true;
+        fixture.Monitor.OnWorkstationLockChanged(true);
+        var retryRead = await fixture.NextReadAsync();
+        retryRead.Complete(Status(1));
+        Assert.Equal(30, (await fixture.NextAlertAsync()).Threshold);
+
+        fixture.Monitor.OnWorkstationLockChanged(false);
+        fixture.Monitor.OnWorkstationLockChanged(true);
+        var cooldownRead = await fixture.NextReadAsync();
+        cooldownRead.Complete(Status(1));
+        await fixture.WaitForEvaluationAsync(cooldownRead.Number);
+        await fixture.DisposeAsync();
+
+        Assert.Equal(2, fixture.Alerts.Count);
+        Assert.Equal(3, fixture.ReadCount);
+    }
+
+    [Fact]
     public async Task DisposalDuringReadSuppressesLateAlertAndIgnoresLaterSessionEvents()
     {
         await using var fixture = new MonitorFixture();
@@ -193,6 +219,7 @@ public sealed class BatteryMonitorTests
         public BatteryMonitor Monitor { get; }
         public ManualClock Clock { get; } = new();
         public ConcurrentQueue<Alert> Alerts { get; } = new();
+        public bool AcceptNotifications { get; set; } = true;
         public int ReadCount => Volatile.Read(ref _readCount);
         public int SoundStopCount => Volatile.Read(ref _soundStopCount);
 
@@ -259,10 +286,11 @@ public sealed class BatteryMonitorTests
 
         private bool Notify(PulsarBatteryReader.BatteryStatus status, int threshold)
         {
+            var accepted = AcceptNotifications;
             var alert = new Alert(status, threshold);
             Alerts.Enqueue(alert);
             _alerts.Writer.TryWrite(alert);
-            return true;
+            return accepted;
         }
 
         private void StopSound()

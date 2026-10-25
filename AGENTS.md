@@ -32,6 +32,7 @@ Three projects (`PulsarBattery.slnx`):
 
 - `PulsarBatteryReader`: tries each `IHidBackend` in `_backends` order, returns first success. All reads serialized through the static `GlobalReadLock`.
 - `BatteryMonitor`: background `Task.Run` loop (5s tick). Owns its own reader and alerts only from fresh, valid readings; unavailable readings stop the alert sound. Never touches UI. Uses `SystemEvents.SessionSwitch` to wake immediately on workstation lock/unlock and reconciles WTS session state on each 5s tick. Selects the current lock threshold after HID reads; the 10s post-lock window starts at the lock event. Timing and cooldowns use monotonic timestamps. The hidden app keeps normal process priority while EcoQoS remains enabled.
+- `NotificationHelper`: low-battery sounds use a one-shot `MediaPlayer` independently of toast delivery, honoring `EnableBeeps`. The low-battery toast stays muted to avoid duplicate audio. The default is Windows `Media/Alarm02.wav`; custom files use the same player. Audio diagnostics must never interrupt playback or shutdown.
 - `MainViewModel`: a *second* polling loop, on a `DispatcherTimer`, driving all UI state plus history logging. Manual `INotifyPropertyChanged` (not CommunityToolkit `[ObservableProperty]`).
 - `AppSettingsService`: static wrapper over `AppSettings`, thread-safe via `lock (Gate)`.
 - `TrayIcon`: `H.NotifyIcon.WinUI`; created in `OnLaunched` after the window exists.
