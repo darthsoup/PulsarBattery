@@ -13,6 +13,7 @@ Pulsar Battery is a small Windows app that keeps an eye on the battery of your P
 - Battery level, charging state and device info at a glance
 - Change mouse settings like DPI and polling rate directly from the app
 - Low-battery notifications based on fresh device readings
+- Optional battery alarm on all available audio outputs, including the test alarm
 - Tray icon showing the current battery percentage
 - Battery history with up to 500 readings, backup recovery and CSV export
 - Manual refresh from the dashboard or tray, plus keyboard navigation
@@ -91,6 +92,8 @@ Run the release-version checks locally with PowerShell:
 - History > Export CSV saves all retained readings with their timestamp, battery percentage, charging state and model.
 
 Settings and history are stored in `%LOCALAPPDATA%\PulsarBattery\`. History keeps the latest 500 valid readings and can recover from `history.json.bak` if the main file is damaged. Clearing history also removes the recovery copy.
+
+Under Settings > Low battery alerts, enable **Alarm on all audio outputs** to play the alarm through every available output instead of only the default device. This also applies to custom sounds and **Send low battery test**. Device volume and mute settings still apply; disconnected or disabled outputs cannot play sound. The option is off by default.
 
 ## Startup (tray only)
 

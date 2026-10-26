@@ -27,6 +27,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <Compile Include="..\PulsarBattery\Services\AlarmSoundPlayer.cs" Link="App\AlarmSoundPlayer.cs" />
     <Compile Include="..\PulsarBattery\Services\BatteryMonitor.cs" Link="App\BatteryMonitor.cs" />
     <Compile Include="..\PulsarBattery\Services\AppSettings.cs" Link="App\AppSettings.cs" />
     <Compile Include="..\PulsarBattery\Services\AppSettingsService.cs" Link="App\AppSettingsService.cs" />

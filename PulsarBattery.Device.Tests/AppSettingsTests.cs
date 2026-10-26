@@ -57,6 +57,7 @@ public sealed class AppSettingsTests
             LowBatterySoundPath = @"C:\Sounds\battery.wav",
             Language = "en-US",
             EnableBeeps = false,
+            PlayAlarmOnAllAudioDevices = true,
             ShowBatteryInTray = false,
         };
 

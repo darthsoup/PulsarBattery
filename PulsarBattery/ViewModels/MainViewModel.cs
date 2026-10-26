@@ -58,6 +58,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
     private int _alertThresholdUnlockedPercent;
     private int _alertThresholdLockedPercent;
     private bool _enableBeeps;
+    private bool _playAlarmOnAllAudioDevices;
     private double _alertCooldownMinutes;
     private bool _minimizeToTrayOnClose;
     private bool _showBatteryInTray;
@@ -762,6 +763,22 @@ public sealed class MainViewModel : INotifyPropertyChanged
             if (SetProperty(ref _enableBeeps, value))
             {
                 AppSettingsService.Update(settings => settings with { EnableBeeps = value });
+                if (!value)
+                {
+                    NotificationHelper.StopLowBatterySound();
+                }
+            }
+        }
+    }
+
+    public bool PlayAlarmOnAllAudioDevices
+    {
+        get => _playAlarmOnAllAudioDevices;
+        set
+        {
+            if (SetProperty(ref _playAlarmOnAllAudioDevices, value))
+            {
+                AppSettingsService.Update(settings => settings with { PlayAlarmOnAllAudioDevices = value });
             }
         }
     }
@@ -884,6 +901,7 @@ public sealed class MainViewModel : INotifyPropertyChanged
         _alertThresholdUnlockedPercent = settings.AlertThresholdUnlockedPercent <= 0 ? DefaultUnlockedAlertThresholdPercent : settings.AlertThresholdUnlockedPercent;
         _alertThresholdLockedPercent = settings.AlertThresholdLockedPercent <= 0 ? DefaultLockedAlertThresholdPercent : settings.AlertThresholdLockedPercent;
         _enableBeeps = settings.EnableBeeps;
+        _playAlarmOnAllAudioDevices = settings.PlayAlarmOnAllAudioDevices;
         _alertCooldownMinutes = settings.AlertCooldownMinutes < 0 ? DefaultAlertCooldownMinutes : settings.AlertCooldownMinutes;
         _minimizeToTrayOnClose = settings.MinimizeToTrayOnClose;
         _showBatteryInTray = settings.ShowBatteryInTray;

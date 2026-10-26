@@ -73,6 +73,8 @@
   "Repeat reminder after": "Repeat reminder after",
   "Wait this many minutes before repeating a warning while the battery remains low. The first warning has no delay. Set to 0 to warn at every battery check.": "Wait this many minutes before repeating a warning while the battery remains low. The first warning has no delay. Set to 0 to warn at every battery check.",
   "Enable beeps": "Enable beeps",
+  "Alarm on all audio outputs": "Alarm on all audio outputs",
+  "Play the battery alarm on all available audio outputs at once. Each device's volume and mute settings still apply.": "Play the battery alarm on all available audio outputs at once. Each device's volume and mute settings still apply.",
   "Choose alert sound file": "Choose alert sound file",
   "Alert sound": "Alert sound",
   "Choose": "Choose",

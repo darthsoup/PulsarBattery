@@ -9,6 +9,35 @@ public sealed class SettingsStoreTests : IDisposable
 
     private string FilePath => Path.Combine(_directory, "settings.json");
 
+    [Theory]
+    [InlineData(false)]
+    [InlineData(true)]
+    public async Task AudioOutputPreferenceSurvivesReloadWhileSoundIsDisabled(bool allDevices)
+    {
+        var settings = new AppSettings
+        {
+            EnableBeeps = false,
+            PlayAlarmOnAllAudioDevices = allDevices,
+        };
+        await new SettingsStore(FilePath).SaveAsync(settings);
+
+        Assert.Equal(settings, await new SettingsStore(FilePath).TryLoadAsync());
+    }
+
+    [Fact]
+    public async Task OlderSettingsKeepAlarmOnTheDefaultOutput()
+    {
+        Directory.CreateDirectory(_directory);
+        await File.WriteAllTextAsync(FilePath,
+            """{"EnableBeeps":true,"LowBatterySoundPath":"C:\\Sounds\\battery.wav"}""");
+
+        var settings = Assert.IsType<AppSettings>(await new SettingsStore(FilePath).TryLoadAsync());
+
+        Assert.False(settings.PlayAlarmOnAllAudioDevices);
+        Assert.True(settings.EnableBeeps);
+        Assert.Equal(@"C:\Sounds\battery.wav", settings.LowBatterySoundPath);
+    }
+
     [Fact]
     public async Task SavesSanitizedSettingsAndReplacesExistingFile()
     {
