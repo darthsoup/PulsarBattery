@@ -15,6 +15,8 @@ internal sealed record AppSettings
 
     public bool EnableBeeps { get; init; } = true;
 
+    public bool PlayAlarmOnAllAudioDevices { get; init; } = false;
+
     public string? LowBatterySoundPath { get; init; }
 
     public double AlertCooldownMinutes { get; init; } = 20.0;

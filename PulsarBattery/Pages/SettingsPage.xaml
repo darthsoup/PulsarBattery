@@ -126,6 +126,11 @@
                                               Toggled="SettingsToggle_Toggled" />
                             </settingscontrols:SettingsCard>
 
+                            <settingscontrols:SettingsCard x:Name="PlayAlarmOnAllAudioDevicesCard">
+                                <ToggleSwitch x:Name="PlayAlarmOnAllAudioDevicesToggle"
+                                              Toggled="SettingsToggle_Toggled" />
+                            </settingscontrols:SettingsCard>
+
                             <settingscontrols:SettingsCard x:Name="AlertSoundCard">
                                 <StackPanel Spacing="8" MaxWidth="360">
                                     <!-- Read-only TextBox rather than a trimmed TextBlock so the

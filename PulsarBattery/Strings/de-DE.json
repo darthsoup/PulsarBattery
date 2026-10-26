@@ -73,6 +73,8 @@
   "Repeat reminder after": "Erinnerung wiederholen nach",
   "Wait this many minutes before repeating a warning while the battery remains low. The first warning has no delay. Set to 0 to warn at every battery check.": "So viele Minuten warten, bevor eine Warnung bei weiterhin niedrigem Akkustand wiederholt wird. Die erste Warnung erfolgt ohne Verzögerung. Bei 0 wird bei jeder Akkuprüfung gewarnt.",
   "Enable beeps": "Signaltöne aktivieren",
+  "Alarm on all audio outputs": "Alarm auf allen Audioausgängen",
+  "Play the battery alarm on all available audio outputs at once. Each device's volume and mute settings still apply.": "Batteriealarm gleichzeitig über alle verfügbaren Audioausgänge abspielen. Lautstärke und Stummschaltung der Geräte gelten weiterhin.",
   "Choose alert sound file": "Alarmdatei auswählen",
   "Alert sound": "Alarmton",
   "Choose": "Auswählen",

@@ -2,8 +2,6 @@ using Microsoft.Windows.AppNotifications;
 using Microsoft.Windows.AppNotifications.Builder;
 using PulsarBattery.Tools;
 using System.IO;
-using Windows.Media.Core;
-using Windows.Media.Playback;
 using System;
 
 namespace PulsarBattery.Services;
@@ -14,7 +12,8 @@ internal static class NotificationHelper
     private static bool _initialized;
     private static bool _registered;
     private static bool _shuttingDown;
-    private static MediaPlayer? _alertPlayer;
+    private static readonly AlarmSoundPlayer AlertSound = new(
+        WindowsAlarmAudio.EnumerateOutputsAsync, WindowsAlarmAudio.CreateDefaultPlayback);
 
     public static void Init()
     {
@@ -69,18 +68,7 @@ internal static class NotificationHelper
         {
             _shuttingDown = true;
             StopLowBatterySound();
-            try
-            {
-                _alertPlayer?.Dispose();
-            }
-            catch (Exception ex)
-            {
-                Log.Error(nameof(NotificationHelper), $"Alert player disposal failed: {ex}");
-            }
-            finally
-            {
-                _alertPlayer = null;
-            }
+            AlertSound.Dispose();
 
             if (!_registered)
             {
@@ -175,7 +163,7 @@ internal static class NotificationHelper
             StopLowBatterySound();
             var soundUri = settings.EnableBeeps ? GetLowBatterySoundUri(settings.LowBatterySoundPath) : null;
             // Play the configured alarm independently of Windows toast suppression while locked.
-            var soundStarted = soundUri is not null && PlayLowBatterySound(soundUri);
+            var soundStarted = soundUri is not null && AlertSound.Play(soundUri, settings.PlayAlarmOnAllAudioDevices);
             if (!EnsureRegistered())
             {
                 return soundStarted;
@@ -211,71 +199,7 @@ internal static class NotificationHelper
     {
         lock (Gate)
         {
-            try
-            {
-                if (_alertPlayer is null)
-                {
-                    return;
-                }
-
-                var previousSource = _alertPlayer.Source;
-                _alertPlayer.Pause();
-                _alertPlayer.Source = null;
-                (previousSource as IDisposable)?.Dispose();
-            }
-            catch (Exception ex)
-            {
-                Log.Error(nameof(NotificationHelper), $"Stopping low-battery sound failed: {ex}");
-            }
-        }
-    }
-
-    private static bool PlayLowBatterySound(Uri soundUri)
-    {
-        try
-        {
-            if (_alertPlayer is null)
-            {
-                _alertPlayer = new MediaPlayer
-                {
-                    AudioCategory = MediaPlayerAudioCategory.Alerts,
-                    AutoPlay = false,
-                    IsLoopingEnabled = false,
-                };
-                _alertPlayer.CommandManager.IsEnabled = false;
-                _alertPlayer.MediaOpened += (_, _) => Log.Info(nameof(NotificationHelper), "Low-battery sound opened.");
-                _alertPlayer.PlaybackSession.PlaybackStateChanged += (session, _) =>
-                {
-                    try
-                    {
-                        Log.Info(nameof(NotificationHelper), $"Low-battery audio state={session.PlaybackState}.");
-                    }
-                    catch (Exception ex)
-                    {
-                        Log.Warn(nameof(NotificationHelper), $"Audio state unavailable during teardown: {ex.Message}");
-                    }
-                };
-                _alertPlayer.MediaFailed += (_, args) =>
-                    Log.Error(nameof(NotificationHelper), $"Low-battery sound playback failed: {args.ErrorMessage}; error={args.ExtendedErrorCode}");
-            }
-
-            _alertPlayer.Source = MediaSource.CreateFromUri(soundUri);
-            _alertPlayer.Play();
-            try
-            {
-                Log.Info(nameof(NotificationHelper), $"Low-battery sound requested; sound level={_alertPlayer.AudioStateMonitor.SoundLevel}.");
-            }
-            catch (Exception ex)
-            {
-                Log.Warn(nameof(NotificationHelper), $"Sound started; audio-level diagnostics unavailable: {ex.Message}");
-            }
-
-            return true;
-        }
-        catch (Exception ex)
-        {
-            Log.Error(nameof(NotificationHelper), $"Low-battery sound failed: {ex}");
-            return false;
+            AlertSound.Stop();
         }
     }
 

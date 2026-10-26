@@ -138,7 +138,12 @@ public sealed partial class SettingsPage : Page
             if (propertyName is null or nameof(ViewModels.MainViewModel.AlertCooldownMinutes))
                 AlertCooldownNumberBox.Value = viewModel.AlertCooldownMinutes;
             if (propertyName is null or nameof(ViewModels.MainViewModel.EnableBeeps))
+            {
                 EnableBeepsToggle.IsOn = viewModel.EnableBeeps;
+                PlayAlarmOnAllAudioDevicesToggle.IsEnabled = viewModel.EnableBeeps;
+            }
+            if (propertyName is null or nameof(ViewModels.MainViewModel.PlayAlarmOnAllAudioDevices))
+                PlayAlarmOnAllAudioDevicesToggle.IsOn = viewModel.PlayAlarmOnAllAudioDevices;
             if (propertyName is null or nameof(ViewModels.MainViewModel.MinimizeToTrayOnClose))
                 MinimizeToTrayToggle.IsOn = viewModel.MinimizeToTrayOnClose;
             if (propertyName is null or nameof(ViewModels.MainViewModel.ShowBatteryInTray))
@@ -187,6 +192,8 @@ public sealed partial class SettingsPage : Page
 
         if (ReferenceEquals(sender, EnableBeepsToggle))
             viewModel.EnableBeeps = EnableBeepsToggle.IsOn;
+        else if (ReferenceEquals(sender, PlayAlarmOnAllAudioDevicesToggle) && viewModel.EnableBeeps)
+            viewModel.PlayAlarmOnAllAudioDevices = PlayAlarmOnAllAudioDevicesToggle.IsOn;
         else if (ReferenceEquals(sender, MinimizeToTrayToggle))
             viewModel.MinimizeToTrayOnClose = MinimizeToTrayToggle.IsOn;
         else if (ReferenceEquals(sender, ShowBatteryInTrayToggle))
@@ -272,6 +279,13 @@ public sealed partial class SettingsPage : Page
         EnableBeepsToggle.OnContent = Loc.T("On");
         EnableBeepsToggle.OffContent = Loc.T("Off");
         AutomationProperties.SetName(EnableBeepsToggle, Loc.T("Enable beeps"));
+
+        PlayAlarmOnAllAudioDevicesCard.Header = Loc.T("Alarm on all audio outputs");
+        PlayAlarmOnAllAudioDevicesCard.Description = Loc.T("Play the battery alarm on all available audio outputs at once. Each device's volume and mute settings still apply.");
+        PlayAlarmOnAllAudioDevicesToggle.OnContent = Loc.T("On");
+        PlayAlarmOnAllAudioDevicesToggle.OffContent = Loc.T("Off");
+        AutomationProperties.SetName(PlayAlarmOnAllAudioDevicesToggle, Loc.T("Alarm on all audio outputs"));
+        AutomationProperties.SetHelpText(PlayAlarmOnAllAudioDevicesToggle, Loc.T("Play the battery alarm on all available audio outputs at once. Each device's volume and mute settings still apply."));
 
         AlertSoundCard.Header = Loc.T("Alert sound");
         AutomationProperties.SetName(AlertSoundPathTextBox, Loc.T("Alert sound"));
